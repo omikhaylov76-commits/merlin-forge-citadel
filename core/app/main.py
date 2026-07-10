@@ -4,12 +4,14 @@
 конфигом, без скрытого глобального состояния. uvicorn использует модульный `app` ниже.
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.config import Settings, get_settings
+from app.context import set_request_id
 from app.logging import setup_logging
 from app.readiness import is_ready
+from app.routes import router
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -17,6 +19,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     setup_logging(settings.log_level)
 
     app = FastAPI(title="Merlin Forge Citadel — core", version="0.1.0")
+
+    @app.middleware("http")
+    async def _request_id(request: Request, call_next):
+        # request-id на каждый запрос → в логи и заголовок ответа (сшивка с audit_log)
+        rid = set_request_id(request.headers.get("X-Request-ID"))
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = rid
+        return response
+
+    app.include_router(router)
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:

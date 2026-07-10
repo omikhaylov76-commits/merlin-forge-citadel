@@ -10,7 +10,8 @@ dependencies = [
     "sqlalchemy>=2.0",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",          # драйвер Postgres (psycopg3): postgresql+psycopg://
-    # argon2-cffi/pyotp — добавятся в шаге 3 (auth)
+    "argon2-cffi>=23.1",             # хэш пароля Оператора (ADR-0008v2, решение D)
+    "pyotp>=2.9",                    # TOTP-заготовка (в v1 выключен)
 ]
 
 [project.optional-dependencies]
@@ -33,6 +34,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]  # ошибки, флейк, импорты, апгрейды синтаксиса, баг-паттерны
+ignore = ["B008"]  # Depends(...) в дефолтах аргументов — каноничная идиома FastAPI
 
 [tool.ruff.lint.per-file-ignores]
 # env.py правит sys.path ДО импортов (стандартный приём alembic) — E402/I001 тут ожидаемы

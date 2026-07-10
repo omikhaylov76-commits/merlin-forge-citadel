@@ -29,6 +29,14 @@ def get_sessionmaker() -> "sessionmaker[Session]":
 
 
 def get_session() -> Iterator[Session]:
-    # FastAPI-зависимость: короткая сессия на запрос. Long-poll её НЕ держит (SCL1).
-    with get_sessionmaker()() as session:
+    # FastAPI-зависимость: короткая сессия на запрос — коммит при успехе, откат при ошибке.
+    # Long-poll её НЕ держит (SCL1).
+    session = get_sessionmaker()()
+    try:
         yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()

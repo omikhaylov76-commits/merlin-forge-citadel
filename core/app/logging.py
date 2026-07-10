@@ -9,12 +9,15 @@ import json
 import logging
 import sys
 
+from app.context import get_request_id
+
 
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
             "level": record.levelname,
             "logger": record.name,
+            "request_id": get_request_id(),  # сшивка с audit_log
             "msg": record.getMessage(),
         }
         if record.exc_info:
