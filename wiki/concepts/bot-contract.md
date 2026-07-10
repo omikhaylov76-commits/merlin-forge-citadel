@@ -12,9 +12,20 @@ POST /v1/telemetry/events      [{ts, kind, detail}]  kind: entry_filled|sl_moved
 
 ## Команды (бот опрашивает)
 GET  /v1/commands/next?wait=25s → {cmd: none|pause|resume|stop_close, cmd_id}
-POST /v1/commands/{cmd_id}/ack  {result}
-Семантика stop_close: закрыть позиции безопасным путём движка, погасить процесс, статус STOPPED.
+POST /v1/commands/{cmd_id}/ack  {result: ok|error, detail}
+Семантика stop_close: закрыть позиции безопасным путём движка; result=ok → погасить процесс,
+статус stopped; result=error → НЕ гасить, ручное закрытие (flows Б). Пока instance в stopping —
+/commands/next «липко» отдаёт stop_close (OPS1). **КАНОН списка команд: pause · resume · stop_close**
+(start не существует — бот стартует env'ом). Иные формулировки в ADR-0001/0002/глоссарии — устаревшие.
 
 ## Гарантии платформы
-Секреты передаются один раз при старте; телеметрия принимается идемпотентно (dedup по ts+ключам);
-пропуск heartbeat > 3 интервалов = алерт Оператору; команды идемпотентны (cmd_id).
+Секреты передаются один раз при старте; телеметрия идемпотентна (dedup: trades по (instance, exec_id
+биржи); equity/events по (instance, ts, kind) — НЕ по одному ts, иначе теряются со-секундные сделки, COH4);
+пропуск heartbeat > 3 интервалов = алерт; команды идемпотентны (cmd_id = UUID).
+
+## Обязанности картриджа (уточнения MFC-000)
+- Свободные поля (detail/note/symbol) — НЕДОВЕРЕННЫЙ ввод: платформа их экранирует, но картридж
+  не шлёт исполняемое; equity — строго в USDT (unified-оценка), поле currency обязательно (MON9).
+- Картридж раз в сутки проверяет права своего ключа (он у него в env) и шлёт event kind=key_perms
+  {withdraw_enabled}; включённый вывод → алерт + автопауза (SEC3 — так проверка не нарушает закон №2).
+- Движок сам мигрирует свою схему в БД ботов при старте; pool_size ≤ 2 (SCL2).

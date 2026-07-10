@@ -15,13 +15,18 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] Вики по паттерну Карпати (index/log/concepts/entities/…) — done
 - [x] Скелет монорепо (модули + README-манифесты границ) — done
 - [x] Перевод проекта под Maestro Kit (/build) — done
-- [ ] CLOSURE-1: git init + приватный GitHub + push — in-progress · merged: no
+- [x] CLOSURE-1: git init + приватный GitHub + push — done · merged: yes (main, 2026-07-10)
 - [ ] Мокап консоли на дизайн-токенах Оператора — todo · блокер: дизайн-папка в iCloud не скачана
 - [ ] Юрисдикция/договор — за Оператором (async, до первого внешнего клиента), не блокер кода
 
-## Ф1 — Forge: флот на paper-bot (todo)
+## Ф1 — Forge: флот на paper-bot (in-progress)
 Цель: конвейер платформы целиком, без денег — на бумажном боте.
-- [ ] MFC-001 core-скелет: FastAPI + Alembic + миграция 0001 (users/roles/audit_log) + TOTP-заготовка + /healthz + pytest — todo
+- [x] MFC-000 проработка швов (pre-code): seams/flows/domain + ADR 0007–0011 (accepted 2026-07-10)
+      + адверсариальный прогон (68 находок, seams-review.md) — done 2026-07-10
+- [ ] MFC-001 core-скелет: FastAPI + Alembic + миграция 0001 (users/roles/audit_log/api_tokens) +
+      core-scheduler («часовой») + один opaque-токен-механизм (ADR-0008v2) + /healthz + pytest — todo
+- [ ] MFC-001-доп из разбора: инвариант ≤1 инстанс/счёт; long-poll без БД-коннекта (нагруз-тест);
+      индекс+ретеншн телеметрии; last_heartbeat_at вместо таблицы heartbeats — todo
 - [ ] Оркестратор + InfraDriver (Railway GraphQL; интерфейс абстрагирован, план Б — DockerDriver) — todo
 - [ ] paper-bot: картридж по Контракту Бота v0, push-телеметрия + JSON-схемы (schema-first) — todo
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo
@@ -36,7 +41,8 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 ## Ф3 — CRM + биллинг HWM (todo)
 Цель: клиенты, договорные параметры, комиссия % от прибыли по high-water mark.
 - [ ] CRM-модель: клиент → договор → инстансы — todo
-- [ ] Биллинг HWM + обязательные тесты (закон 8) — todo
+- [ ] Финализировать ADR-0011 (модель HWM: cashflows, уровень счёта, сверка) ДО кода биллинга — todo
+- [ ] Биллинг HWM + обязательные тесты (закон 8, формула из ADR-0011) — todo
 - [ ] Алерты Оператору в Telegram (runbooks/alerts) — todo
 
 ## Ф4 — Клиентский портал (todo)
@@ -55,3 +61,6 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - Static IP Railway — пересмотр риска на mainnet-объёмах (ADR-0003).
 - Идеи gbrain — для Исследований (summaries/gbrain).
 - Railway Pro — не включать до Ф1–2 (решение D2).
+- Кокпит Пифагора (шов S9) — прокси через core к внутреннему порту; нужен ADR (COH7); v1 хватает телеметрии.
+- pgbouncer перед кластером ботов — включить по росту флота (ADR-0007v2).
+- Реконсиляция governance-доков (CLAUDE.md-перечень вики, WORKING_AGREEMENTS §2, root README о секретах) — за Куратором.
