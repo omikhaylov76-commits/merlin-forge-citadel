@@ -5,9 +5,11 @@
 """
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 
 from app.config import Settings, get_settings
 from app.logging import setup_logging
+from app.readiness import is_ready
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -18,9 +20,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
-        # Liveness для Railway/uptime-пинга. Без обращения к БД: liveness ≠ readiness.
-        # Dead-man тик диспетчера алертов (SCL3) прицепится сюда в MFC-002.
+        # Liveness: «процесс жив», без обращения к БД. Dead-man тик алертов (SCL3) — в MFC-002.
         return {"status": "ok", "service": "core", "env": settings.env}
+
+    @app.get("/readyz")
+    def readyz() -> JSONResponse:
+        # Readiness: БД доступна И миграции на head. 503, если не готов (Railway не льёт трафик).
+        if is_ready():
+            return JSONResponse({"status": "ready", "service": "core"})
+        return JSONResponse({"status": "not_ready", "service": "core"}, status_code=503)
 
     return app
 

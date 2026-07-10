@@ -7,7 +7,10 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic-settings>=2.4",
-    # sqlalchemy/alembic — добавятся в шаге 2 (миграции); argon2-cffi/pyotp — в шаге 3 (auth)
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",          # драйвер Postgres (psycopg3): postgresql+psycopg://
+    # argon2-cffi/pyotp — добавятся в шаге 3 (auth)
 ]
 
 [project.optional-dependencies]
@@ -30,6 +33,14 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]  # ошибки, флейк, импорты, апгрейды синтаксиса, баг-паттерны
+
+[tool.ruff.lint.per-file-ignores]
+# env.py правит sys.path ДО импортов (стандартный приём alembic) — E402/I001 тут ожидаемы
+"alembic/env.py" = ["E402", "I001"]
+
+[tool.ruff.lint.isort]
+# папка core/alembic/ (миграции) заставляет ruff считать пакет alembic first-party — чиним
+known-third-party = ["alembic"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
