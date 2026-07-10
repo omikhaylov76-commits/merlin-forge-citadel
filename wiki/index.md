@@ -14,6 +14,7 @@ updated: 2026-07-10
 - [seams](concepts/seams.md) — каталог швов: 8 границ, контракты, отказы, заглушки (единый источник).
 - [flows](concepts/flows.md) — трассировки деплоя и STOP_CLOSE по швам + машина состояний инстанса.
 - [seams-review](concepts/seams-review.md) — триаж 68 адверсариальных находок MFC-000 (⛔ до кода).
+- [core-api](concepts/core-api.md) — API ядра на MFC-001: ручки, auth, миграции, запуск.
 - [domain-model](concepts/domain-model.md) — таблицы домена (единый источник; миграция 0001 отсюда).
 - [bot-contract](concepts/bot-contract.md) — Контракт Бота v0: вход/телеметрия/команды/гарантии.
 - [telemetry-schemas](concepts/telemetry-schemas.md) — заглушка: JSON-схемы появятся с paper-bot (schema-first).
