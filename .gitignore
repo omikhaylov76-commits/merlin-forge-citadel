@@ -1,0 +1,28 @@
+# --- ОС / редакторы ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# --- мусор основания (Оператор удалит сам) ---
+_to_delete/
+
+# --- Python (для будущего core/orchestrator) ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# --- Node (для будущих console/portal) ---
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# --- локальные настройки Claude (личные, не проектные) ---
+.claude/settings.local.json

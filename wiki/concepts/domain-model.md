@@ -1,0 +1,10 @@
+# Домен-модель (черновик к Ф0)
+users(id, role[operator|client], 2fa) · clients(id, имя, контакты, договор, user_id?)
+exchange_accounts(id, client_id, exchange[bybit|okx|bitget], label, key_ciphertext, perms_checked_at)
+bot_types(id, name, image, version, contract_version) · profiles(id, bot_type_id, config_json, status[draft|passported])
+passports(profile_id, oos_metrics_json, engine_commit, data_range, created_at)  ← без OOS не создаётся (constraint)
+instances(id, client_id, account_id, bot_type_id, profile_id, status, node_id, ensemble_id?, deployed_at)
+telemetry_* (heartbeats, equity_points, trades, events) · jobs(id, kind[deploy|stop|backtest], payload, status)
+billing_periods(id, client_id, start, end, start_equity, end_equity, hwm, fee_pct, fee_amount, status, adjustments_json)
+research_artifacts(id, kind[note|script|backtest|passport], title, body/link, tags)
+audit_log(id, actor, action, entity, before/after, ts) — append-only.
