@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     env: str = "dev"          # dev | staging | prod
     database_url: str = ""    # заполняется в шаге 2 (Alembic + сессии)
     log_level: str = "INFO"
+    # Период тика «часового» (core-scheduler, MFC-002). Порог смерти dead-man = 3×период
+    # (деривативно в Scheduler). В env: MFC_… не нужен — читается как SCHEDULER_TICK_SECONDS.
+    scheduler_tick_seconds: int = 60
 
 
 def get_settings() -> Settings:
