@@ -1,6 +1,8 @@
 """Worker: диспетч по kind + отображение исходов на ack (done/release/failed). Драйвер — FakeDriver,
 ядро — in-memory FakeCore (проверяем, ЧЕМ воркер ack'ает, не гоняя HTTP)."""
 
+import pytest
+
 from app.core_client import Lease
 from app.infra.base import DeploySpec, InfraStatus
 from app.infra.fake import FakeDriver
@@ -8,16 +10,22 @@ from app.worker import process_once
 
 
 class FakeCore:
-    """Заглушка CoreClient: отдаёт заранее сложенные аренды, записывает ack'и."""
+    """Заглушка CoreClient: отдаёт заранее сложенные аренды, записывает ack'и.
 
-    def __init__(self, leases=()):
+    fail_acks>0 — уронить транспорт на ближайших N вызовах ack (имитация недоступного ядра)."""
+
+    def __init__(self, leases=(), fail_acks=0):
         self._leases = list(leases)
+        self._fail_acks = fail_acks
         self.acks: list[dict] = []
 
     def lease_next(self, *, wait):
         return self._leases.pop(0) if self._leases else None
 
     def ack(self, *, job_id, lease_nonce, result, detail=None, terminal=False):
+        if self._fail_acks > 0:
+            self._fail_acks -= 1
+            raise RuntimeError("core недоступен (транспорт ack упал)")
         self.acks.append(
             {"job_id": job_id, "nonce": lease_nonce, "result": result,
              "detail": detail, "terminal": terminal}
@@ -74,4 +82,17 @@ def test_bad_deploy_payload_acks_failed_terminal():
     core = FakeCore([_lease("deploy", payload={"name": "mfc-inst-abc"})])  # нет image
     process_once(core, FakeDriver(), wait=0)
     assert core.acks[0]["result"] == "failed"
-    assert core.acks[0]["terminal"] is True  # неустранимо → без ретраев
+    assert core.acks[0]["terminal"] is True             # неустранимо → без ретраев
+    assert core.acks[0]["detail"]["reason"] == "KeyError"  # ТИП, не str(exc) (закон №2)
+
+
+def test_ack_transport_failure_propagates_not_reclassified():
+    # BLOCKER-1: деплой удался, но ack('done') упал (ядро недоступно). Сбой должен ПРОБРОСИТЬСЯ
+    # (→ backoff в run), а НЕ превратиться в ack('failed') тем же nonce (иначе здоровый бот-сирота).
+    driver = FakeDriver()
+    core = FakeCore([_lease("deploy")], fail_acks=1)
+    with pytest.raises(RuntimeError):
+        process_once(core, driver, wait=0)
+    assert core.acks == []  # НИКАКОЙ переклассификации в failed не записано
+    # сервис реально поднят — на повторе аренды усыновится по имени (идемпотентно), не задвоится
+    assert driver.status("railway:fake:mfc-inst-abc") == InfraStatus.RUNNING

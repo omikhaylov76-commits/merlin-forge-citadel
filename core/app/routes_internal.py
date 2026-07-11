@@ -56,6 +56,23 @@ def _serialize(job: Job) -> dict:
     }
 
 
+def _lease_and_serialize(settings: Settings, actor: str) -> dict | None:
+    """Синхронный тик аренды (короткая сессия). Гоняется в threadpool — синхронный БД-вызов не
+    подвешивает event loop (как свёртка часового через to_thread, MFC-003). Коннект между тиками
+    возвращается в пул (SCL1)."""
+    sm = get_sessionmaker()
+    with sm() as s:
+        job = lease_next(
+            s,
+            lease_ttl_s=settings.job_lease_seconds,
+            max_deploy_attempts=settings.job_max_deploy_attempts,
+            actor=actor,
+        )
+        payload = _serialize(job) if job is not None else None
+        s.commit()
+    return payload
+
+
 @router.get("/internal/jobs/next")
 async def next_job(
     wait: int = 0,
@@ -63,22 +80,11 @@ async def next_job(
     settings: Settings = Depends(get_settings),
 ) -> Response:
     """Арендовать следующий job (long-poll). 200 с job или 204, если за окно ?wait= пусто."""
-    actor = _authenticate_orchestrator(authorization)
-    sm = get_sessionmaker()
+    actor = await asyncio.to_thread(_authenticate_orchestrator, authorization)
     budget = min(max(wait, 0), settings.job_longpoll_max_wait_seconds)
     deadline = time.monotonic() + budget
     while True:
-        payload: dict | None = None
-        with sm() as s:  # короткая сессия на попытку — коннект возвращается в пул между тиками
-            job = lease_next(
-                s,
-                lease_ttl_s=settings.job_lease_seconds,
-                max_deploy_attempts=settings.job_max_deploy_attempts,
-                actor=actor,
-            )
-            if job is not None:
-                payload = _serialize(job)  # сериализуем в сессии, до commit
-            s.commit()
+        payload = await asyncio.to_thread(_lease_and_serialize, settings, actor)
         if payload is not None:
             return JSONResponse(payload)
         if time.monotonic() >= deadline:

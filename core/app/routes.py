@@ -76,9 +76,10 @@ def get_user(
 # ── Инстансы: продюсеры jobs (шов S1→S3). Деплой из консоли НЕ зовёт Railway напрямую —
 # только создаёт instance + job, а исполняет оркестратор (seams S1/S3, ADR-0009). ──────────
 
-# Статусы, из которых инстанс можно сворачивать (teardown). pending/deploying исключены —
-# там deploy в полёте (гонка с оркестратором); их путь провала — компенсация в ack (OPS3).
-_TEARDOWNABLE = ("starting", "running", "paused", "stopping", "failed", "stopping_failed")
+# Статусы, из которых оператор может свернуть инстанс (teardown). Только реально достижимые:
+# pending/deploying исключены (deploy в полёте — гонка с оркестратором; провал деплоя убирает
+# компенсация в ack, OPS3); терминальные stopped/failed_deploy сворачивать нечего.
+_TEARDOWNABLE = ("starting", "running", "paused", "stopping")
 
 
 class CreateInstanceIn(BaseModel):
