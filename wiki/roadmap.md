@@ -29,8 +29,9 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
       «Часовой» вынесен в MFC-002.
 - [ ] MFC-001-доп из разбора: инвариант ≤1 инстанс/счёт; long-poll без БД-коннекта (нагруз-тест);
       индекс+ретеншн телеметрии; last_heartbeat_at вместо таблицы heartbeats — todo (в своих миграциях)
-- [ ] MFC-002 core-scheduler («часовой»): цикл + первая реальная свёртка (dead-man /healthz SCL3,
-      затем stale-скан) — отложен из MFC-001 (пустой цикл нечем доказать) — todo
+- [x] MFC-002 core-scheduler «часовой»: asyncio-цикл + реестр свёрток + dead-man тик в /healthz
+      (вариант A, ADR-0012) — done 2026-07-11 · merged: yes (main 2b2c01a). Stale-скан heartbeat —
+      следующая свёртка (ждёт схему инстансов).
 - [ ] Оркестратор + InfraDriver (Railway GraphQL; интерфейс абстрагирован, план Б — DockerDriver) — todo
 - [ ] paper-bot: картридж по Контракту Бота v0, push-телеметрия + JSON-схемы (schema-first) — todo
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo

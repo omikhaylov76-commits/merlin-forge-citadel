@@ -24,3 +24,4 @@ title: Журнал операций вики (append-only)
 - 2026-07-11 · Инженер · MFC-001 слит в main (e3b13a2, --no-ff): core-скелет FastAPI+Alembic+auth+CI, code-review ×2, 14 тестов зелёные. Первая боевая фича платформы закрыта.
 - 2026-07-11 · Инженер · Handoff session 2 → 3 (wiki/handoffs/HANDOFF_2026-07-11_session_2.md): MFC-000/GOV-1/MFC-001 закрыты, следующее — MFC-002 (core-scheduler).
 - 2026-07-11 · Инженер · MFC-002 core-scheduler «часовой»: asyncio-цикл + реестр свёрток + dead-man тик в /healthz (вариант A, ADR-0012). pytest 19 зелёных, ruff clean; живой uvicorn показал running + сброс tick_age. Ветка task/mfc-002.
+- 2026-07-11 · Инженер · MFC-002 слит в main (2b2c01a, --no-ff): часовой закрыт. Независимое адверсариальное ревью — блокер Event-между-loop закрыт + 3 ловушки; регресс-тест; pytest 20 зелёных. Ветка task/mfc-002 удалена.
