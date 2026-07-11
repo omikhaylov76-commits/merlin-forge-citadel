@@ -24,13 +24,17 @@ def _now() -> datetime:
 
 def issue_token(session: Session, *, principal: str, subject_id: str, scope: str) -> str:
     raw = new_token()
+    # Интерактивные (user) — скользящий TTL 12ч. Машинные (instance/orchestrator/ensemble) —
+    # долгоживущие: запечены в env деплоя, живут весь срок инстанса; интерактивный TTL запер бы флот
+    # при даунтайме core > TTL (в т.ч. kill-switch). Отзыв — через revoked_at, не по сроку.
+    expires_at = _now() + _TTL if principal == "user" else None
     session.add(
         ApiToken(
             token_sha256=hash_token(raw),
             principal=principal,
             subject_id=subject_id,
             scope=scope,
-            expires_at=_now() + _TTL,
+            expires_at=expires_at,
         )
     )
     session.flush()
@@ -43,7 +47,8 @@ def authenticate(session: Session, raw: str) -> ApiToken | None:
         return None
     if tok.expires_at is not None and tok.expires_at < _now():
         return None
-    tok.expires_at = _now() + _TTL  # скользящий TTL (персистится коммитом сессии)
+    if tok.expires_at is not None:  # скользящий TTL только у user; машинные (None) не трогаем
+        tok.expires_at = _now() + _TTL  # персистится коммитом сессии
     return tok
 
 

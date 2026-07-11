@@ -1,16 +1,21 @@
 """Гвозди на команды боту (MFC-005, шов S4←, ADR-0005): enqueue→deliver→ack, липкий stop_close,
 ошибка stop_close (не гасим), идемпотентность ack, владение (чужая команда 404), auth. Нужен PG."""
 
+import json
 import uuid
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from jsonschema import Draft202012Validator
 from sqlalchemy import text
 
 from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Instance
+
+_CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
 
 
 @pytest.fixture
@@ -120,16 +125,24 @@ def test_stop_close_sticky_then_stopped(users, clean):
     assert c.get("/v1/commands/next?wait=0", headers=ih).json()["cmd"] == "none"
 
 
-def test_stop_close_error_stays_stopping(users, clean):
+def test_stop_close_error_stays_sticky_until_ok(users, clean):
     iid = _mk_instance("running")
     c = TestClient(create_app())
     cmd_id = _enqueue(c, iid, _login(c, "op@mfc.local", "op-pass"), "stop_close")
     ih = _hdr(_instance_token(iid))
     c.get("/v1/commands/next?wait=0", headers=ih)  # deliver → stopping
+    # error-ack: НЕ терминал — инстанс остаётся stopping, kill-switch не гаснет (M1/OPS1)
     r = c.post(f"/v1/commands/{cmd_id}/ack", headers=ih,
                json={"result": "error", "detail": {"reason": "позиции не закрылись"}})
-    assert r.json()["status"] == "failed"
-    assert _status(iid) == "stopping"  # НЕ гасим — ручное закрытие (flows Б)
+    assert r.json()["status"] == "delivered"
+    assert _status(iid) == "stopping"
+    # следующий poll СНОВА отдаёт stop_close (липкость пережила error, а не выдала none)
+    assert c.get("/v1/commands/next?wait=0", headers=ih).json() == {
+        "cmd": "stop_close", "cmd_id": cmd_id
+    }
+    # ретрай удался → ok → погашен
+    c.post(f"/v1/commands/{cmd_id}/ack", headers=ih, json={"result": "ok"})
+    assert _status(iid) == "stopped"
 
 
 def test_ack_idempotent(users, clean):
@@ -161,3 +174,16 @@ def test_next_non_instance_principal_403(users, clean):
         s.commit()
     c = TestClient(create_app())
     assert c.get("/v1/commands/next?wait=0", headers=_hdr(raw)).status_code == 403
+
+
+def test_command_response_matches_schema(users, clean):
+    # N6: фактический ответ /commands/next валиден по contracts/command.schema.json (schema-first)
+    iid = _mk_instance("running")
+    c = TestClient(create_app())
+    ih = _hdr(_instance_token(iid))
+    validator = Draft202012Validator(
+        json.loads((_CONTRACTS / "command.schema.json").read_text(encoding="utf-8"))
+    )
+    validator.validate(c.get("/v1/commands/next?wait=0", headers=ih).json())  # none-ответ
+    _enqueue(c, iid, _login(c, "op@mfc.local", "op-pass"), "pause")
+    validator.validate(c.get("/v1/commands/next?wait=0", headers=ih).json())  # реальная команда

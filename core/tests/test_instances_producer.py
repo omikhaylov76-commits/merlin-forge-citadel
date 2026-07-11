@@ -15,8 +15,9 @@ from app.models import Instance, Job
 
 @pytest.fixture
 def clean(_migrated: None):
-    with get_sessionmaker()() as s:
-        s.execute(text("DELETE FROM jobs"))
+    with get_sessionmaker()() as s:  # дети instances → instances (FK-порядок)
+        for t in ("commands", "jobs", "equity_points", "trades", "events"):
+            s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
         s.commit()
 

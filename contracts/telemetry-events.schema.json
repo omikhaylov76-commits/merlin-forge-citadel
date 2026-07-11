@@ -12,7 +12,7 @@
     "properties": {
       "ts": {"type": "string", "format": "date-time"},
       "kind": {"type": "string", "maxLength": 40, "description": "entry_filled|sl_moved|kill_switch|key_perms|error|..."},
-      "detail": {"description": "произвольные данные события (недоверенный ввод, экранируется на выводе)"}
+      "detail": {"type": "object", "description": "структурированные данные события (недоверенный ввод, экранируется на выводе)"}
     }
   },
   "examples": [

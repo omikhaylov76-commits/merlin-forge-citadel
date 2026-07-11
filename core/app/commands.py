@@ -33,7 +33,9 @@ def deliver_next(session: Session, instance_id: uuid.UUID, *, actor: str) -> Com
     """Выдать следующую команду инстансу. None, если очередь пуста (бот получит cmd=none)."""
     inst = session.get(Instance, instance_id)
 
-    # Липкий stop_close (OPS1): пока инстанс в stopping — повторяем его stop_close без ре-аудита.
+    # Липкий stop_close (OPS1): пока stopping — повторяем stop_close, пока бот не ack'нет ok.
+    # error-ack липкость НЕ снимает (см. ack): команда остаётся delivered, kill-switch не гаснет.
+    # FOR UPDATE сериализует доставки — append-only audit не задваивается (N1, закон №4).
     if inst is not None and inst.status == "stopping":
         sticky = session.scalar(
             select(Command)
@@ -43,6 +45,7 @@ def deliver_next(session: Session, instance_id: uuid.UUID, *, actor: str) -> Com
                 Command.status.in_(("queued", "delivered")),
             )
             .order_by(Command.created_at)
+            .with_for_update()
         )
         if sticky is not None:
             if sticky.status == "queued":  # первая выдача — отметим delivered + аудит
@@ -82,21 +85,26 @@ def ack(
     actor: str,
 ) -> Command:
     """Завершить команду. result ok|error. Идемпотентно по cmd_id. Двигает статус инстанса."""
-    cmd = session.get(Command, cmd_id)
+    # FOR UPDATE: конкурентный первый ack сериализуется — audit не задвоится (N1, закон №4).
+    cmd = session.get(Command, cmd_id, with_for_update=True)
     if cmd is None or cmd.instance_id != instance_id:
         raise CommandNotFound()  # не команда этого инстанса (владение, SEC7)
     if cmd.status in ("acked", "failed"):
-        return cmd  # уже завершена — идемпотентный повтор ack
+        return cmd  # уже завершена терминально — идемпотентный повтор ack
 
     inst = session.get(Instance, instance_id)
     cmd.result = detail
-    cmd.acked_at = _now()
     if result == "ok":
         cmd.status = "acked"
+        cmd.acked_at = _now()
         _apply_ok(cmd, inst)
+    elif cmd.kind == "stop_close":
+        # OPS1: stop_close не закрылся — НЕ терминал. Остаётся delivered → липкость пере-выдаст,
+        # инстанс держим stopping (kill-switch не гаснет). Эскалация по таймауту — outbox позже.
+        cmd.status = "delivered"  # acked_at не ставим — не завершена, бот получит stop_close снова
     else:
-        cmd.status = "failed"
-        # stop_close error → НЕ гасим (позиции могли не закрыться), инстанс остаётся stopping.
+        cmd.status = "failed"  # pause/resume не критичны — терминал без ретрая
+        cmd.acked_at = _now()
     write_audit(session, actor=actor, action="command_ack", entity=str(cmd.id),
                 after={"result": result, "kind": cmd.kind, "status": cmd.status})
     return cmd
