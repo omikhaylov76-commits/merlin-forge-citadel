@@ -27,11 +27,14 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] MFC-001 core-скелет: FastAPI + Alembic (0001) + /healthz+/readyz + auth (opaque-токены/
       RBAC/владение/аудит, ADR-0008v2) + CI (гейт §2) — done 2026-07-11 · merged: yes (main e3b13a2).
       «Часовой» вынесен в MFC-002.
-- [ ] MFC-001-доп из разбора: инвариант ≤1 инстанс/счёт; long-poll без БД-коннекта (нагруз-тест);
-      индекс+ретеншн телеметрии; last_heartbeat_at вместо таблицы heartbeats — todo (в своих миграциях)
+- [ ] MFC-001-доп из разбора: long-poll без БД-коннекта (нагруз-тест); индекс+ретеншн телеметрии —
+      todo (инвариант ≤1 инстанс/счёт и last_heartbeat_at уже закрыты в MFC-003).
 - [x] MFC-002 core-scheduler «часовой»: asyncio-цикл + реестр свёрток + dead-man тик в /healthz
       (вариант A, ADR-0012) — done 2026-07-11 · merged: yes (main 2b2c01a). Stale-скан heartbeat —
       следующая свёртка (ждёт схему инстансов).
+- [x] MFC-003 instances + stale-скан: таблица инстансов (миграция 0002, FK отложены ADR-0013,
+      ≤1 живой/счёт) + первая боевая свёртка часового (health ok→stale→dead по heartbeat, audit,
+      advisory-lock single-writer) — done 2026-07-11 · merged: yes (main b963b55).
 - [ ] Оркестратор + InfraDriver (Railway GraphQL; интерфейс абстрагирован, план Б — DockerDriver) — todo
 - [ ] paper-bot: картридж по Контракту Бота v0, push-телеметрия + JSON-схемы (schema-first) — todo
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo
