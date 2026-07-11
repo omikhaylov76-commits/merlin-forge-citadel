@@ -52,7 +52,10 @@ sources: [concepts/architecture.md, decisions/0001…0010, 0012, задача MF
   ✅ **Реализовано MFC-005 (core-сторона):** схемы v0 `contracts/*.schema.json`; миграция 0004
   (equity/trades/events/commands); приём телеметрии (`routes_telemetry`, dedup/ts-skew/413, heartbeat→
   last_heartbeat_at) + команды (`routes_commands`, long-poll липкий stop_close + ack, ADR-0005) токеном
-  инстанса. Картридж paper-bot (клиент этого API) — MFC-006. Буфер бота/своя-схема — забота картриджа.
+  инстанса. ✅ **Картридж paper-bot (клиент этого API) — MFC-006:** эталонная реализация Контракта v0
+  (bots/paper-bot) — детерминированный движок (синус+seeded-сделки), честные семантики ADR-0005
+  (pause=стоп входов/позиции держатся, stop_close=закрыть+встать); сквозняк вживую пройден. Полный
+  кольцевой буфер бота при недоступности core (~24ч) — отложен (v1 best-effort).
 - **S5 InfraDriver:** интерфейс `deploy(spec) → infra_ref` · `destroy(infra_ref)` · `status(infra_ref)`.
   infra_ref = «railway:{project}:{svc}» — проект в формате СРАЗУ (SCL8: квота сервисов/проект вынудит
   мульти-проект, миграция формата потом дорога). restartPolicy=never для бот-сервисов (OPS1). destroy
