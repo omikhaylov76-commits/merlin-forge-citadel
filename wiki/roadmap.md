@@ -44,9 +44,10 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] MFC-006 paper-bot: эталонный картридж (bots/paper-bot) по Контракту v0 — детерминированный движок
       (синус+seeded), честные семантики ADR-0005 (pause держит позиции, stop_close закрыть+встать),
       клиент API S4 + цикл. Сквозняк вживую доказал pause/stop_close — done 2026-07-11 · merged: yes (main 0baacb9).
-- [~] Обкатка Railway на живом paper-bot (допущение №3): **deployability ✅ 2026-07-11** — Railway CLI
-      собрал наш Dockerfile и запустил процесс картриджа (изолированный проект, прибран). Осталось:
-      полная сверка GraphQL-драйвера (образ в реестре + RAILWAY_API_TOKEN + прогон orchestrator) — runbook.
+- [x] Обкатка Railway на живом paper-bot (допущение №3) — **done 2026-07-11**: (1) CLI собрал Dockerfile
+      картриджа и запустил процесс (deployability); (2) `RailwayDriver` подтверждён на живом GraphQL API —
+      полный цикл FindService→serviceCreate→status→serviceDelete ОК, формат infra_ref ок; найден+починен
+      фикс `trust_env=False` (httpx висел). Оба тестовых проекта удалены. Ф1 технически закрыта → гейт Ф2.
 - [ ] 🚧 MFC OPS13 reconcile сирот: свёртка часового сверяет instances↔сервисы `mfc-inst-*`, гасит
       сирот (разбор Куратора #2, вариант A). **Гейт: ДО Ф2** (до первого реального деплоя) — todo
 - [ ] Консоль Оператора: минимальный флот-дашборд (после мокапа) — todo

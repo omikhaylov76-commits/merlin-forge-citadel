@@ -52,13 +52,18 @@ sources: [decisions/0003-railway-first.md, entities/railway.md, orchestrator/app
 
 **Допущение №3 на уровне деплоя подтверждено: Railway собирает и гоняет наш картридж.**
 
-## Осталось (полная сверка драйвера — меньший, гейтованный шаг)
-CLI-деплой обошёл сам `RailwayDriver` (использовал `railway up`, не orchestrator→GraphQL). Чтобы закрыть
-сверку GraphQL-схемы драйвера (главная цель), нужно: (1) образ paper-bot в реестре (GHCR/Docker Hub —
-serviceCreate драйвера принимает image, не сборку-из-исходников); (2) **RAILWAY_API_TOKEN** в env
-оркестратора (Оператор заводит в дашборде, кладёт сам); (3) прогон orchestrator `DRIVER=railway` →
-реальные ответы Railway на find/create/delete → починить `railway.py` где схема разошлась. Отдельный заход.
+## Сверка GraphQL-драйвера ✅ 2026-07-11 (закрыто)
+`RAILWAY_API_TOKEN` Оператор положил в `orchestrator/.env` (я не касался; читает config сам). Прогон
+`RailwayDriver` против живого API (проект `mfc-driver-shakedown`, удалён после):
+- `FindService` (project.services.edges) — совпал со схемой (пустой проект вернул `edges: []`).
+- Полный цикл `deploy`(serviceCreate) → `status`(running) → `destroy`(serviceDelete) → `status`(absent) — ОК.
+- Формат `infra_ref` `railway:{project}:{svc}` — подтверждён.
+- **Найдено и починено:** httpx-клиент драйвера обязан быть `trust_env=False` — иначе виснет мимо
+  своего таймаута (netrc/CA/proxy из env). Фикс в `railway.py`. ⚠️ со схемы снята.
 
-## После полной сверки
-Схема GraphQL подтверждена/починена → Ф1 закрыта. Дальше — **гейт Ф2**: снимок Пифагора (Оператор
-подтверждает коммит).
+Не потребовалось: образ в реестре (serviceCreate schema-валиден и с любым image-ref; полный запуск
+контейнера — отдельно). Многошаговость variables/redeploy — по мере надобности.
+
+## Итог
+Допущение №3 подтверждено полностью (deployability + GraphQL-драйвер). **Ф1 технически закрыта.**
+Дальше — **гейт Ф2**: снимок Пифагора (Оператор подтверждает коммит).
