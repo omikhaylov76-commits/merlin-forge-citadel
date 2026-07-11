@@ -27,9 +27,17 @@ sources: [_curator/DIRECTIVES.md, concepts/bot-contract.md, decisions/0001, 0004
   единственная точка «записи», и она через ОПУБЛИКОВАННЫЙ контроль движка, не через правку кода (уточнить
   API kill-switch в след. recon).
 
+## Снимок + вендор — СДЕЛАНО (ветка task/f2-pifagor-cartridge)
+Свежий клон github pifagor-v81 @ b75bd17 → вендорен ЧИСТЫЙ живой субсет в `bots/pifagor/vendor/` (66
+файлов): app/broker/config/execution/logging_/market/risk_capital/scout/state/storage/strategy +
+requirements/runtime. По РЕАЛЬНОМУ графу импортов: `engine/` (эталон/бэктест) выкинут как хлам;
+`state/`+`app/` добавлены (обязательны живым путём) — отклонение от эвристики #7, в QUEUE. dashboard/
+legacy/backtest/db/lock не взяты. Клон удалён. Детали — bots/pifagor/README.
+
 ## План Ф2 (по маршруту DIRECTIVES)
-- [ ] 1. Recon-2: точки управления Пифагора (как дёрнуть pause/kill-switch извне через config_store/state);
-       формат сделок в realised-журнале → маппинг на trades-схему; heartbeat-источник (cycle жив?).
+- [~] 1. Recon-2: телеметрия БЕЗ dashboard (viewmodel не вендорен) — тянуть equity/curve из CapitalStore/
+       Ledger, сделки из realised-журнала (state/storage), health из killswitch/capital. Точки управления:
+       pause/stop_close → `risk_capital.killswitch` + config (kill-switch есть в живом субсете).
 - [ ] 2. ADR: архитектура обёртки (образ = снимок Пифагора @b75bd17 + тонкий адаптер; адаптер импортирует
        viewmodel/storage read-only, пушит по Контракту, команды→контролы). Развилки — в QUEUE.
 - [ ] 3. Адаптер телеметрии (bots/pifagor-cartridge/ — тонкий, НЕ копия Пифагора): цикл heartbeat ≤60с +
