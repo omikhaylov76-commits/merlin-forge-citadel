@@ -44,7 +44,8 @@ HTTP (шов S3) + таблица-контракт `jobs` (владелец сх
 - [x] 8. CI: джоба `orchestrator` (ruff + pytest, без Postgres) добавлена.
 
 ## Замыкание
-- [ ] 9. Живой сквозной прогон: core (uvicorn) + `POST /v1/instances` (deploy-job) + worker с FakeDriver →
-       job done, infra_ref проставлен, audit-строки. Хвост логов как доказательство.
-- [ ] 10. Вики (G): core-api (ручки jobs/instances), seams (S3/S5 → реализовано), flows (сверить трассу деплоя),
-       index/log, roadmap (MFC-004). + code-review → ⛔ слияние в main (слово-подтверждение).
+- [x] 9. Живой сквозной прогон (uvicorn core + HTTP): deploy — instance pending→deploying→starting,
+       infra_ref=railway:fake:mfc-inst-…, job done; teardown — →stopping→stopped, infra_ref очищен,
+       обе job done, аудит цепочки (instance_created→deploy_enqueued→job_leased→job_ack ×2). ✅
+- [~] 10. Вики (G): core-api/seams/domain-model/README оркестратора обновлены. Осталось: независимое
+       ревью (в работе) → roadmap+log merged:yes → ⛔ слияние в main (слово-подтверждение).

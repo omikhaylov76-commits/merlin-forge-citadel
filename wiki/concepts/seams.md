@@ -41,16 +41,21 @@ sources: [concepts/architecture.md, decisions/0001…0010, 0012, задача MF
   Идемпотентность: ≤1 активный deploy-job на инстанс (unique partial index); перед serviceCreate
   оркестратор ищет сервис по имени `mfc-inst-{id}` — «усынови или упади», дублей не создаёт.
   Финал job: ack(done|failed, detail). 3 неудачи → failed + алерт, без бесконечных ретраев.
+  ✅ **Реализовано MFC-004:** миграция 0003 `jobs`; internal API `GET /internal/jobs/next` (long-poll
+  SKIP LOCKED, БЕЗ удержания коннекта SCL1) + `ack` (fencing по `lease_nonce` OPS2; release без штрафа
+  OPS16; deploy→teardown-компенсация OPS3; teardown вечно requeue OPS5); продюсеры `POST /v1/instances`+`/teardown`.
 - **S4 Контракт Бота v0+:** [bot-contract](bot-contract.md). Уточнения MFC-000:
   ts бота проверяется (|ts−now| < 48ч), авторитетно server-side received_at; дедуп по (instance, ts, канал);
   батчи ограничены (413 → бот дробит); буфер бота при недоступности core — кольцевой, ~24ч,
   trades не выбрасываются первыми; бот мигрирует СВОЮ схему в БД ботов сам при старте;
   contract_version декларируется в heartbeat, v1 только записываем (enforcement Ф2).
-- **S5 InfraDriver:** интерфейс `deploy(image, env, name) → infra_ref` · `destroy(infra_ref)` ·
-  `status(infra_ref)`. infra_ref = «railway:{project}:{svc}» — проект в формате СРАЗУ (SCL8: квота
-  сервисов/проект вынудит мульти-проект, миграция формата потом дорога). restartPolicy=never для
-  бот-сервисов (OPS1). destroy идемпотентен: 404 = успех (OPS5). RailwayDriver v1; DockerDriver —
-  файл-заглушка с conformance-тестом. Квоты Railway (сервисов/проект, rate-limit) — измерить в Ф1 (ADR-0003).
+- **S5 InfraDriver:** интерфейс `deploy(spec) → infra_ref` · `destroy(infra_ref)` · `status(infra_ref)`.
+  infra_ref = «railway:{project}:{svc}» — проект в формате СРАЗУ (SCL8: квота сервисов/проект вынудит
+  мульти-проект, миграция формата потом дорога). restartPolicy=never для бот-сервисов (OPS1). destroy
+  идемпотентен: нет сервиса = успех (OPS5). RailwayDriver v1; DockerDriver — заглушка с conformance-тестом.
+  ✅ **Реализовано MFC-004:** ABC `InfraDriver` + `FakeDriver` (in-memory, тесты/сквозняк) + `DockerDriver`
+  (шумная заглушка) + `RailwayDriver` (GraphQL усынови-или-создай; ⚠️ точная схема — на боевой обкатке,
+  отдельная веха). Квоты Railway (сервисов/проект, rate-limit) — измерить на обкатке (ADR-0003).
 - **S6/S7 БД:** две РАЗНЫЕ базы. Платформенная — только core (Alembic, закон №7). Ботовая —
   отдельный кластер: оркестратор провижионит схему+роль при деплое, движок владеет содержимым
   своей схемы. Физически подтверждает угрозу №4: у бота нет пути к данным платформы.

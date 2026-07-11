@@ -2,10 +2,10 @@
 type: concept
 title: Домен-модель ядра
 tags: [architecture, domain, schema]
-updated: 2026-07-10
+updated: 2026-07-11
 sources: [decisions/0001…0011, concepts/seams.md]
 ---
-# Домен-модель (единый источник таблиц; миграции 0001/0002 строятся ОТСЮДА)
+# Домен-модель (единый источник таблиц; миграции 0001/0002/0003 строятся ОТСЮДА)
 
 Правило: это единственное место, где перечислены таблицы; architecture/seams ССЫЛАЮТСЯ, не дублируют.
 Заглушки-трубы физически присутствуют (иначе FK некуда, «молчаливая полудорога» запрещена), но
@@ -34,8 +34,9 @@ sources: [decisions/0001…0011, concepts/seams.md]
 - **commands**(id, instance_id, kind[pause|resume|stop_close], status[queued|delivered|acked|failed],
   result_json, created_at, acked_at) — очередь команд боту (ADR-0002/0005). cmd_id = этот id.
 - **challenges**(id, subject, action, expires_at, consumed_at) — серверное 2-е подтверждение stop_close (S2).
-- **jobs**(id, instance_id, kind[deploy|teardown|backtest⌫резерв], payload_json, status[queued|leased|done|failed],
-  lease_expires_at, attempts, created_at) — аренда+идемпотентность (ADR-0009). kind=teardown (не «stop»).
+- **jobs**(id, instance_id→FK, kind[deploy|teardown; backtest⌫резерв-CHECK], status[pending|leased|done|failed],
+  attempts, lease_expires_at, lease_nonce, payload, result, created_at, updated_at) — аренда+идемпотентность+
+  fencing (ADR-0009). Материализована в 0003 (MFC-004); партиал-индекс «≤1 активный deploy/инстанс» (OPS2).
 
 ## Телеметрия (недоверенный ввод — экранировать, SEC5)
 - **equity_points**(instance_id, ts, equity, working?, cushion?) · **trades**(instance_id, ts, exec_id,
