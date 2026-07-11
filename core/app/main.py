@@ -28,8 +28,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
-        await scheduler.start()
+        # start() внутри try: если он частично упадёт, finally-stop() приберёт (stop без
+        # старта безопасен). Аргумент — app от FastAPI, здесь не нужен.
         try:
+            await scheduler.start()
             yield
         finally:
             await scheduler.stop()

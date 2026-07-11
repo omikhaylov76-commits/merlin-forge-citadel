@@ -59,3 +59,21 @@ def test_failing_job_does_not_kill_loop() -> None:
 
     asyncio.run(go())
     assert hits["n"] >= 1  # сосед упал, а часовой продолжил крутить остальные свёртки
+
+
+def test_scheduler_survives_second_event_loop() -> None:
+    # Регресс на code-review Finding-1: один Scheduler переживает ДВА разных event-loop
+    # (общий модульный app + несколько TestClient). Event создаётся в start() (привязка к
+    # текущему циклу), иначе _run падает RuntimeError на wait() во втором цикле и часовой тихо
+    # умирает. До фикса второй прогон возвращал бы задачу мёртвой (task.done()).
+    s = Scheduler(tick_seconds=0.02, dead_after_seconds=0.2)
+
+    async def run_once() -> bool:
+        await s.start()
+        await asyncio.sleep(0.06)  # дать циклу тикнуть несколько раз
+        alive = s._task is not None and not s._task.done()  # цикл жив, не упал на wait()
+        await s.stop()
+        return alive
+
+    assert asyncio.run(run_once()) is True  # loop #1
+    assert asyncio.run(run_once()) is True  # loop #2 — тут был RuntimeError до фикса
