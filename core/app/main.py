@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 
 from app.config import Settings, get_settings
 from app.context import set_request_id
+from app.db import get_sessionmaker
+from app.instance_health import scan_once
 from app.logging import setup_logging
 from app.readiness import is_ready
 from app.routes import router
@@ -25,6 +27,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # см. докстринг фабрики), а стартует/гасится в lifespan. /healthz видит его всегда, даже
     # без поднятого lifespan (bare TestClient): тогда state=stopped, а liveness = ok.
     scheduler = Scheduler(tick_seconds=settings.scheduler_tick_seconds)
+    # Первая боевая свёртка (MFC-003): stale-скан health инстансов по свежести heartbeat.
+    # to_thread внутри часового → короткая БД-сессия не блокирует цикл (SCL1).
+    scheduler.register(
+        "instance-health-scan",
+        interval_s=0.0,  # каждый оборот часового (в проде тик 60с)
+        fn=lambda: scan_once(
+            get_sessionmaker(),
+            settings.instance_stale_after_seconds,
+            settings.instance_dead_after_seconds,
+        ),
+    )
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
