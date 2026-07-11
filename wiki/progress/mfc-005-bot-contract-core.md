@@ -29,7 +29,8 @@ symbol) — недоверенный ввод: храним параметриз
 - [x] 2. Миграция 0004 + ORM (round-trip чист, 57 тестов): `equity_points`, `trades`, `events`,
        `commands`. Dedup-констрейнты (trades exec_id; equity ts; events ts+kind), индексы (instance,
        ts DESC), received_at авторитетно, equity Numeric (не float). commands: статусы + ix активных.
-- [ ] 3. Instance-token auth: `require_principal("instance")` + владение (token.subject_id == instance_id).
+- [x] 3. Instance-token auth: `current_instance` (токен инстанса → свой Instance, SEC7). Выпуск instance-
+       токена при создании инстанса + Контракт-env деплоя (MF_INSTANCE_ID/TOKEN, MF_CORE_URL). Тест env обновлён.
 
 ## Ядро — приём телеметрии (S4 →)
 - [ ] 4. POST `/v1/telemetry/heartbeat` (→ instances.last_heartbeat_at, received_at авторитетно) +

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import ApiToken, User
+from app.models import ApiToken, Instance, User
 from app.security import hash_token, new_token
 
 _TTL = timedelta(hours=12)  # скользящий: продлевается при каждом использовании
@@ -89,6 +89,18 @@ def require_role(*roles: str):
         return user
 
     return dep
+
+
+def current_instance(
+    token: ApiToken = Depends(require_principal("instance")),
+    session: Session = Depends(get_session),
+) -> Instance:
+    # Токен инстанса привязан к своему инстансу (subject_id) — картридж видит ТОЛЬКО его (SEC7,
+    # шов S4). instance_id в URL не нужен: инстанс берём из токена, кросс-доступ невозможен.
+    inst = session.get(Instance, uuid.UUID(token.subject_id))
+    if inst is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "инстанс не найден")
+    return inst
 
 
 def ensure_owns(user: User, resource_owner_id: str) -> None:

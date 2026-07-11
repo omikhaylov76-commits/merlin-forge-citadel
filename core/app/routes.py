@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import write_audit
 from app.auth import current_user, ensure_owns, get_token, issue_token, require_role
+from app.config import Settings, get_settings
 from app.db import get_session
 from app.models import ApiToken, Instance, Job, User
 from app.security import DUMMY_PASSWORD_HASH, verify_password
@@ -96,6 +97,7 @@ def create_instance(
     body: CreateInstanceIn,
     operator: User = Depends(require_role("operator")),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     """Оператор заводит инстанс: строка instances(pending) + deploy-job. Railway тут не зовётся."""
     inst = Instance(
@@ -113,11 +115,23 @@ def create_instance(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "на этом счёте уже есть живой инстанс"
         ) from None
+    # Токен инстанса (принципал 'instance', скоуп — свой инстанс): им картридж шлёт телеметрию и
+    # берёт команды (шов S4). Выдаётся ОДИН раз здесь и уезжает в env деплоя (Контракт: секреты
+    # передаются при старте). Это платформенный токен, не ключ биржи (тот — конверт, ADR-0010).
+    instance_token = issue_token(
+        session, principal="instance", subject_id=str(inst.id), scope="instance"
+    )
     # Имя сервиса детерминировано от id — оркестратор ищет по нему «усынови или упади» (S3/S5).
+    # env по Контракту Бота v0 (MF_*). Токен — только в payload ядра/оркестратора, не в логах.
     payload = {
         "image": body.image,
         "name": f"mfc-inst-{inst.id}",
-        "env": {"MFC_INSTANCE_ID": str(inst.id), **(body.env or {})},
+        "env": {
+            "MF_INSTANCE_ID": str(inst.id),
+            "MF_INSTANCE_TOKEN": instance_token,
+            "MF_CORE_URL": settings.core_public_url,
+            **(body.env or {}),
+        },
     }
     job = Job(kind="deploy", instance_id=inst.id, status="pending", payload=payload)
     session.add(job)

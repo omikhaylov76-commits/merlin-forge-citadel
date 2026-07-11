@@ -48,7 +48,9 @@ def test_create_instance_enqueues_deploy(users, clean):
         job = s.get(Job, uuid.UUID(data["deploy_job_id"]))
         assert job.kind == "deploy" and job.status == "pending"
         assert job.payload["name"] == f"mfc-inst-{data['id']}"        # имя детерминировано от id
-        assert job.payload["env"]["MFC_INSTANCE_ID"] == data["id"]
+        env = job.payload["env"]
+        assert env["MF_INSTANCE_ID"] == data["id"]                    # Контракт Бота v0 (MF_*)
+        assert env["MF_INSTANCE_TOKEN"] and env["MF_CORE_URL"]  # токен инстанса + URL ядра
 
 
 def test_create_instance_requires_operator(users, clean):
