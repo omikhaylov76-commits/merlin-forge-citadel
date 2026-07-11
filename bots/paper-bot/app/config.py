@@ -30,6 +30,7 @@ def from_env() -> BotConfig:
         core_url=os.environ.get("MF_CORE_URL", "http://127.0.0.1:8000"),
         seed=int(os.environ.get("MF_SEED", "42")),
         tick_interval_s=float(os.environ.get("MF_TICK_S", "5")),
-        heartbeat_interval_s=float(os.environ.get("MF_HEARTBEAT_S", "30")),
+        # Контракт: heartbeat не реже раза в 60с — потолок 60 (иначе ложные stale/dead у часового).
+        heartbeat_interval_s=min(float(os.environ.get("MF_HEARTBEAT_S", "30")), 60.0),
         poll_wait_s=int(os.environ.get("MF_POLL_WAIT_S", "25")),
     )

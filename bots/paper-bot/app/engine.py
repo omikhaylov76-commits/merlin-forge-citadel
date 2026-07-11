@@ -39,6 +39,7 @@ class PaperEngine:
         self._position = Decimal("0")  # чистая открытая позиция (qty)
         self._exec_seq = 0
         self.state = "running"         # running | paused | stopping | stopped
+        self._close_tick: Tick | None = None  # результат stop_close — для идемпотентного ретрая
 
     # ── телеметрия ────────────────────────────────────────────────────────────
 
@@ -96,7 +97,11 @@ class PaperEngine:
             self.state = "running"
 
     def stop_close(self, now: datetime) -> Tick:
-        """ADR-0005: ЗАКРЫТЬ позицию (закрывающая сделка, если есть) + kill_switch + встать."""
+        """ADR-0005: ЗАКРЫТЬ позицию (закрывающая сделка) + kill_switch + встать. ИДЕМПОТЕНТНО:
+        повторный вызов (ретрай после сбоя пуша до ack) возвращает ТОТ ЖЕ tick — тот же exec_id/ts,
+        дедуп ядра безопасен; закрывающий филл и kill_switch не теряются на ретрае (MINOR 2)."""
+        if self._close_tick is not None:
+            return self._close_tick
         self.state = "stopping"
         events = [
             {"ts": now.isoformat(), "kind": "kill_switch", "detail": {"reason": "stop_close"}}
@@ -109,9 +114,9 @@ class PaperEngine:
                 "qty": float(abs(self._position)), "pnl": 0.0,
             })
             self._position = Decimal("0")
-        point = self._equity_point(now)
         self.state = "stopped"  # встали: цикл завершится, процесс выйдет
-        return Tick(equity=point, trades=trades, events=events)
+        self._close_tick = Tick(equity=self._equity_point(now), trades=trades, events=events)
+        return self._close_tick
 
     def heartbeat_status(self) -> str:
         """Контракт status: running|paused|stopping|error. stopped → бот выходит, не рапортует."""

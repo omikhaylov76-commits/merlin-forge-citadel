@@ -98,10 +98,12 @@ def test_stop_close_closes_stands_down_and_acks_ok():
         bot.tick_once(_NOW, mono=float(i))
     assert bot._engine.position > 0
     fc.commands.append({"cmd": "stop_close", "cmd_id": "c3"})
+    eq_before = len(fc.equity)
     should_stop = bot.tick_once(_NOW, mono=100.0)
     assert should_stop is True                           # встаём
     assert bot._engine.state == "stopped"
     assert bot._engine.position == 0                     # позиция закрыта
+    assert len(fc.equity) == eq_before + 1               # только tick-equity, не вторая (MINOR 1)
     assert fc.acks[-1] == {"cmd_id": "c3", "result": "ok", "detail": None}
     # kill_switch доложен событием
     assert any(ev["kind"] == "kill_switch" for batch in fc.events for ev in batch)

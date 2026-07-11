@@ -72,6 +72,20 @@ def test_stop_close_closes_position_and_emits_kill_switch():
     assert out.trades and out.trades[0]["side"] == "sell"  # закрывающая сделка
 
 
+def test_stop_close_is_idempotent():
+    # MINOR 2: ретрай stop_close (сбой пуша до ack) должен вернуть ТОТ ЖЕ tick — филл/kill_switch
+    # переэмитятся с тем же exec_id/ts (дедуп ядра безопасен), а не потеряются.
+    e = PaperEngine(seed=7)
+    for _ in range(20):
+        e.tick(_NOW)
+    first = e.stop_close(_NOW)
+    second = e.stop_close(_NOW)
+    assert second == first
+    assert e.position == Decimal("0")
+    if first.trades:
+        assert second.trades[0]["exec_id"] == first.trades[0]["exec_id"]
+
+
 def test_payloads_conform_to_schemas():
     e = PaperEngine(seed=7)
     eq_v = _validator("telemetry-equity")

@@ -67,10 +67,12 @@ class PaperBot:
             self._client.ack_command(cmd_id=cmd_id, result="ok")
             return False
         if cmd == "stop_close":
-            out = self._engine.stop_close(now)  # честно: закрыть позицию + kill_switch + встать
-            self._client.push_trades(out.trades)  # доложить закрывающие сделки/событие/equity
-            self._client.push_events(out.events)
-            self._client.push_equity(out.equity)
+            out = self._engine.stop_close(now)  # закрыть + kill_switch + встать (идемпотентно)
+            # Долговечный пуш закрывающей телеметрии ДО ack. Сбой пуша → ретрай (липкость ядра) шлёт
+            # ТОТ ЖЕ exec_id (дедуп) — филл не теряется (MINOR 2).
+            self._client.push_trades(out.trades)  # закрывающая сделка
+            self._client.push_events(out.events)  # kill_switch
+            # equity НЕ пушим: точка за этот ts уже ушла из tick(); вторая дедупнётся (MINOR 1)
             self._client.ack_command(cmd_id=cmd_id, result="ok")
             return True  # встаём: цикл завершится, процесс выйдет
         # неизвестная команда — ack error (ядро для stop_close держит липкость; тут не stop_close)
