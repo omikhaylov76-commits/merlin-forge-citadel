@@ -37,10 +37,10 @@ symbol) — недоверенный ввод: храним параметриз
        (ts-skew 422, dedup ON CONFLICT DO NOTHING, батч>500→413, currency=USDT). Pydantic=зеркало схем.
        13 тестов: dedup-идемпотентность, ts/currency/лимит, принципал 403 / чужой инстанс 404, sync схема↔модель.
 
-## Ядро — команды (S4 ←)
-- [ ] 5. GET `/v1/commands/next?wait=` (long-poll, липкий stop_close пока instance в stopping, OPS1) +
-       POST `/v1/commands/{cmd_id}/ack` (ok→stopped при stop_close; error→не гасить). Продюсер оператора
-       POST `/v1/instances/{id}/commands {kind}`. Аудит команд (закон №4). + тесты.
+- [x] 5. `commands.py` + `routes_commands.py`: GET `/commands/next` (long-poll to_thread, липкий
+       stop_close пока stopping OPS1) + ack (pause→paused, resume→running, stop_close ok→stopped /
+       error→не гасим). Продюсер оператора POST `/instances/{id}/commands`. Аудит доставки/ack/enqueue.
+       9 тестов: deliver/ack, липкость, ошибка stop_close, идемпотентность, чужая команда 404, auth.
 
 ## Замыкание
 - [ ] 6. Живой прогон: instance-токен → push heartbeat/equity/trades → stale-скан видит свежесть →
