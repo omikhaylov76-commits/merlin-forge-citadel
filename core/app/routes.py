@@ -13,7 +13,7 @@ from app.audit import write_audit
 from app.auth import current_user, ensure_owns, get_token, issue_token, require_role
 from app.db import get_session
 from app.models import ApiToken, User
-from app.security import verify_password
+from app.security import DUMMY_PASSWORD_HASH, verify_password
 
 router = APIRouter(prefix="/v1")
 
@@ -25,8 +25,13 @@ class LoginIn(BaseModel):
 
 @router.post("/auth/login")
 def login(body: LoginIn, session: Session = Depends(get_session)) -> dict:
-    user = session.scalar(select(User).where(User.email == body.email))
-    if user is None or not verify_password(body.password, user.password_hash):
+    email = body.email.strip().lower()  # #2: регистронезависимый логин (store+query .lower())
+    user = session.scalar(select(User).where(User.email == email))
+    # #1: argon2 тратим ВСЕГДА (dummy-хэш, если юзера нет) — константное время, без enumeration
+    ok = verify_password(body.password, user.password_hash if user else DUMMY_PASSWORD_HASH)
+    if user is None or not ok:
+        write_audit(session, actor=email[:128], action="login_failed")  # видимость брутфорса
+        session.commit()  # аудит неудачи должен пережить 401 (get_session откатывает исключения)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "неверные учётные данные")
     # TOTP — заготовка, в v1 выключен (включить до go-live: user.totp_secret + verify_totp).
     raw = issue_token(session, principal="user", subject_id=str(user.id), scope=f"role:{user.role}")

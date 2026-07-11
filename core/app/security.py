@@ -34,6 +34,11 @@ def verify_password(pw: str, hashed: str) -> bool:
         return False
 
 
+# Заранее посчитанный argon2-хэш для КОНСТАНТНОГО времени логина (#1): verify против него,
+# когда пользователя нет — задержка не выдаёт «есть/нет email» (enumeration).
+DUMMY_PASSWORD_HASH = hash_password("constant-time-guard")
+
+
 def verify_totp(secret: str, code: str) -> bool:
     # Заготовка: в v1 не вызывается из логина (TOTP off). Готова к включению до go-live.
     return pyotp.TOTP(secret).verify(code)

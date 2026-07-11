@@ -1,8 +1,10 @@
 """Гвозди auth (закон №8): логин→токен, revoke рвёт доступ, RBAC 403, владение 403, request-id."""
 
 from fastapi.testclient import TestClient
+from sqlalchemy import func, select
 
 from app.main import create_app
+from app.models import AuditLog
 
 
 def _login(client: TestClient, email: str, password: str) -> dict[str, str]:
@@ -55,3 +57,23 @@ def test_ownership_self_vs_other(users):
 def test_request_id_header(users):
     r = TestClient(create_app()).get("/healthz")
     assert r.headers.get("x-request-id")
+
+
+def test_login_case_insensitive(users):
+    # email хранится в нижнем регистре; логин ЗАГЛАВНЫМИ находит того же юзера (#2)
+    c = TestClient(create_app())
+    r = c.get("/v1/auth/me", headers=_login(c, "OP@MFC.LOCAL", "op-pass"))
+    assert r.json()["role"] == "operator"
+
+
+def test_failed_login_is_audited(users, session):
+    # неудачный вход пишется в audit_log (видимость брутфорса, threat #2, NEW от Куратора)
+    c = TestClient(create_app())
+    email = "ghost@mfc.local"  # уникальный, чтобы счётчик считал только этот тест
+    assert c.post("/v1/auth/login", json={"email": email, "password": "x"}).status_code == 401
+    n = session.scalar(
+        select(func.count())
+        .select_from(AuditLog)
+        .where(AuditLog.action == "login_failed", AuditLog.actor == email)
+    )
+    assert n >= 1

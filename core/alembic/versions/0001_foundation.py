@@ -27,12 +27,14 @@ def upgrade() -> None:
         "users",
         _id(),
         sa.Column("role", sa.String(16), nullable=False),
+        sa.Column("email", sa.String(255), nullable=False),  # логин (нижний регистр)
         sa.Column("password_hash", sa.Text(), nullable=False),
         sa.Column("totp_secret", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), server_default=_NOW, nullable=False),
         sa.CheckConstraint("role IN ('operator','client')", name="ck_users_role"),
         comment="Оператор и клиенты; роль строка+CHECK, не ENUM (расширять легко).",
     )
+    op.create_index("ix_users_email", "users", ["email"], unique=True)
     op.create_table(
         "api_tokens",
         _id(),
@@ -85,4 +87,5 @@ def downgrade() -> None:
     op.drop_table("audit_log")
     op.drop_index("ix_api_tokens_token_sha256", table_name="api_tokens")
     op.drop_table("api_tokens")
+    op.drop_index("ix_users_email", table_name="users")
     op.drop_table("users")
