@@ -43,7 +43,8 @@ symbol) — недоверенный ввод: храним параметриз
        9 тестов: deliver/ack, липкость, ошибка stop_close, идемпотентность, чужая команда 404, auth.
 
 ## Замыкание
-- [~] 6. Живой прогон ✅ (uvicorn): instance-токен из payload деплоя → heartbeat(starting→running)/
-       equity(dedup)/trades → stale-скан health ok → enqueue pause → бот poll/ack → paused; аудит цепочки.
-       Вики обновлена (core-api/seams S4/domain-model/telemetry-schemas). Осталось: независимое ревью →
-       roadmap/log merged:yes → merge в main (--no-ff) → QUEUE «готово к разбору».
+- [x] 6. Живой прогон ✅ + вики + независимое ревью (блокеров нет; M1 липкость stop_close, M2 TTL
+       машинных токенов, M4/N1/N6 закрыты) → MFC-005 слит в main (99942f8, --no-ff), ветка удалена,
+       roadmap/log merged:yes, QUEUE «готово к разбору».
+
+**ЗАКРЫТО. Merged: yes (main 99942f8). Следующее — MFC-006 paper-bot картридж (bots/paper-bot).**

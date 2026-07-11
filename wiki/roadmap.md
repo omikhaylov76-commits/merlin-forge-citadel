@@ -38,7 +38,11 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] MFC-004 Оркестратор + InfraDriver: миграция 0003 jobs + internal API аренды/ack (шов S3, ADR-0009)
       + продюсеры instances/teardown; модуль orchestrator/ (InfraDriver ABC + Fake/Docker/Railway + worker)
       — done 2026-07-11 · merged: yes (main ed18bb9). Боевая обкатка Railway — ниже (⚠️ схема GraphQL).
-- [ ] paper-bot: картридж по Контракту Бота v0, push-телеметрия + JSON-схемы (schema-first) — todo
+- [x] MFC-005 core-сторона Контракта Бота (шов S4): schema-first схемы v0 (contracts/) + миграция 0004
+      (equity/trades/events/commands) + instance-token auth + приём телеметрии (dedup/ts-skew) + команды
+      (long-poll липкий stop_close + ack, ADR-0005) — done 2026-07-11 · merged: yes (main 99942f8).
+- [ ] MFC-006 paper-bot: картридж (bots/paper-bot) по Контракту v0 — heartbeat/equity-синус/сделки,
+      честный pause/stop_close; клиент API S4. Обкатывает конвейер платформы до Пифагора — todo
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo
 - [ ] Консоль Оператора: минимальный флот-дашборд (после мокапа) — todo
 
