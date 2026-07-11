@@ -16,6 +16,7 @@ from app.instance_health import scan_once
 from app.logging import setup_logging
 from app.readiness import is_ready
 from app.routes import router
+from app.routes_internal import router as internal_router
 from app.scheduler import Scheduler
 
 
@@ -61,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return response
 
     app.include_router(router)
+    app.include_router(internal_router)  # internal jobs API (шов S3, ADR-0009)
 
     @app.get("/healthz")
     def healthz() -> dict[str, object]:

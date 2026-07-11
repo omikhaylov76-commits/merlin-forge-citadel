@@ -22,12 +22,18 @@ class Settings(BaseSettings):
     # dead — молчит существенно дольше. Это про здоровье ИНСТАНСА, не про сам часовой.
     instance_stale_after_seconds: int = 180
     instance_dead_after_seconds: int = 600
+    # jobs-транспорт шва S3 (MFC-004, ADR-0009): аренда, потолок long-poll, лимит попыток deploy.
+    job_lease_seconds: int = 60            # срок аренды; протух → job назад в очередь (attempts++)
+    job_longpoll_max_wait_seconds: int = 30  # верхний потолок ?wait= у GET /internal/jobs/next
+    job_max_deploy_attempts: int = 3       # 3 неудачи deploy → failed + teardown-компенсация (S3)
 
     @model_validator(mode="after")
     def _thresholds_ordered(self) -> "Settings":
         # stale раньше dead — иначе classify (проверяет dead первым) проглотит весь stale-диапазон.
         if self.instance_stale_after_seconds >= self.instance_dead_after_seconds:
             raise ValueError("instance_stale_after_seconds must be < instance_dead_after_seconds")
+        if self.job_max_deploy_attempts < 1:
+            raise ValueError("job_max_deploy_attempts must be >= 1")
         return self
 
 

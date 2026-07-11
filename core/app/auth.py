@@ -71,6 +71,17 @@ def current_user(
     return user
 
 
+def require_principal(*principals: str):
+    # Машинные токены (instance/orchestrator/ensemble) роли не имеют — их пускаем по принципалу.
+    # Пример: internal jobs API открыт только принципалу 'orchestrator' (ADR-0009, скоуп-токен).
+    def dep(token: ApiToken = Depends(get_token)) -> ApiToken:
+        if token.principal not in principals:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "принципал не разрешён")
+        return token
+
+    return dep
+
+
 def require_role(*roles: str):
     def dep(user: User = Depends(current_user)) -> User:
         if user.role not in roles:
