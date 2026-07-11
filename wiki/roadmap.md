@@ -24,9 +24,9 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 Цель: конвейер платформы целиком, без денег — на бумажном боте.
 - [x] MFC-000 проработка швов (pre-code): seams/flows/domain + ADR 0007–0011 (accepted 2026-07-10)
       + адверсариальный прогон (68 находок, seams-review.md) — done 2026-07-10
-- [x] MFC-001 core-скелет: FastAPI + Alembic (0001/0002) + /healthz+/readyz + auth (opaque-токены/
-      RBAC/владение/аудит, ADR-0008v2) + CI (гейт §2) — done 2026-07-11 (b8e8904) · merged: no
-      (на слиянии task/mfc-001 → main). «Часовой» вынесен в MFC-002.
+- [x] MFC-001 core-скелет: FastAPI + Alembic (0001) + /healthz+/readyz + auth (opaque-токены/
+      RBAC/владение/аудит, ADR-0008v2) + CI (гейт §2) — done 2026-07-11 · merged: yes (main e3b13a2).
+      «Часовой» вынесен в MFC-002.
 - [ ] MFC-001-доп из разбора: инвариант ≤1 инстанс/счёт; long-poll без БД-коннекта (нагруз-тест);
       индекс+ретеншн телеметрии; last_heartbeat_at вместо таблицы heartbeats — todo (в своих миграциях)
 - [ ] MFC-002 core-scheduler («часовой»): цикл + первая реальная свёртка (dead-man /healthz SCL3,
