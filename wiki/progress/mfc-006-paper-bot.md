@@ -28,11 +28,12 @@ heartbeat→часовой видит живость/флипает health; те
 - [x] 2. `engine.py` PaperEngine: детерминированный синус + seeded сделки, running/paused/stopping/
        stopped, позиция. Честно: pause=нет новых входов (позиции держатся), stop_close=закрыть+kill_switch+
        встать. 7 тестов: детерминизм, pause держит позицию, stop_close закрывает, payload'ы валидны по схемам.
-- [ ] 3. `client.py` — CoreClient (httpx): push heartbeat/equity/trades/events + GET commands/next + ack.
-       + тесты (httpx.MockTransport). Best-effort: сетевые ошибки не роняют (лог+продолжить).
-- [ ] 4. `bot.py` + `main.py` — цикл: heartbeat ≤60с + tick-телеметрия + опрос/исполнение команд
-       (pause/resume/stop_close честно, ack ok/error; stop_close → закрыть+встать+exit). + тесты (fake client).
-- [ ] 5. CI: джоба `paper-bot` (ruff+pytest, без Postgres).
+- [x] 3. `client.py` CoreClient (httpx): push heartbeat/equity/trades/events + commands next/ack.
+       5 тестов (MockTransport). Ошибки не глотает — best-effort решает цикл.
+- [x] 4. `bot.py` + `main.py` — цикл: heartbeat ≤60с (троттлинг) + tick-телеметрия + честное исполнение
+       команд (pause держит, resume, stop_close→закрыть+доложить+ack ok+встать; unknown→error). best-effort
+       к сбоям. 7 тестов (FakeClient).
+- [x] 5. CI: джоба `paper-bot` (ruff+pytest, без Postgres) добавлена.
 - [ ] 6. Живой сквозняк: instance из ядра → paper-bot процессом → heartbeat/health, телеметрия копится,
        pause (позиции держатся) и stop_close (закрыл+встал) честно. Вики (README/seams/entities) +
        roadmap/log + code-review → merge в main (--no-ff) + push → QUEUE «готово к разбору».
