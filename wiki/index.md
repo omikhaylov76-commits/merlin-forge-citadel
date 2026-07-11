@@ -42,6 +42,7 @@ updated: 2026-07-10
 - [alerts](runbooks/alerts.md) — что будит Оператора в Telegram.
 - [key-rotation](runbooks/key-rotation.md) — ротация/отзыв ключа биржи (каркас, Ф2).
 - [railway-shakedown](runbooks/railway-shakedown.md) — обкатка Railway на живом paper-bot; ⛔ гейт токена Оператора.
+- [pifagor-cartridge-deploy](runbooks/pifagor-cartridge-deploy.md) — деплой картриджа Пифагора (ghcr→Railway, безопасный режим); ⛔ гейт Оператора (ghcr-доступ + demo-ключи).
 
 ## research
 - [passport-spec](research/passport-spec.md) — паспорт профиля; OOS обязателен (закон Кузницы).
