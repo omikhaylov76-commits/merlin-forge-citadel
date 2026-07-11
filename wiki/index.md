@@ -33,6 +33,7 @@ updated: 2026-07-10
 - [0009](decisions/0009-jobs-transport.md) — jobs через internal API (long-poll+lease+fencing) (v2).
 - [0010](decisions/0010-key-intake-asymmetric.md) — асимметричный конверт + allowlist образа (v2, уточняет 0004).
 - [0011](decisions/0011-billing-hwm-model.md) — модель HWM (cashflows, уровень счёта, сверка); формула — Ф3.
+- [0012](decisions/0012-healthz-scheduler-deadman.md) — dead-man часового в /healthz (вариант A: показывать, не гейтить).
 
 ## runbooks
 - [onboarding-client](runbooks/onboarding-client.md) — путь клиента до go-live.

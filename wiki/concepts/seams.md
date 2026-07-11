@@ -2,8 +2,8 @@
 type: concept
 title: Швы платформы — каталог границ и контрактов
 tags: [architecture, seams, contracts]
-updated: 2026-07-10
-sources: [concepts/architecture.md, decisions/0001…0010, задача MFC-000]
+updated: 2026-07-11
+sources: [concepts/architecture.md, decisions/0001…0010, 0012, задача MFC-000]
 ---
 # Швы платформы (единый источник)
 
@@ -76,7 +76,7 @@ sources: [concepts/architecture.md, decisions/0001…0010, задача MFC-000]
 Инвариант каналов (SCL1): long-poll (S3/S4) НЕ держит БД-сессию/транзакцию — иначе флот вешает пул ядра.
 Reconcile-цикл (OPS13): периодически сверять instances ↔ сервисы `mfc-inst-*`; сироты → алерт+компенсация.
 Алерты (SCL3): outbox с severity, приоритетная выборка (команды клиента/доступ к ключам — вне очереди),
-коалесценция однотипных, dead-man (тик диспетчера в /healthz). Полный триаж отказов — seams-review.md.
+коалесценция однотипных, dead-man (тик диспетчера в /healthz — реализован в MFC-002: блок `scheduler`, ADR-0012; stale-скан heartbeat — следующая свёртка). Полный триаж отказов — seams-review.md.
 
 ## Трубы-заглушки (что лежит в фундаменте закрытым)
 
