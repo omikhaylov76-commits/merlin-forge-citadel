@@ -34,6 +34,7 @@ updated: 2026-07-10
 - [0010](decisions/0010-key-intake-asymmetric.md) — асимметричный конверт + allowlist образа (v2, уточняет 0004).
 - [0011](decisions/0011-billing-hwm-model.md) — модель HWM (cashflows, уровень счёта, сверка); формула — Ф3.
 - [0012](decisions/0012-healthz-scheduler-deadman.md) — dead-man часового в /healthz (вариант A: показывать, не гейтить).
+- [0013](decisions/0013-instances-deferred-fk.md) — отложенные FK у instances (материализуем без родителей, YAGNI).
 
 ## runbooks
 - [onboarding-client](runbooks/onboarding-client.md) — путь клиента до go-live.
