@@ -26,3 +26,6 @@ dist/
 
 # --- локальные настройки Claude (личные, не проектные) ---
 .claude/settings.local.json
+
+# --- локальный канал Куратор↔Инженер (PROTOCOL/DIRECTIVES/QUEUE), не в git ---
+_curator/
