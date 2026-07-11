@@ -34,6 +34,7 @@ heartbeat→часовой видит живость/флипает health; те
        команд (pause держит, resume, stop_close→закрыть+доложить+ack ok+встать; unknown→error). best-effort
        к сбоям. 7 тестов (FakeClient).
 - [x] 5. CI: джоба `paper-bot` (ruff+pytest, без Postgres) добавлена.
-- [ ] 6. Живой сквозняк: instance из ядра → paper-bot процессом → heartbeat/health, телеметрия копится,
-       pause (позиции держатся) и stop_close (закрыл+встал) честно. Вики (README/seams/entities) +
-       roadmap/log + code-review → merge в main (--no-ff) + push → QUEUE «готово к разбору».
+- [~] 6. Живой сквозняк ✅ (paper-bot процессом vs ядро): heartbeat→running+health ok; pause честно
+       (сделки замерли на 8, equity 7→18 — позиции держатся); stop_close честно (закрыл сделкой #9 +
+       kill_switch, ack ok, процесс exit 0 — встал). Вики (seams/README/log) обновлена. Осталось:
+       независимое ревью → roadmap/log merged:yes → merge в main (--no-ff) + push → QUEUE «готово к разбору».
