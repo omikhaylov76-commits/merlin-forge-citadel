@@ -33,9 +33,9 @@ symbol) — недоверенный ввод: храним параметриз
        токена при создании инстанса + Контракт-env деплоя (MF_INSTANCE_ID/TOKEN, MF_CORE_URL). Тест env обновлён.
 
 ## Ядро — приём телеметрии (S4 →)
-- [ ] 4. POST `/v1/telemetry/heartbeat` (→ instances.last_heartbeat_at, received_at авторитетно) +
-       `/equity` `/trades` `/events` (валидация ts |ts−now|<48ч, dedup on-conflict-do-nothing, лимит
-       батча → 413). equity в USDT (currency обязателен, MON9). + тесты (идемпотентность, владение, ts).
+- [x] 4. `routes_telemetry.py`: heartbeat (→ last_heartbeat_at, кормит stale-скан) + equity/trades/events
+       (ts-skew 422, dedup ON CONFLICT DO NOTHING, батч>500→413, currency=USDT). Pydantic=зеркало схем.
+       13 тестов: dedup-идемпотентность, ts/currency/лимит, принципал 403 / чужой инстанс 404, sync схема↔модель.
 
 ## Ядро — команды (S4 ←)
 - [ ] 5. GET `/v1/commands/next?wait=` (long-poll, липкий stop_close пока instance в stopping, OPS1) +
