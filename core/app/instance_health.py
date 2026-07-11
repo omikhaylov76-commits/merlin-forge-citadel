@@ -14,13 +14,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import AuditLog, Instance
 
 # Статусы, где бот обязан слать heartbeat (иначе health не о чем).
 _LIVE_STATUSES = ("running", "paused", "stopping")
+
+# Ключ transaction-advisory-lock: один сканер на кластер. Rolling deploy Railway накладывает
+# старый и новый процесс на ~30с; без замка два часовых задвоят строки append-only audit (закон №4).
+_SCAN_LOCK_KEY = 0x6D66_6303  # стабильный произвольный bigint («mfc»+03)
 
 
 def classify(age_s: float, stale_after_s: float, dead_after_s: float) -> str:
@@ -33,10 +37,16 @@ def classify(age_s: float, stale_after_s: float, dead_after_s: float) -> str:
 
 
 def scan_once(sm: sessionmaker[Session], stale_after_s: float, dead_after_s: float) -> int:
-    """Один проход: пересчитать health по свежести heartbeat. Возвращает число изменений."""
+    """Один проход: пересчитать health по свежести heartbeat. Возвращает число изменений.
+
+    Транзакционный advisory-lock делает свёртку single-writer на кластере: если другой процесс
+    уже сканирует (rolling deploy / реплики), тихо уступаем (0). Замок снимается на commit.
+    """
     now = datetime.now(UTC)
     changed = 0
     with sm() as session:
+        if not session.execute(select(func.pg_try_advisory_xact_lock(_SCAN_LOCK_KEY))).scalar():
+            return 0  # другой сканер держит замок — не задваиваем append-only audit
         instances = session.scalars(
             select(Instance).where(
                 Instance.status.in_(_LIVE_STATUSES),

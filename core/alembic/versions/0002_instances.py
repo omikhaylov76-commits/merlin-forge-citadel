@@ -43,8 +43,9 @@ def upgrade() -> None:
         ),
         comment="Инстанс бота: status=намерение, health=свежесть heartbeat. FK — ADR-0013.",
     )
-    # ≤1 живой инстанс на счёт (OPS3/MON2): партиал-уникальный индекс по «занятым» статусам —
-    # терминальные stopped/failed_deploy освобождают счёт, остальное его занимает.
+    # ≤1 живой инстанс на счёт (OPS3/MON2): партиал-уникальный индекс по «занятым» статусам.
+    # stopped/failed_deploy освобождают счёт; failed/stopping_failed НАМЕРЕННО занимают — у них
+    # возможны открытые позиции, второй бот на тот же счёт недопустим (fail-safe).
     op.create_index(
         "uq_instances_one_live_per_account",
         "instances",

@@ -5,6 +5,7 @@ os.getenv. extra="ignore" — чтобы orchestrator-only переменные 
 RAILWAY_API_TOKEN) в общем .env не роняли конфиг ядра: ядро их не читает и знать не должно.
 """
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,13 @@ class Settings(BaseSettings):
     # dead — молчит существенно дольше. Это про здоровье ИНСТАНСА, не про сам часовой.
     instance_stale_after_seconds: int = 180
     instance_dead_after_seconds: int = 600
+
+    @model_validator(mode="after")
+    def _thresholds_ordered(self) -> "Settings":
+        # stale раньше dead — иначе classify (проверяет dead первым) проглотит весь stale-диапазон.
+        if self.instance_stale_after_seconds >= self.instance_dead_after_seconds:
+            raise ValueError("instance_stale_after_seconds must be < instance_dead_after_seconds")
+        return self
 
 
 def get_settings() -> Settings:

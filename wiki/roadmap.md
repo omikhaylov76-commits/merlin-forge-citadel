@@ -73,3 +73,5 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - Кокпит Пифагора (шов S9) — прокси через core к внутреннему порту; нужен ADR (COH7); v1 хватает телеметрии.
 - pgbouncer перед кластером ботов — включить по росту флота (ADR-0007v2).
 - Реконсиляция governance-доков (CLAUDE.md-перечень вики, WORKING_AGREEMENTS §2, root README о секретах) — за Куратором.
+- Health-семантика never-reported инстанса (обзор MFC-003): дефолт `health='ok'` — ложно-зелёный для running без единого heartbeat; ввести `unknown`/`pending` или дефолт `stale` (решение Куратора, вместе с deploy-watch Ф2).
+- Свёртка/ядро берут глобальный `get_sessionmaker` (игнорируя injected `settings.database_url`) — пред-существующее; per-app engine = рефактор db.py по нужде (обзор MFC-003).

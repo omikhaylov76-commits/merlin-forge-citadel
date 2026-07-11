@@ -4,9 +4,11 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from app.config import Settings
 from app.db import get_sessionmaker
 from app.instance_health import classify, scan_once
 from app.models import Instance
@@ -100,3 +102,61 @@ def test_one_live_instance_per_account(sm) -> None:
     with sm() as s:
         _mk(s, "stopped", 10, account_id=acct)
         s.commit()
+
+
+def test_paused_and_stopping_are_scanned(sm) -> None:
+    with sm() as s:
+        paused = _mk(s, "paused", 200)      # → stale
+        stopping = _mk(s, "stopping", 700)  # → dead
+        s.commit()
+        pid, sid = paused.id, stopping.id
+    assert scan_once(sm, 180, 600) == 2
+    with sm() as s:
+        assert s.get(Instance, pid).health == "stale"
+        assert s.get(Instance, sid).health == "dead"
+
+
+def test_escalation_and_recovery(sm) -> None:
+    with sm() as s:
+        inst = _mk(s, "running", 200)  # → stale
+        s.commit()
+        iid = inst.id
+    assert scan_once(sm, 180, 600) == 1  # ok → stale
+
+    with sm() as s:  # heartbeat протух сильнее → stale → dead
+        s.get(Instance, iid).last_heartbeat_at = datetime.now(UTC) - timedelta(seconds=700)
+        s.commit()
+    assert scan_once(sm, 180, 600) == 1
+
+    with sm() as s:  # свежий heartbeat → dead → ok (восстановление)
+        s.get(Instance, iid).last_heartbeat_at = datetime.now(UTC)
+        s.commit()
+    assert scan_once(sm, 180, 600) == 1
+
+    with sm() as s:
+        assert s.get(Instance, iid).health == "ok"
+        n = s.execute(
+            text("SELECT count(*) FROM audit_log WHERE action='instance_health' AND entity=:e"),
+            {"e": str(iid)},
+        ).scalar()
+    assert n == 3  # три перехода записаны (ok→stale→dead→ok)
+
+
+def test_index_failed_deploy_frees_but_failed_occupies(sm) -> None:
+    a = uuid.uuid4()
+    with sm() as s:  # failed_deploy освобождает счёт → уживается с running
+        _mk(s, "running", 10, account_id=a)
+        _mk(s, "failed_deploy", 10, account_id=a)
+        s.commit()
+    b = uuid.uuid4()
+    with sm() as s:
+        _mk(s, "running", 10, account_id=b)
+        s.commit()
+    with pytest.raises(IntegrityError), sm() as s:  # failed занимает → коллизия с running
+        _mk(s, "failed", 10, account_id=b)
+        s.commit()
+
+
+def test_inverted_thresholds_rejected() -> None:
+    with pytest.raises(ValidationError):
+        Settings(instance_stale_after_seconds=600, instance_dead_after_seconds=180)
