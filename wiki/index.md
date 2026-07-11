@@ -60,3 +60,4 @@ updated: 2026-07-10
 - [_TEMPLATE](handoffs/_TEMPLATE.md)
 - [HANDOFF_2026-07-10_session_1](handoffs/HANDOFF_2026-07-10_session_1.md) — сессия-основание: концепция, 6 ADR, скелет, вики.
 - [HANDOFF_2026-07-11_session_2](handoffs/HANDOFF_2026-07-11_session_2.md) — MFC-000 швы + ADR 0007–0011, GOV-1, MFC-001 core (merged).
+- [HANDOFF_2026-07-11_session_3](handoffs/HANDOFF_2026-07-11_session_3.md) — MFC-002 часовой + MFC-003 instances/stale-скан (ADR 0012–0013, merged).
