@@ -35,7 +35,9 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] MFC-003 instances + stale-скан: таблица инстансов (миграция 0002, FK отложены ADR-0013,
       ≤1 живой/счёт) + первая боевая свёртка часового (health ok→stale→dead по heartbeat, audit,
       advisory-lock single-writer) — done 2026-07-11 · merged: yes (main b963b55).
-- [ ] Оркестратор + InfraDriver (Railway GraphQL; интерфейс абстрагирован, план Б — DockerDriver) — todo
+- [x] MFC-004 Оркестратор + InfraDriver: миграция 0003 jobs + internal API аренды/ack (шов S3, ADR-0009)
+      + продюсеры instances/teardown; модуль orchestrator/ (InfraDriver ABC + Fake/Docker/Railway + worker)
+      — done 2026-07-11 · merged: yes (main ed18bb9). Боевая обкатка Railway — ниже (⚠️ схема GraphQL).
 - [ ] paper-bot: картридж по Контракту Бота v0, push-телеметрия + JSON-схемы (schema-first) — todo
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo
 - [ ] Консоль Оператора: минимальный флот-дашборд (после мокапа) — todo

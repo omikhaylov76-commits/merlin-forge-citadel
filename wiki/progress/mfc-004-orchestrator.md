@@ -47,5 +47,7 @@ HTTP (шов S3) + таблица-контракт `jobs` (владелец сх
 - [x] 9. Живой сквозной прогон (uvicorn core + HTTP): deploy — instance pending→deploying→starting,
        infra_ref=railway:fake:mfc-inst-…, job done; teardown — →stopping→stopped, infra_ref очищен,
        обе job done, аудит цепочки (instance_created→deploy_enqueued→job_leased→job_ack ×2). ✅
-- [~] 10. Вики (G): core-api/seams/domain-model/README оркестратора обновлены. Осталось: независимое
-       ревью (в работе) → roadmap+log merged:yes → ⛔ слияние в main (слово-подтверждение).
+- [x] 10. Вики (G) обновлена; независимое ревью пройдено (блокер ack + 3 nit закрыты); MFC-004 слит в
+       main (ed18bb9, --no-ff), ветка удалена; roadmap/log merged:yes. Отложено в QUEUE: OPS13, аудит отказов.
+
+**ЗАКРЫТО. Merged: yes (main ed18bb9). Следующее по маршруту — paper-bot по Контракту Бота v0.**
