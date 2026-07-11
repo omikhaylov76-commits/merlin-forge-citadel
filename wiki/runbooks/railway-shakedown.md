@@ -42,6 +42,23 @@ sources: [decisions/0003-railway-first.md, entities/railway.md, orchestrator/app
 Любой живой сервис после обкатки — снести (`destroy`), чтобы не капал compute. OPS13-reconcile сирот
 (reconcile instances↔`mfc-inst-*`) — ОТДЕЛЬНАЯ MFC, гейт до Ф2 (разбор Куратора #2).
 
-## После обкатки
+## Результат обкатки 2026-07-11 (deployability ✅ через CLI)
+Через Railway CLI (авторизован Оператором) в изолированном проекте `mfc-paper-shakedown`:
+- **Railway СОБРАЛ наш Dockerfile** (build-логи: python:3.12-slim → COPY app → pip install → образ, push).
+- **Railway ЗАПУСТИЛ наш процесс**: рантайм-логи показали наш код (`bot.py tick_once → client heartbeat →
+  httpx.post`) с `ConnectError: Connection refused` к локальному `MF_CORE_URL` — ожидаемо (ядро локальное,
+  из контейнера недостижимо); best-effort ловит и продолжает. Картридж живёт на Railway.
+- Прибрано: `railway down` + удаление проекта (`Project is deleted`) — compute не капает.
+
+**Допущение №3 на уровне деплоя подтверждено: Railway собирает и гоняет наш картридж.**
+
+## Осталось (полная сверка драйвера — меньший, гейтованный шаг)
+CLI-деплой обошёл сам `RailwayDriver` (использовал `railway up`, не orchestrator→GraphQL). Чтобы закрыть
+сверку GraphQL-схемы драйвера (главная цель), нужно: (1) образ paper-bot в реестре (GHCR/Docker Hub —
+serviceCreate драйвера принимает image, не сборку-из-исходников); (2) **RAILWAY_API_TOKEN** в env
+оркестратора (Оператор заводит в дашборде, кладёт сам); (3) прогон orchestrator `DRIVER=railway` →
+реальные ответы Railway на find/create/delete → починить `railway.py` где схема разошлась. Отдельный заход.
+
+## После полной сверки
 Схема GraphQL подтверждена/починена → Ф1 закрыта. Дальше — **гейт Ф2**: снимок Пифагора (Оператор
 подтверждает коммит).
