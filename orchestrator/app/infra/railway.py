@@ -1,15 +1,16 @@
 """RailwayDriver — InfraDriver поверх Railway GraphQL API v2 (ADR-0003, entity railway).
 
-⚠️  БОЕВОЙ ПРОГОН RAILWAY — ОТДЕЛЬНАЯ ВЕХА roadmap («Обкатка Railway API на живом инстансе»).
-Точные имена полей GraphQL (serviceCreate / serviceDelete / services), многошаговость деплоя
-(environment + variableCollectionUpsert + redeploy), не-атомарность create-и-поиска (OPS2) и квоты
-подтверждаются на ЖИВОМ инстансе. Здесь — структура запросов, разбор ответов и КОРРЕКТНАЯ логика
-использования (усынови-или-создай, идемпотентный destroy); признать «схему уточнит обкатка» честнее,
-чем выдать непроверенный GraphQL за истину. Сетевой слой — httpx (в тестах подменяется).
+✅ СХЕМА ПОДТВЕРЖДЕНА НА ЖИВОМ RAILWAY (обкатка 2026-07-11): FindService (project.services.edges),
+serviceCreate (ServiceCreateInput), serviceDelete и формат infra_ref прошли против реального API —
+полный цикл deploy→status→destroy отработал. Детальный маппинг deployment-статуса и многошаговость
+(variableCollectionUpsert/redeploy) — по мере надобности; на v1 хватает существования сервиса.
 
 Идемпотентность по имени (S3/S5, OPS2): сервис зовётся mfc-inst-{id} (ядро задаёт детерминированно);
 перед созданием ищем его в проекте — «усынови или создай», дубль после create удаляем.
 Секретов биржи в v1 нет (paper-bot; конверт-шифрование — Ф2).
+
+Сетевой слой — httpx с trust_env=False: обкатка показала, что с trust_env=True клиент ВИСНЕТ на
+некоторых окружениях (netrc/CA/proxy из env); прямой вызов API прокси не требует.
 """
 
 from __future__ import annotations
@@ -53,7 +54,9 @@ class RailwayDriver(InfraDriver):
         self._project = project_id
         self._url = api_url
         # Инъекция клиента — точка подмены в тестах (MockTransport); иначе — реальный httpx.
-        self._client = client or httpx.Client(timeout=timeout)
+        # trust_env=False: обкатка показала зависание клиента при чтении netrc/CA/proxy из env;
+        # прямому вызову Railway API прокси не нужен (без этого POST висел мимо своего таймаута).
+        self._client = client or httpx.Client(timeout=timeout, trust_env=False)
 
     def _gql(self, query: str, variables: dict) -> dict:
         """Один GraphQL-вызов. Сеть/HTTP/GraphQL-ошибки → InfraError (backoff+release)."""
