@@ -80,8 +80,12 @@ class PifagorReader:
 
     def stop_close(self) -> None:
         """ADR-0005 stop_close: защёлкнуть kill-switch (durable). Движок гасит вход/отменяет
-        незалитое, под LIVE_TRADING флэттит позиции; в dry-run — логирует. Латч sticky до clear."""
-        self._killswitch.apply_state(self.capital_store, self._killswitch.STOP)
+        незалитое, под LIVE_TRADING флэттит позиции; в dry-run — логирует. Латч sticky до clear.
+        apply_state → None, если леджер не засеян (mutate=False) — тогда РЕЙЗИМ: цикл не должен
+        ack'нуть ok и встать на НЕсработавшем латче (ядро держит липкость → повтор позже)."""
+        state = self._killswitch.apply_state(self.capital_store, self._killswitch.STOP)
+        if state != self._killswitch.STOP:
+            raise RuntimeError("stop_close: kill-switch не защёлкнулся (леджер не засеян)")
 
     def close(self) -> None:
         closer = getattr(self.db, "close", None)

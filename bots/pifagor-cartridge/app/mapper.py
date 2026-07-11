@@ -13,6 +13,13 @@
 
 Курсоры по `id` (autoincrement PK, монотонен) отсекают отправленное — без повторной отсылки окна
 каждый тик (ядро дедупит, но так дешевле). На рестарте курсор=0 → одно окно ре-отправится (дедуп).
+
+⚠️ Компромисс окна (ревью #1): build_monitor отдаёт лишь новейшие TRADES_WINDOW/EVENTS_WINDOW строк
+(закрытое recent-N). Если НАД курсором накопилось больше окна (многочасовой даунтайм ядра при
+активной торговле ИЛИ первый коннект к БД с бэклогом), старые строки выскользнут из окна и курсор
+их перепрыгнет = ПРОПУСК. Следствие «телеметрия только через build_monitor» (ADR-0001, faithful);
+цикл детектит прыжок курсора >окна и логирует WARNING (bot._warn_scroll_gap). Полный фикс (курсорный
+direct-read из БД в обход окна — тоже faithful, это сырой журнал, не агрегат) — в QUEUE Куратору.
 """
 
 from __future__ import annotations
@@ -21,6 +28,10 @@ import json
 from datetime import UTC, datetime
 
 _SIDE = {"buy": "buy", "sell": "sell", "long": "buy", "short": "sell"}
+
+# Окна build_monitor (db.closed_trades_recent(200) / events_recent(50)) — для детекта пропуска.
+TRADES_WINDOW = 200
+EVENTS_WINDOW = 50
 
 
 def _num(v) -> float:

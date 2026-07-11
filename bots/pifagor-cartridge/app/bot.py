@@ -47,27 +47,43 @@ class PifagorCartridge:
         hb = self._cfg.heartbeat_interval_s
         if self._last_hb_mono is None or mono - self._last_hb_mono >= hb:
             status = mapper.heartbeat_status(monitor, paused=self._reader.is_paused())
-            self._send(lambda: self._client.heartbeat(
+            # каденцию сдвигаем ТОЛЬКО при успехе: провал → следующий тик ретраит (не ждём полный
+            # интервал — иначе при MF_HEARTBEAT_S≈60 один провал пробил бы 60с-дедлайн Контракта)
+            if self._send(lambda: self._client.heartbeat(
                 status=status, uptime_s=mono - self._start_mono, contract_version=CONTRACT_VERSION,
-            ), "heartbeat")
-            self._last_hb_mono = mono
+            ), "heartbeat"):
+                self._last_hb_mono = mono
 
         self._push_telemetry(monitor, now)
-        return self._handle_command(now)
+        return self._handle_command(now, mono)
 
     def _push_telemetry(self, monitor: dict, now: datetime) -> None:
         # equity — точка за ts=now; дедуп ядром по (instance, ts). Сбой → новая точка на след. тике.
         self._send(lambda: self._client.push_equity(
             mapper.equity_point(monitor, ts_iso=now.isoformat())), "equity")
         # trades / events — курсор двигаем лишь при не-транзиентном исходе (at-least-once)
-        trades, new_tc = mapper.trades_batch(monitor, after_id=self._trade_cursor)
+        prev_tc = self._trade_cursor
+        trades, new_tc = mapper.trades_batch(monitor, after_id=prev_tc)
         if not trades or self._push_batch(self._client.push_trades, trades, "trades"):
             self._trade_cursor = new_tc
-        events, new_ec = mapper.events_batch(monitor, after_id=self._event_cursor)
+            self._warn_scroll_gap("trades", prev_tc, new_tc, mapper.TRADES_WINDOW)
+        prev_ec = self._event_cursor
+        events, new_ec = mapper.events_batch(monitor, after_id=prev_ec)
         if not events or self._push_batch(self._client.push_events, events, "events"):
             self._event_cursor = new_ec
+            self._warn_scroll_gap("events", prev_ec, new_ec, mapper.EVENTS_WINDOW)
 
-    def _handle_command(self, now: datetime) -> bool:
+    @staticmethod
+    def _warn_scroll_gap(label: str, prev: int, new: int, window: int) -> None:
+        """Детект пропуска (ревью #1): build_monitor отдаёт лишь новейшие `window` строк (закрытое
+        recent-N). Курсор прыгнул больше окна → старые строки над курсором выскользнули = возможен
+        пропуск телеметрии. ADR-0001-компромисс (всё через build_monitor); полный фикс — курсорный
+        direct-read из БД (в QUEUE Куратору). Здесь — хотя бы громко surface'им."""
+        if new - prev > window:
+            log.warning("%s: курсор прыгнул на %d (>окно build_monitor=%d) — старые записи могли "
+                        "выпасть из окна (ВОЗМОЖЕН ПРОПУСК)", label, new - prev, window)
+
+    def _handle_command(self, now: datetime, mono: float) -> bool:
         try:
             resp = self._client.next_command(wait=self._cfg.poll_wait_s)
         except PermanentError as exc:
@@ -75,6 +91,9 @@ class PifagorCartridge:
             return False
         except TransientError as exc:
             log.warning("commands/next: транзиент (%s) — пропуск, повтор на след. тике", exc)
+            return False
+        except ValueError as exc:  # малформед 2xx тело (JSONDecodeError) — не роняем тик
+            log.warning("commands/next: битый JSON ответа (%s) — пропуск опроса", exc)
             return False
         cmd, cmd_id = resp.get("cmd"), resp.get("cmd_id")
         if not cmd_id or cmd in (None, "none"):
@@ -88,11 +107,13 @@ class PifagorCartridge:
             self._ack(cmd_id, "ok")
             return False
         if cmd == "stop_close":
-            # kill-switch латч (durable): движок гасит вход/флэттит под LIVE_TRADING
+            # kill-switch латч. Рейзит, если латч НЕ встал (леджер не засеян) → run() поймает;
+            # ack/stand НЕ будет, команда останется липкой (повтор, когда леджер засеется).
             self._reader.stop_close()
             # немедленный «stopping» heartbeat — видимость стопа в ядре даже без движка
+            uptime = mono - self._start_mono if self._start_mono is not None else 0.0
             self._send(lambda: self._client.heartbeat(
-                status="stopping", uptime_s=0.0, contract_version=CONTRACT_VERSION), "heartbeat")
+                status="stopping", uptime_s=uptime, contract_version=CONTRACT_VERSION), "heartbeat")
             self._ack(cmd_id, "ok")
             return True  # встаём: цикл завершится, процесс выйдет (restartPolicy=never)
         # неизвестная команда — ack error (это не stop_close, липкость ядра тут не держит)

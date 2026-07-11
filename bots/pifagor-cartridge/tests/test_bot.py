@@ -5,6 +5,8 @@
 
 from datetime import UTC, datetime
 
+import pytest
+
 from app.bot import PifagorCartridge
 from app.client import PayloadTooLarge, PermanentError, TransientError
 from app.config import CartridgeConfig
@@ -25,8 +27,15 @@ class FakeClient:
         self.heartbeats, self.equities, self.trades, self.events, self.acks = [], [], [], [], []
         self.cmds: list[dict] = []
         self.trade_errors: list[Exception | None] = []   # по одному на вызов push_trades
+        self.hb_errors: list[Exception | None] = []       # по одному на вызов heartbeat
+        self.hb_attempts = 0
 
     def heartbeat(self, *, status, uptime_s, contract_version):
+        self.hb_attempts += 1
+        if self.hb_errors:
+            err = self.hb_errors.pop(0)
+            if err is not None:
+                raise err
         self.heartbeats.append(status)
 
     def push_equity(self, point):
@@ -56,6 +65,7 @@ class FakeReader:
             "trades": [], "events": []}
         self.paused = False
         self.calls: list[str] = []
+        self.stop_close_exc: Exception | None = None   # леджер не засеян → латч не встал
 
     def snapshot(self, *, now_ms=None):
         return self.monitor
@@ -73,6 +83,8 @@ class FakeReader:
 
     def stop_close(self):
         self.calls.append("stop_close")
+        if self.stop_close_exc is not None:
+            raise self.stop_close_exc
 
 
 def _bot(client, reader, cfg=None):
@@ -174,3 +186,35 @@ def test_413_splits_batch():
     # после дробления оба элемента доставлены отдельными пушами
     delivered = [t["exec_id"] for batch in c.trades for t in batch]
     assert sorted(delivered) == ["dk1", "dk2"]
+
+
+# ── ревью-фиксы ──────────────────────────────────────────────────────────────
+
+def test_stop_close_unseeded_no_ack_no_stand():
+    """Латч не встал (леджер не засеян) → reader.stop_close рейзит → НЕ ack'аем ok, НЕ встаём."""
+    c, r = FakeClient(), FakeReader()
+    r.stop_close_exc = RuntimeError("kill-switch не защёлкнулся")
+    c.cmds = [{"cmd": "stop_close", "cmd_id": "s1"}]
+    with pytest.raises(RuntimeError):
+        _bot(c, r).tick_once(NOW, 0.0)      # рейз пробивает наверх (run() поймает best-effort)
+    assert c.acks == []                      # ложного ack ok нет → команда останется липкой
+
+
+def test_failed_heartbeat_not_throttled_retries_next_tick():
+    """Провал heartbeat НЕ двигает каденцию → следующий тик ретраит (не ждём полный интервал)."""
+    c, r = FakeClient(), FakeReader()
+    c.hb_errors = [TransientError("503", status=503)]   # первый heartbeat падает транзиентно
+    bot = _bot(c, r)
+    bot.tick_once(NOW, 0.0)                 # heartbeat #1 (провал) — каденция НЕ сдвинута
+    bot.tick_once(NOW, 1.0)                 # 1с < 30с, но каденция не сдвигалась → heartbeat #2
+    assert c.hb_attempts == 2 and c.heartbeats == ["running"]   # вторая попытка доставлена
+
+
+def test_scroll_gap_warns_on_big_cursor_jump(caplog):
+    """Курсор прыгнул больше окна build_monitor → WARNING о возможном пропуске (ревью #1)."""
+    c = FakeClient()
+    # одна сделка с id ЗА окном (250 > TRADES_WINDOW=200), курсор 0 → прыжок 250 > 200
+    r = FakeReader(_monitor_with_trades([_trade_row(250, "dk250")]))
+    with caplog.at_level("WARNING", logger="mfc.pifagor-cartridge"):
+        _bot(c, r).tick_once(NOW, 0.0)
+    assert any("ВОЗМОЖЕН ПРОПУСК" in rec.message for rec in caplog.records)
