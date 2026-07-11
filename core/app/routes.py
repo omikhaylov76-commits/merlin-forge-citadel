@@ -7,12 +7,13 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
 from app.auth import current_user, ensure_owns, get_token, issue_token, require_role
 from app.db import get_session
-from app.models import ApiToken, User
+from app.models import ApiToken, Instance, Job, User
 from app.security import DUMMY_PASSWORD_HASH, verify_password
 
 router = APIRouter(prefix="/v1")
@@ -70,3 +71,93 @@ def get_user(
     if target is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "нет такого пользователя")
     return {"id": str(target.id), "role": target.role, "email": target.email}
+
+
+# ── Инстансы: продюсеры jobs (шов S1→S3). Деплой из консоли НЕ зовёт Railway напрямую —
+# только создаёт instance + job, а исполняет оркестратор (seams S1/S3, ADR-0009). ──────────
+
+# Статусы, из которых инстанс можно сворачивать (teardown). pending/deploying исключены —
+# там deploy в полёте (гонка с оркестратором); их путь провала — компенсация в ack (OPS3).
+_TEARDOWNABLE = ("starting", "running", "paused", "stopping", "failed", "stopping_failed")
+
+
+class CreateInstanceIn(BaseModel):
+    client_id: uuid.UUID
+    account_id: uuid.UUID
+    bot_type_id: uuid.UUID
+    profile_id: uuid.UUID
+    image: str                          # образ картриджа бота (для paper-bot — его образ)
+    env: dict[str, str] | None = None   # доп. переменные окружения бота (без секретов в v1)
+
+
+@router.post("/instances", status_code=status.HTTP_201_CREATED)
+def create_instance(
+    body: CreateInstanceIn,
+    operator: User = Depends(require_role("operator")),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Оператор заводит инстанс: строка instances(pending) + deploy-job. Railway тут не зовётся."""
+    inst = Instance(
+        client_id=body.client_id,
+        account_id=body.account_id,
+        bot_type_id=body.bot_type_id,
+        profile_id=body.profile_id,
+        status="pending",
+        health="ok",
+    )
+    session.add(inst)
+    try:
+        session.flush()  # id + проверка партиал-уникальности «≤1 живой инстанс на счёт» (OPS3)
+    except IntegrityError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "на этом счёте уже есть живой инстанс"
+        ) from None
+    # Имя сервиса детерминировано от id — оркестратор ищет по нему «усынови или упади» (S3/S5).
+    payload = {
+        "image": body.image,
+        "name": f"mfc-inst-{inst.id}",
+        "env": {"MFC_INSTANCE_ID": str(inst.id), **(body.env or {})},
+    }
+    job = Job(kind="deploy", instance_id=inst.id, status="pending", payload=payload)
+    session.add(job)
+    session.flush()
+    write_audit(
+        session, actor=str(operator.id), action="instance_created", entity=str(inst.id),
+        after={"status": "pending", "account_id": str(body.account_id)},
+    )
+    write_audit(session, actor=str(operator.id), action="deploy_enqueued", entity=str(job.id))
+    return {"id": str(inst.id), "status": inst.status, "deploy_job_id": str(job.id)}
+
+
+@router.post("/instances/{instance_id}/teardown", status_code=status.HTTP_202_ACCEPTED)
+def teardown_instance(
+    instance_id: uuid.UUID,
+    operator: User = Depends(require_role("operator")),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Оператор сворачивает инстанс: teardown-job. Исполнение (destroy) — оркестратор (OPS5)."""
+    inst = session.get(Instance, instance_id)
+    if inst is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "нет такого инстанса")
+    if inst.status not in _TEARDOWNABLE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"инстанс в статусе '{inst.status}' не сворачивается"
+        )
+    # Идемпотентность: активный teardown уже в очереди — второй не плодим.
+    active = session.scalar(
+        select(Job).where(
+            Job.instance_id == instance_id,
+            Job.kind == "teardown",
+            Job.status.in_(("pending", "leased")),
+        )
+    )
+    if active is not None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "teardown уже в очереди")
+    payload = {"infra_ref": inst.infra_ref} if inst.infra_ref else {}
+    job = Job(kind="teardown", instance_id=instance_id, status="pending", payload=payload)
+    session.add(job)
+    session.flush()
+    write_audit(
+        session, actor=str(operator.id), action="teardown_requested", entity=str(instance_id)
+    )
+    return {"id": str(instance_id), "teardown_job_id": str(job.id), "status": inst.status}
