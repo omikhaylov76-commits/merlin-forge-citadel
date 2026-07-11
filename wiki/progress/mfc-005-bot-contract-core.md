@@ -26,9 +26,9 @@ symbol) — недоверенный ввод: храним параметриз
        Тест: схемы валидны как JSON Schema + их examples проходят (jsonschema). Pydantic-синхро — шаг 4.
 
 ## Ядро — данные и auth
-- [ ] 2. Миграция 0004 + ORM: `equity_points`, `trades`, `events`, `commands` (домен-модель). Dedup-
-       индексы: trades (instance, exec_id); equity (instance, ts); events (instance, ts, kind). Индекс
-       (instance, ts DESC). commands: status queued|delivered|acked|failed, cmd_id=id.
+- [x] 2. Миграция 0004 + ORM (round-trip чист, 57 тестов): `equity_points`, `trades`, `events`,
+       `commands`. Dedup-констрейнты (trades exec_id; equity ts; events ts+kind), индексы (instance,
+       ts DESC), received_at авторитетно, equity Numeric (не float). commands: статусы + ix активных.
 - [ ] 3. Instance-token auth: `require_principal("instance")` + владение (token.subject_id == instance_id).
 
 ## Ядро — приём телеметрии (S4 →)
