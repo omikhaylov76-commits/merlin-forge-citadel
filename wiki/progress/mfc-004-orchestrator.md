@@ -21,27 +21,27 @@ HTTP (шов S3) + таблица-контракт `jobs` (владелец сх
 Последний коммит: 2d1b6c9
 
 ## Ядро (core) — расширяем существующий модуль
-- [ ] 1. Миграция 0003 `jobs` + ORM `Job`: kind(deploy/teardown, CHECK; backtest зарезервирован-отвергается),
+- [x] 1. Миграция 0003 `jobs` + ORM `Job` (a1cd1a5): kind(deploy/teardown, CHECK; backtest зарезервирован-отвергается),
        status(pending/leased/done/failed), attempts, lease_expires_at, lease_nonce (fencing), instance_id
        (ссылка без FK, ADR-0013), payload/result JSONB, партиал-уникальный «≤1 активный deploy на инстанс».
-- [ ] 2. Internal jobs API (`/v1/internal/jobs/*`, скоуп `orchestrator`): `require_principal`;
+- [x] 2. Internal jobs API (935e53b) (`/v1/internal/jobs/*`, скоуп `orchestrator`): `require_principal`;
        `GET next?wait=` — long-poll аренда (SELECT…FOR UPDATE SKIP LOCKED, БЕЗ удержания коннекта, SCL1);
        `POST {id}/ack` — fencing по lease_nonce, attempts, терминальные правила (deploy: 3 фейла→failed +
        teardown-компенсация OPS3; teardown: не терминален, бесконечный backoff OPS5), переходы status
        инстанса, аудит каждой аренды/ack (закон №4). + тесты.
-- [ ] 3. Продюсеры (оператор): `POST /v1/instances` → instance(pending)+deploy-job; `POST /v1/instances/{id}/teardown`
+- [x] 3. Продюсеры (f292e43) (оператор): `POST /v1/instances` → instance(pending)+deploy-job; `/teardown`
        → teardown-job. Аудит обоих. + тесты.
-- [ ] 4. CI: параметризовать/дополнить — джоба `core` уже гоняет новые тесты (Postgres есть). Проверить ruff.
+- [x] 4. CI: джоба `core` уже гоняет новые тесты (Postgres есть) — правок не нужно; ruff clean. (в f292e43)
 
 ## Оркестратор (orchestrator) — новый модуль
-- [ ] 5. `InfraDriver` (ABC): deploy(image,env,name)→infra_ref · destroy(infra_ref) · status(infra_ref);
-       формат infra_ref `railway:{project}:{svc}` (SCL8); `FakeDriver` (in-memory, тесты/демо);
-       `DockerDriver` — NotImplemented-заглушка + conformance-тест (S5). pyproject + config.
-- [ ] 6. `RailwayDriver` (GraphQL: serviceCreate/redeploy/delete; restartPolicy=never OPS1; destroy 404=успех
-       OPS5). Боевой прогон — отдельная веха; здесь код структурно готов, юнит-тест на построение запросов.
-- [ ] 7. `CoreClient` (httpx: next/ack) + `worker`-цикл (аренда→диспетч по kind→ack, fencing-nonce,
-       backoff+jitter при отказе инфры, отпуск lease ≠ attempts++ OPS16). + тесты (httpx.MockTransport + FakeDriver).
-- [ ] 8. CI: джоба `orchestrator` (ruff + pytest, без Postgres).
+- [x] 5. `InfraDriver` (0bb52ae) (ABC): deploy(spec)→infra_ref · destroy · status; формат infra_ref
+       `railway:{project}:{svc}` (SCL8); `FakeDriver` (in-memory, тесты/демо); `DockerDriver` —
+       NotImplemented-заглушка + conformance-тест (S5). pyproject + config.
+- [x] 6. `RailwayDriver` (1adabb6) (GraphQL усынови-или-создай/destroy идемпотентно). Боевой прогон —
+       отдельная веха; код структурно готов + HTTP-механика под httpx.MockTransport (⚠️ схема — на обкатке).
+- [x] 7. `CoreClient` (httpx: next/ack) + `worker` (аренда→диспетч по kind→ack, fencing-nonce,
+       release при отказе инфры OPS16, backoff при недоступном ядре) + main. + тесты (MockTransport + FakeDriver).
+- [x] 8. CI: джоба `orchestrator` (ruff + pytest, без Postgres) добавлена.
 
 ## Замыкание
 - [ ] 9. Живой сквозной прогон: core (uvicorn) + `POST /v1/instances` (deploy-job) + worker с FakeDriver →
