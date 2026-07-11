@@ -57,7 +57,15 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 (подтверждён Оператором 2026-07-11).
 - [x] Recon: dashboard/viewmodel.py (build_monitor отдаёт equity/curve/working/cushion/kill-switch/сделки) —
       допущение «обёртка без правок репо» **ПОДТВЕРЖДЕНО** 2026-07-11. Recon-2 (контролы pause/kill) — след.
-- [ ] Обёртка-образ: адаптер телеметрии (viewmodel→Контракт) + heartbeat ≤60с + команды→контролы — todo
+- [x] Обёртка-адаптер: `bots/pifagor-cartridge` — read-only по Контракту (viewmodel→heartbeat/equity/trades/
+      events + команды→PAUSE_ENABLED/killswitch, 4xx-классификация #6/#7) — done 2026-07-12 · 70 тестов +
+      parity(реальный build_monitor) + schema-conformance; ЖИВОЙ сквозняк против ядра ✅; независимое ревью
+      (фиксы #1–#5). Образ: облачная сборка CI→ghcr (#12), локальный Docker убран.
+- [ ] Деплой картриджа на Railway облачной сборкой (безопасный режим) — ГЕЙТ Оператора: ghcr-доступ Railway
+      + demo-ключи Bybit + согласие на compute (RAILWAY token/project уже в .env). Затем сквозняк demo.
+- [ ] «Малыш Мерлин» (#11, ПОСЛЕ деплоя картриджа — ПОРЯДОК Оператора): полный архив @b75bd17 в 2 местах
+      (тег `malysh-merlin/v8.3-b75bd17` на репо Пифагора + tar.gz-ассет Цитадели + SHA256) + залоченный
+      профиль-эталон `reference/malysh-merlin-profile-v8.3.json` (захват дефолтов) + ADR-0014. Полный залок в UI — Ф5.
 - [ ] Конверт-шифрование ключей биржи end-to-end (ADR-0004/0010) + тесты — todo (реальные ключи — только «go»)
 
 ## Ф3 — CRM + биллинг HWM (todo)
@@ -91,6 +99,7 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - pgbouncer перед кластером ботов — включить по росту флота (ADR-0007v2).
 - Реконсиляция governance-доков (CLAUDE.md-перечень вики, WORKING_AGREEMENTS §2, root README о секретах) — за Куратором.
 - Health-семантика never-reported инстанса (обзор MFC-003): дефолт `health='ok'` — ложно-зелёный для running без единого heartbeat; ввести `unknown`/`pending` или дефолт `stale` (решение Куратора, вместе с deploy-watch Ф2).
+- 🔩 Картридж Пифагора scroll-past-window (ревью #1): телеметрия через окно build_monitor (recent-N 200/50) может пропустить старые trades/events при бэклоге>окна; сейчас — WARNING-детект. Полный фикс: курсорный direct-read из БД в обход окна. Гейт: до go-live/реальной торговли (в paper/demo некритично).
 - 🔩 outbox-эскалация stop_close (разбор #3, M1): залип `stopping` N минут → алерт Оператору через outbox. Гейт: до go-live.
 - 🔩 instance-токен: отзыв на teardown + чистка из `jobs.payload` (M2/N3, разбор #3), затем ротация. Гейт: до go-live.
 - 🔩 governance-хвост аудита (разбор #2, MFC-004-b): аудит отклонённых операций оператора + прочие хвосты. Гейт: до go-live.

@@ -1,0 +1,37 @@
+[project]
+name = "mfc-pifagor-cartridge"
+version = "0.1.0"
+description = "Merlin Forge Citadel — картридж-обёртка движка Пифагор по Контракту Бота v0 (read-only)"
+requires-python = ">=3.12"          # цель деплоя платформы — 3.12 (ADR-0003)
+dependencies = [
+    "httpx>=0.27",                  # клиент API ядра (шов S4); телеметрия/команды
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "jsonschema>=4.20",             # валидация payload'ов против contracts/*.schema.json
+    # parity-тест (#10) тянет РЕАЛЬНЫЙ build_monitor → граф state→reconcile→strategy.engine:
+    "pandas>=2.0",
+    "numpy>=1.24",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["../pifagor/vendor"]   # вендоренный снимок Пифагора не линтуем (чужой код, ADR-0001)
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
