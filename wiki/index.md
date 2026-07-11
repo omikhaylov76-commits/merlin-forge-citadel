@@ -41,6 +41,7 @@ updated: 2026-07-10
 - [deploy-instance](runbooks/deploy-instance.md) — деплой/откат инстанса.
 - [alerts](runbooks/alerts.md) — что будит Оператора в Telegram.
 - [key-rotation](runbooks/key-rotation.md) — ротация/отзыв ключа биржи (каркас, Ф2).
+- [railway-shakedown](runbooks/railway-shakedown.md) — обкатка Railway на живом paper-bot; ⛔ гейт токена Оператора.
 
 ## research
 - [passport-spec](research/passport-spec.md) — паспорт профиля; OOS обязателен (закон Кузницы).
