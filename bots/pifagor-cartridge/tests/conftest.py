@@ -10,4 +10,6 @@ import sys
 _VENDOR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "pifagor", "vendor"))
 os.environ.setdefault("PIFAGOR_HOME", _VENDOR)
 if _VENDOR not in sys.path:
-    sys.path.insert(0, _VENDOR)
+    # APPEND: вендор содержит пакет `app` (коллизия с адаптерным) — адаптерный `app` должен остаться
+    # первым (rootdir pytest). Уникальные dashboard/storage/state/config находятся в вендоре и так.
+    sys.path.append(_VENDOR)

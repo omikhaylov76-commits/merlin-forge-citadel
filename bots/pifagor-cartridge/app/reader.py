@@ -26,7 +26,10 @@ def _ensure_vendor_on_path() -> None:
         vendor = Path(__file__).resolve().parents[2] / "pifagor" / "vendor"
     p = str(vendor)
     if p not in sys.path:
-        sys.path.insert(0, p)
+        # APPEND, не insert(0): вендор Пифагора тоже содержит пакет `app` (app/main.py, cycle.py) —
+        # коллизия с адаптерным `app`. Аппендом адаптерный `app` (из cwd/rootdir) остаётся первым;
+        # уникальные dashboard/storage/state/config/… находятся в вендоре без конфликта.
+        sys.path.append(p)
 
 
 class PifagorReader:
