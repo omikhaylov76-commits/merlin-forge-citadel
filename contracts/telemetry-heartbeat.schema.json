@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlinforge.local/contracts/v0/telemetry-heartbeat.schema.json",
+  "title": "Bot Contract v0 — heartbeat",
+  "description": "POST /v1/telemetry/heartbeat — не реже раза в 60с. contract_version декларируется (v1 только записываем). received_at ставит ядро (авторитетно).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["status", "uptime_s", "contract_version"],
+  "properties": {
+    "status": {"description": "самооценка бота", "enum": ["running", "paused", "stopping", "error"]},
+    "uptime_s": {"type": "number", "minimum": 0},
+    "contract_version": {"type": "string", "description": "версия Контракта, по которой бот собран"},
+    "note": {"type": "string", "maxLength": 500, "description": "свободный текст (недоверенный, экранируется на выводе)"}
+  },
+  "examples": [
+    {"status": "running", "uptime_s": 123.4, "contract_version": "v0"},
+    {"status": "paused", "uptime_s": 3600, "contract_version": "v0", "note": "по команде оператора"}
+  ]
+}

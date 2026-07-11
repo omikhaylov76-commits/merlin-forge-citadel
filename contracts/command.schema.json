@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlinforge.local/contracts/v0/command.schema.json",
+  "title": "Bot Contract v0 — command response",
+  "description": "Ответ GET /v1/commands/next. Канон команд: pause · resume · stop_close (start не существует — бот стартует env'ом). cmd=none → cmd_id null (за окно ничего).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["cmd"],
+  "properties": {
+    "cmd": {"enum": ["none", "pause", "resume", "stop_close"]},
+    "cmd_id": {
+      "type": ["string", "null"],
+      "description": "UUID команды для ack (идемпотентность); null при cmd=none"
+    }
+  },
+  "examples": [
+    {"cmd": "none", "cmd_id": null},
+    {"cmd": "pause", "cmd_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"},
+    {"cmd": "stop_close", "cmd_id": "7c9e6679-7425-40de-944b-e07fc1f90ae7"}
+  ]
+}

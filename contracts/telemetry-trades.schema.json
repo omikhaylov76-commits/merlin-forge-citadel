@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlinforge.local/contracts/v0/telemetry-trades.schema.json",
+  "title": "Bot Contract v0 — trades batch",
+  "description": "POST /v1/telemetry/trades — батч сделок. Dedup по (instance, exec_id биржи) — НЕ по ts (со-секундные сделки, COH4). Батч ограничен (413 → бот дробит).",
+  "type": "array",
+  "maxItems": 500,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["ts", "exec_id", "symbol", "side", "qty"],
+    "properties": {
+      "ts": {"type": "string", "format": "date-time"},
+      "exec_id": {"type": "string", "description": "id исполнения биржи — ключ идемпотентности"},
+      "symbol": {"type": "string", "maxLength": 40, "description": "инструмент (недоверенный ввод)"},
+      "side": {"enum": ["buy", "sell"]},
+      "qty": {"type": "number", "exclusiveMinimum": 0},
+      "pnl": {"type": "number", "description": "реализованный PnL (опц.)"}
+    }
+  },
+  "examples": [
+    [{"ts": "2026-07-11T12:00:05Z", "exec_id": "exec-1", "symbol": "BTCUSDT", "side": "buy", "qty": 0.01}],
+    [{"ts": "2026-07-11T12:00:05Z", "exec_id": "exec-2", "symbol": "BTCUSDT", "side": "sell", "qty": 0.01, "pnl": 12.5}]
+  ]
+}
