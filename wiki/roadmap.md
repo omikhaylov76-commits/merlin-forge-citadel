@@ -41,8 +41,9 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] MFC-005 core-сторона Контракта Бота (шов S4): schema-first схемы v0 (contracts/) + миграция 0004
       (equity/trades/events/commands) + instance-token auth + приём телеметрии (dedup/ts-skew) + команды
       (long-poll липкий stop_close + ack, ADR-0005) — done 2026-07-11 · merged: yes (main 99942f8).
-- [ ] MFC-006 paper-bot: картридж (bots/paper-bot) по Контракту v0 — heartbeat/equity-синус/сделки,
-      честный pause/stop_close; клиент API S4. Обкатывает конвейер платформы до Пифагора — todo
+- [x] MFC-006 paper-bot: эталонный картридж (bots/paper-bot) по Контракту v0 — детерминированный движок
+      (синус+seeded), честные семантики ADR-0005 (pause держит позиции, stop_close закрыть+встать),
+      клиент API S4 + цикл. Сквозняк вживую доказал pause/stop_close — done 2026-07-11 · merged: yes (main 0baacb9).
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo
 - [ ] 🚧 MFC OPS13 reconcile сирот: свёртка часового сверяет instances↔сервисы `mfc-inst-*`, гасит
       сирот (разбор Куратора #2, вариант A). **Гейт: ДО Ф2** (до первого реального деплоя) — todo
