@@ -7,7 +7,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, String, Text, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -94,3 +94,45 @@ class Instance(Base):
     # ensemble_id — труба ансамблей (ADR-0006), в v1 не наполняется
     ensemble_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Job(Base):
+    """Задача инфры (deploy/teardown) — контракт-таблица шва S3 (ADR-0009).
+
+    core — единственный писатель; оркестратор арендует через internal API (long-poll+lease+fencing),
+    таблицу напрямую НЕ читает (закон №3). Идемпотентность deploy — партиал-уникальный индекс
+    (≤1 активный deploy на инстанс). Fencing: ack принимает держатель актуального lease_nonce.
+    kind='backtest' зарезервирован под Ф5 — CHECK его не пускает (явная ошибка-заглушка).
+    """
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        CheckConstraint("kind IN ('deploy','teardown')", name="ck_jobs_kind"),
+        CheckConstraint(
+            "status IN ('pending','leased','done','failed')", name="ck_jobs_status"
+        ),
+        {"comment": "Очередь задач инфры (шов S3, ADR-0009); писатель — только core."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    # instance_id — реальный FK: родитель (instances) существует с 0002. Отложенные FK (ADR-0013)
+    # касались лишь ещё-не-созданных родителей — здесь ссылочная целостность уместна.
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    # attempts++ на неуспешной попытке deploy; 3 → failed (без бесконечных ретраев, S3).
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # lease: аренда с истечением; протух → job возвращается в очередь (attempts++ по контракту ack).
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # fencing-токен: выдан при аренде, нужен на ack — устаревший держатель job не завершит (OPS2).
+    lease_nonce: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # payload: вход задачи (deploy: image/env/name); result: последний detail от ack.
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
