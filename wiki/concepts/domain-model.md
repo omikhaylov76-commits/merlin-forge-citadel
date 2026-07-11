@@ -5,7 +5,7 @@ tags: [architecture, domain, schema]
 updated: 2026-07-10
 sources: [decisions/0001…0011, concepts/seams.md]
 ---
-# Домен-модель (единый источник таблиц; миграция 0001 строится ОТСЮДА)
+# Домен-модель (единый источник таблиц; миграции 0001/0002 строятся ОТСЮДА)
 
 Правило: это единственное место, где перечислены таблицы; architecture/seams ССЫЛАЮТСЯ, не дублируют.
 Заглушки-трубы физически присутствуют (иначе FK некуда, «молчаливая полудорога» запрещена), но
@@ -28,6 +28,8 @@ sources: [decisions/0001…0011, concepts/seams.md]
 - **instances**(id, client_id, account_id, bot_type_id, profile_id, status, health[ok|stale|dead],
   last_heartbeat_at, infra_ref, ensemble_id?, deployed_at) — status=намерение, health=свежесть (flows).
   Constraint: ≤1 инстанс на account_id в живых статусах (OPS3/MON2).
+  Материализована в миграции 0002 (MFC-003); FK на родителей отложены — ADR-0013. health ставит
+  свёртка часового instance_health (ok→stale→dead по свежести heartbeat).
 - **ensembles**(id, name, created_at) — труба дирижёра (ADR-0006; v1 не наполняется).
 - **commands**(id, instance_id, kind[pause|resume|stop_close], status[queued|delivered|acked|failed],
   result_json, created_at, acked_at) — очередь команд боту (ADR-0002/0005). cmd_id = этот id.

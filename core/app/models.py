@@ -61,3 +61,36 @@ class AuditLog(Base):
     before: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     after: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Instance(Base):
+    __tablename__ = "instances"
+    __table_args__ = (
+        CheckConstraint("health IN ('ok','stale','dead')", name="ck_instances_health"),
+        CheckConstraint(
+            "status IN ('pending','deploying','starting','running','paused',"
+            "'stopping','stopped','failed','failed_deploy','stopping_failed')",
+            name="ck_instances_status",
+        ),
+        {
+            "comment": "Инстанс бота: status=намерение, health=свежесть heartbeat (flows). "
+            "FK на clients/accounts/bot_types/profiles отложены — ADR-0013 (родители в Ф2/Ф3/Ф5)."
+        },
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # Ссылки на родителей — UUID БЕЗ FK-constraint (родители появятся со своими фичами, ADR-0013)
+    client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    bot_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # жизненный цикл (flows)
+    # health производно от свежести heartbeat; ставит свёртка часового (instance_health)
+    health: Mapped[str] = mapped_column(String(8), nullable=False, server_default="ok")
+    last_heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True  # NULL, пока бот не прислал первый heartbeat
+    )
+    # infra_ref — ссылка Railway; ставит оркестратор при деплое
+    infra_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ensemble_id — труба ансамблей (ADR-0006), в v1 не наполняется
+    ensemble_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    deployed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
