@@ -44,6 +44,8 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [ ] MFC-006 paper-bot: картридж (bots/paper-bot) по Контракту v0 — heartbeat/equity-синус/сделки,
       честный pause/stop_close; клиент API S4. Обкатывает конвейер платформы до Пифагора — todo
 - [ ] Обкатка Railway API на живом инстансе paper-bot (проверка допущения №3 handoff'а) — todo
+- [ ] 🚧 MFC OPS13 reconcile сирот: свёртка часового сверяет instances↔сервисы `mfc-inst-*`, гасит
+      сирот (разбор Куратора #2, вариант A). **Гейт: ДО Ф2** (до первого реального деплоя) — todo
 - [ ] Консоль Оператора: минимальный флот-дашборд (после мокапа) — todo
 
 ## Ф2 — Пифагор-картридж (todo)
@@ -83,4 +85,9 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - pgbouncer перед кластером ботов — включить по росту флота (ADR-0007v2).
 - Реконсиляция governance-доков (CLAUDE.md-перечень вики, WORKING_AGREEMENTS §2, root README о секретах) — за Куратором.
 - Health-семантика never-reported инстанса (обзор MFC-003): дефолт `health='ok'` — ложно-зелёный для running без единого heartbeat; ввести `unknown`/`pending` или дефолт `stale` (решение Куратора, вместе с deploy-watch Ф2).
+- 🔩 outbox-эскалация stop_close (разбор #3, M1): залип `stopping` N минут → алерт Оператору через outbox. Гейт: до go-live.
+- 🔩 instance-токен: отзыв на teardown + чистка из `jobs.payload` (M2/N3, разбор #3), затем ротация. Гейт: до go-live.
+- 🔩 governance-хвост аудита (разбор #2, MFC-004-b): аудит отклонённых операций оператора + прочие хвосты. Гейт: до go-live.
+- 🔩 hardening до go-live: ingress-лимит тела телеметрии (N2); переименовать `job_longpoll_max_wait_seconds` в общий (N5).
+- redelivery клиентской паузы pause/resume (M3, разбор #3): lease+redeliver ИЛИ видимость «залипших delivered». Гейт: до Ф4 (портал).
 - Свёртка/ядро берут глобальный `get_sessionmaker` (игнорируя injected `settings.database_url`) — пред-существующее; per-app engine = рефактор db.py по нужде (обзор MFC-003).
