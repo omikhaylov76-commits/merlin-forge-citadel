@@ -1,0 +1,21 @@
+# Локальная разработка. v1 — только Postgres 16 (ядро гоняем uvicorn'ом отдельно, YAGNI).
+# Полная связка (core/console/portal/paper-bot) добавится, когда появятся эти сервисы.
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: mfc
+      POSTGRES_PASSWORD: mfc
+      POSTGRES_DB: mfc_core
+    ports:
+      - "5432:5432"
+    volumes:
+      - mfc_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mfc -d mfc_core"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mfc_pgdata:
