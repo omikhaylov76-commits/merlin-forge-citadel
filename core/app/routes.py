@@ -3,6 +3,7 @@
 
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -12,8 +13,9 @@ from sqlalchemy.orm import Session
 
 from app.audit import write_audit
 from app.auth import current_user, ensure_owns, get_token, issue_token, require_role
+from app.config import Settings, get_settings
 from app.db import get_session
-from app.models import ApiToken, Instance, Job, User
+from app.models import ApiToken, Command, Instance, Job, User
 from app.security import DUMMY_PASSWORD_HASH, verify_password
 
 router = APIRouter(prefix="/v1")
@@ -96,6 +98,7 @@ def create_instance(
     body: CreateInstanceIn,
     operator: User = Depends(require_role("operator")),
     session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
 ) -> dict:
     """Оператор заводит инстанс: строка instances(pending) + deploy-job. Railway тут не зовётся."""
     inst = Instance(
@@ -113,11 +116,23 @@ def create_instance(
         raise HTTPException(
             status.HTTP_409_CONFLICT, "на этом счёте уже есть живой инстанс"
         ) from None
+    # Токен инстанса (принципал 'instance', скоуп — свой инстанс): им картридж шлёт телеметрию и
+    # берёт команды (шов S4). Выдаётся ОДИН раз здесь и уезжает в env деплоя (Контракт: секреты
+    # передаются при старте). Это платформенный токен, не ключ биржи (тот — конверт, ADR-0010).
+    instance_token = issue_token(
+        session, principal="instance", subject_id=str(inst.id), scope="instance"
+    )
     # Имя сервиса детерминировано от id — оркестратор ищет по нему «усынови или упади» (S3/S5).
+    # env по Контракту Бота v0 (MF_*). Токен — только в payload ядра/оркестратора, не в логах.
     payload = {
         "image": body.image,
         "name": f"mfc-inst-{inst.id}",
-        "env": {"MFC_INSTANCE_ID": str(inst.id), **(body.env or {})},
+        "env": {
+            "MF_INSTANCE_ID": str(inst.id),
+            "MF_INSTANCE_TOKEN": instance_token,
+            "MF_CORE_URL": settings.core_public_url,
+            **(body.env or {}),
+        },
     }
     job = Job(kind="deploy", instance_id=inst.id, status="pending", payload=payload)
     session.add(job)
@@ -162,3 +177,36 @@ def teardown_instance(
         session, actor=str(operator.id), action="teardown_requested", entity=str(instance_id)
     )
     return {"id": str(instance_id), "teardown_job_id": str(job.id), "status": inst.status}
+
+
+# Статусы, при которых команда боту имеет смысл (бот поднят). Терминальные/до-старта — отвергаем.
+_COMMANDABLE = ("starting", "running", "paused", "stopping")
+
+
+class EnqueueCommandIn(BaseModel):
+    kind: Literal["pause", "resume", "stop_close"]  # канон (start не существует, bot-contract)
+
+
+@router.post("/instances/{instance_id}/commands", status_code=status.HTTP_201_CREATED)
+def enqueue_command(
+    instance_id: uuid.UUID,
+    body: EnqueueCommandIn,
+    operator: User = Depends(require_role("operator")),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Оператор ставит команду боту в очередь (S4←). Доставка/исполнение — через commands API."""
+    inst = session.get(Instance, instance_id)
+    if inst is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "нет такого инстанса")
+    if inst.status not in _COMMANDABLE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"инстансу в статусе '{inst.status}' команда не ставится"
+        )
+    cmd = Command(instance_id=instance_id, kind=body.kind, status="queued")
+    session.add(cmd)
+    session.flush()
+    write_audit(
+        session, actor=str(operator.id), action="command_enqueued", entity=str(cmd.id),
+        after={"kind": body.kind, "instance_id": str(instance_id)},
+    )
+    return {"cmd_id": str(cmd.id), "kind": body.kind, "status": "queued"}

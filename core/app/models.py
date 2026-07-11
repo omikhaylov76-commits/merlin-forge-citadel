@@ -6,8 +6,19 @@
 
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -136,3 +147,99 @@ class Job(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+# ── Телеметрия бота (шов S4, недоверенный ввод — храним параметризованно, экранируем на выводе).
+# ts — время бота (проверяется |ts−now|<48ч на приёме); received_at — серверное, авторитетно. ──
+
+class EquityPoint(Base):
+    """Точка кривой equity (телеметрия S4). equity строго в USDT (MON9). Dedup по (instance, ts)."""
+
+    __tablename__ = "equity_points"
+    __table_args__ = (
+        UniqueConstraint("instance_id", "ts", name="uq_equity_instance_ts"),
+        {"comment": "Кривая equity бота (S4); received_at авторитетно; dedup (instance, ts)."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False
+    )
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    equity: Mapped[Decimal] = mapped_column(Numeric, nullable=False)  # деньги — Numeric, не float
+    currency: Mapped[str] = mapped_column(String(8), nullable=False)  # v0 — USDT
+    working: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+    cushion: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+
+
+class Trade(Base):
+    """Сделка бота (телеметрия S4). Dedup по (instance, exec_id) — не по ts (со-секундные, COH4)."""
+
+    __tablename__ = "trades"
+    __table_args__ = (
+        UniqueConstraint("instance_id", "exec_id", name="uq_trades_instance_exec"),
+        CheckConstraint("side IN ('buy','sell')", name="ck_trades_side"),
+        {"comment": "Сделки бота (S4); dedup по (instance, exec_id биржи), идемпотентно (COH4)."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False
+    )
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    exec_id: Mapped[str] = mapped_column(String(128), nullable=False)  # ключ идемпотентности
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)    # недоверенный ввод
+    side: Mapped[str] = mapped_column(String(4), nullable=False)
+    qty: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
+    pnl: Mapped[Decimal | None] = mapped_column(Numeric, nullable=True)
+
+
+class Event(Base):
+    """Событие бота (телеметрия S4). Dedup по (instance, ts, kind). detail — недоверенный ввод."""
+
+    __tablename__ = "events"
+    __table_args__ = (
+        UniqueConstraint("instance_id", "ts", "kind", name="uq_events_instance_ts_kind"),
+        {"comment": "События бота (S4); dedup (instance, ts, kind); detail — недоверенный JSON."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False
+    )
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class Command(Base):
+    """Команда боту (S4←, ADR-0002/0005). cmd_id = id. Канон: pause/resume/stop_close (start нет).
+
+    Доставка — long-poll (как jobs); ack идемпотентен по cmd_id. stop_close «липкий» пока instance
+    в stopping (OPS1). Каждая команда и её ack — строка audit_log (закон №4).
+    """
+
+    __tablename__ = "commands"
+    __table_args__ = (
+        CheckConstraint("kind IN ('pause','resume','stop_close')", name="ck_commands_kind"),
+        CheckConstraint(
+            "status IN ('queued','delivered','acked','failed')", name="ck_commands_status"
+        ),
+        {"comment": "Очередь команд боту (S4←, ADR-0005); канон pause/resume/stop_close."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="queued")
+    result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # detail от бота на ack
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

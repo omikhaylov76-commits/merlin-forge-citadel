@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
-from app.models import ApiToken, User
+from app.models import ApiToken, Instance, User
 from app.security import hash_token, new_token
 
 _TTL = timedelta(hours=12)  # скользящий: продлевается при каждом использовании
@@ -24,13 +24,17 @@ def _now() -> datetime:
 
 def issue_token(session: Session, *, principal: str, subject_id: str, scope: str) -> str:
     raw = new_token()
+    # Интерактивные (user) — скользящий TTL 12ч. Машинные (instance/orchestrator/ensemble) —
+    # долгоживущие: запечены в env деплоя, живут весь срок инстанса; интерактивный TTL запер бы флот
+    # при даунтайме core > TTL (в т.ч. kill-switch). Отзыв — через revoked_at, не по сроку.
+    expires_at = _now() + _TTL if principal == "user" else None
     session.add(
         ApiToken(
             token_sha256=hash_token(raw),
             principal=principal,
             subject_id=subject_id,
             scope=scope,
-            expires_at=_now() + _TTL,
+            expires_at=expires_at,
         )
     )
     session.flush()
@@ -43,7 +47,8 @@ def authenticate(session: Session, raw: str) -> ApiToken | None:
         return None
     if tok.expires_at is not None and tok.expires_at < _now():
         return None
-    tok.expires_at = _now() + _TTL  # скользящий TTL (персистится коммитом сессии)
+    if tok.expires_at is not None:  # скользящий TTL только у user; машинные (None) не трогаем
+        tok.expires_at = _now() + _TTL  # персистится коммитом сессии
     return tok
 
 
@@ -89,6 +94,18 @@ def require_role(*roles: str):
         return user
 
     return dep
+
+
+def current_instance(
+    token: ApiToken = Depends(require_principal("instance")),
+    session: Session = Depends(get_session),
+) -> Instance:
+    # Токен инстанса привязан к своему инстансу (subject_id) — картридж видит ТОЛЬКО его (SEC7,
+    # шов S4). instance_id в URL не нужен: инстанс берём из токена, кросс-доступ невозможен.
+    inst = session.get(Instance, uuid.UUID(token.subject_id))
+    if inst is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "инстанс не найден")
+    return inst
 
 
 def ensure_owns(user: User, resource_owner_id: str) -> None:

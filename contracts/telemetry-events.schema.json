@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlinforge.local/contracts/v0/telemetry-events.schema.json",
+  "title": "Bot Contract v0 — events batch",
+  "description": "POST /v1/telemetry/events — батч событий. Dedup по (instance, ts, kind). kind=key_perms {withdraw_enabled} — раз в сутки; включённый вывод → алерт+автопауза (SEC3).",
+  "type": "array",
+  "maxItems": 500,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["ts", "kind"],
+    "properties": {
+      "ts": {"type": "string", "format": "date-time"},
+      "kind": {"type": "string", "maxLength": 40, "description": "entry_filled|sl_moved|kill_switch|key_perms|error|..."},
+      "detail": {"type": "object", "description": "структурированные данные события (недоверенный ввод, экранируется на выводе)"}
+    }
+  },
+  "examples": [
+    [{"ts": "2026-07-11T12:00:00Z", "kind": "entry_filled", "detail": {"symbol": "BTCUSDT"}}],
+    [{"ts": "2026-07-11T12:00:00Z", "kind": "key_perms", "detail": {"withdraw_enabled": false}}]
+  ]
+}

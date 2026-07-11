@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     env: str = "dev"          # dev | staging | prod
     database_url: str = ""    # заполняется в шаге 2 (Alembic + сессии)
     log_level: str = "INFO"
+    # URL ядра, по которому бот шлёт телеметрию/берёт команды (MF_CORE_URL в env картриджа, S4).
+    core_public_url: str = "http://127.0.0.1:8000"
+    # Окно приёма телеметрии по времени бота: |ts−now| < N (S4; защита от мусора/дрейфа часов).
+    telemetry_max_skew_seconds: int = 172800  # 48ч (bot-contract)
     # Период тика «часового» (core-scheduler, MFC-002). Порог смерти dead-man = 3×период
     # (деривативно в Scheduler). В env: MFC_… не нужен — читается как SCHEDULER_TICK_SECONDS.
     scheduler_tick_seconds: int = 60

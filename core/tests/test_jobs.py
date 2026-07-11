@@ -20,8 +20,9 @@ from app.models import Instance, Job
 @pytest.fixture
 def sm(_migrated: None):
     m = get_sessionmaker()
-    with m() as s:  # jobs → instances (FK-порядок); audit_log append-only не трогаем
-        s.execute(text("DELETE FROM jobs"))
+    with m() as s:  # дети instances → instances (FK-порядок); audit_log append-only не трогаем
+        for t in ("commands", "jobs", "equity_points", "trades", "events"):
+            s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
         s.commit()
     return m

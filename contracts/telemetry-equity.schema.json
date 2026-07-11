@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlinforge.local/contracts/v0/telemetry-equity.schema.json",
+  "title": "Bot Contract v0 — equity point",
+  "description": "POST /v1/telemetry/equity — точка кривой доходности. equity строго в USDT (unified-оценка), currency обязателен (MON9). Dedup по (instance, ts).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["ts", "equity", "currency"],
+  "properties": {
+    "ts": {"type": "string", "format": "date-time", "description": "время бота; ядро проверяет |ts−now|<48ч"},
+    "equity": {"type": "number", "description": "суммарная оценка счёта"},
+    "currency": {"const": "USDT", "description": "v0 — только USDT (unified)"},
+    "working": {"type": "number", "description": "рабочий капитал (опц.)"},
+    "cushion": {"type": "number", "description": "подушка/резерв (опц.)"}
+  },
+  "examples": [
+    {"ts": "2026-07-11T12:00:00Z", "equity": 10250.5, "currency": "USDT"},
+    {"ts": "2026-07-11T12:01:00Z", "equity": 10260.0, "currency": "USDT", "working": 8000, "cushion": 2260}
+  ]
+}
