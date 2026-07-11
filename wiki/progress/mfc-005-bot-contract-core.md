@@ -43,6 +43,7 @@ symbol) — недоверенный ввод: храним параметриз
        9 тестов: deliver/ack, липкость, ошибка stop_close, идемпотентность, чужая команда 404, auth.
 
 ## Замыкание
-- [ ] 6. Живой прогон: instance-токен → push heartbeat/equity/trades → stale-скан видит свежесть →
-       enqueue pause → бот-эмуляция poll/ack. Вики (core-api/seams S4/domain-model/telemetry-schemas)
-       + roadmap/log + code-review → merge в main (--no-ff) → QUEUE «готово к разбору».
+- [~] 6. Живой прогон ✅ (uvicorn): instance-токен из payload деплоя → heartbeat(starting→running)/
+       equity(dedup)/trades → stale-скан health ok → enqueue pause → бот poll/ack → paused; аудит цепочки.
+       Вики обновлена (core-api/seams S4/domain-model/telemetry-schemas). Осталось: независимое ревью →
+       roadmap/log merged:yes → merge в main (--no-ff) → QUEUE «готово к разбору».

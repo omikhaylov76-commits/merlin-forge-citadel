@@ -5,7 +5,7 @@ tags: [architecture, domain, schema]
 updated: 2026-07-11
 sources: [decisions/0001…0011, concepts/seams.md]
 ---
-# Домен-модель (единый источник таблиц; миграции 0001/0002/0003 строятся ОТСЮДА)
+# Домен-модель (единый источник таблиц; миграции 0001–0004 строятся ОТСЮДА)
 
 Правило: это единственное место, где перечислены таблицы; architecture/seams ССЫЛАЮТСЯ, не дублируют.
 Заглушки-трубы физически присутствуют (иначе FK некуда, «молчаливая полудорога» запрещена), но
@@ -31,18 +31,20 @@ sources: [decisions/0001…0011, concepts/seams.md]
   Материализована в миграции 0002 (MFC-003); FK на родителей отложены — ADR-0013. health ставит
   свёртка часового instance_health (ok→stale→dead по свежести heartbeat).
 - **ensembles**(id, name, created_at) — труба дирижёра (ADR-0006; v1 не наполняется).
-- **commands**(id, instance_id, kind[pause|resume|stop_close], status[queued|delivered|acked|failed],
-  result_json, created_at, acked_at) — очередь команд боту (ADR-0002/0005). cmd_id = этот id.
+- **commands**(id, instance_id→FK, kind[pause|resume|stop_close], status[queued|delivered|acked|failed],
+  result, created_at, delivered_at, acked_at) — очередь команд боту (ADR-0002/0005). cmd_id = id.
+  Материализована 0004 (MFC-005); ix активных (queued|delivered) для long-poll; липкий stop_close (OPS1).
 - **challenges**(id, subject, action, expires_at, consumed_at) — серверное 2-е подтверждение stop_close (S2).
 - **jobs**(id, instance_id→FK, kind[deploy|teardown; backtest⌫резерв-CHECK], status[pending|leased|done|failed],
   attempts, lease_expires_at, lease_nonce, payload, result, created_at, updated_at) — аренда+идемпотентность+
   fencing (ADR-0009). Материализована в 0003 (MFC-004); партиал-индекс «≤1 активный deploy/инстанс» (OPS2).
 
-## Телеметрия (недоверенный ввод — экранировать, SEC5)
-- **equity_points**(instance_id, ts, equity, working?, cushion?) · **trades**(instance_id, ts, exec_id,
-  symbol, side, qty, pnl, …) · **events**(instance_id, ts, kind, detail) — heartbeats НЕ таблица,
-  а instances.last_heartbeat_at (SCL9). Индекс (instance_id, ts DESC); ретеншн сырья ~90д→агрегаты (SCL5).
-  Дедуп: trades по (instance_id, exec_id биржи); equity/events по (instance_id, ts, kind) (OPS8/COH4).
+## Телеметрия (недоверенный ввод — экранировать на выводе, SEC5) — материализована 0004 (MFC-005)
+- **equity_points**(id, instance_id→FK, ts, received_at, equity[Numeric], currency, working?, cushion?) ·
+  **trades**(id, instance_id→FK, ts, received_at, exec_id, symbol, side, qty, pnl?) · **events**(id,
+  instance_id→FK, ts, received_at, kind, detail) — heartbeats НЕ таблица, а instances.last_heartbeat_at
+  (SCL9). received_at авторитетно. Индекс (instance_id, ts DESC); ретеншн сырья ~90д→агрегаты (SCL5, Ф3).
+  Дедуп: trades по (instance_id, exec_id биржи); equity по (instance, ts); events по (instance, ts, kind) (OPS8/COH4).
 
 ## Деньги, приём ключей, аудит, наблюдаемость
 - **billing_periods**(id, account_id, client_id, start, end, start_equity, end_equity, hwm, fee_pct,

@@ -49,6 +49,10 @@ sources: [concepts/architecture.md, decisions/0001…0010, 0012, задача MF
   батчи ограничены (413 → бот дробит); буфер бота при недоступности core — кольцевой, ~24ч,
   trades не выбрасываются первыми; бот мигрирует СВОЮ схему в БД ботов сам при старте;
   contract_version декларируется в heartbeat, v1 только записываем (enforcement Ф2).
+  ✅ **Реализовано MFC-005 (core-сторона):** схемы v0 `contracts/*.schema.json`; миграция 0004
+  (equity/trades/events/commands); приём телеметрии (`routes_telemetry`, dedup/ts-skew/413, heartbeat→
+  last_heartbeat_at) + команды (`routes_commands`, long-poll липкий stop_close + ack, ADR-0005) токеном
+  инстанса. Картридж paper-bot (клиент этого API) — MFC-006. Буфер бота/своя-схема — забота картриджа.
 - **S5 InfraDriver:** интерфейс `deploy(spec) → infra_ref` · `destroy(infra_ref)` · `status(infra_ref)`.
   infra_ref = «railway:{project}:{svc}» — проект в формате СРАЗУ (SCL8: квота сервисов/проект вынудит
   мульти-проект, миграция формата потом дорога). restartPolicy=never для бот-сервисов (OPS1). destroy
