@@ -72,6 +72,15 @@ def test_heartbeat_refreshes_last_heartbeat(sm):
         assert s.get(Instance, iid).last_heartbeat_at is not None  # кормит stale-скан MFC-003
 
 
+def test_first_heartbeat_moves_starting_to_running(sm):
+    iid, tok = _mk_instance_token(sm, status="starting")
+    c = TestClient(create_app())
+    c.post("/v1/telemetry/heartbeat", headers=_hdr(tok),
+           json={"status": "running", "uptime_s": 1, "contract_version": "v0"})
+    with sm() as s:
+        assert s.get(Instance, iid).status == "running"  # бот жив: starting→running
+
+
 # ── dedup идемпотентность ─────────────────────────────────────────────────────
 
 def test_equity_dedup_by_ts(sm):

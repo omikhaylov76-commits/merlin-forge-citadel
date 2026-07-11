@@ -83,9 +83,11 @@ def heartbeat(
     inst: Instance = Depends(current_instance),
     session: Session = Depends(get_session),
 ) -> None:
-    # Единственная функция heartbeat — освежить last_heartbeat_at (кормит stale-скан MFC-003).
-    # contract_version в v1 только декларируется (enforcement Ф2); status бота — самооценка.
+    # heartbeat освежает last_heartbeat_at (кормит stale-скан MFC-003). contract_version в v1 только
+    # декларируется (enforcement Ф2). Первый heartbeat подтверждает «бот жив»: starting→running.
     inst.last_heartbeat_at = datetime.now(UTC)
+    if inst.status == "starting":
+        inst.status = "running"
 
 
 @router.post("/equity", status_code=status.HTTP_202_ACCEPTED)
