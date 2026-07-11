@@ -17,10 +17,18 @@ market · risk_capital · scout · state · storage · strategy** (+ `requiremen
 Живой движок стратегии — `vendor/strategy/engine/pifagor_fib_backtest_v2_clean`. kill-switch —
 `vendor/risk_capital/killswitch` (пригодится для команды stop_close).
 
+**+ `dashboard/{__init__,viewmodel}.py`** (session 5, recon-2, DIRECTIVES #10 Вариант A): агрегация
+`build_monitor(...)` отдаёт РОВНО телеметрию Контракта (equity/curve/cushion/kill-switch/сделки/health) —
+адаптер читает через неё → цифры картриджа == родной дашборд Пифагора (faithfulness автоматическая).
+Import-замыкание `viewmodel.py` = `{config, json, logging_, time}` (без Flask/UI) — выделяется чисто.
+Вендорены ТОЛЬКО эти два файла (не `dashboard.py`/`prices.py`/`static/`/`templates/`). sha256 сверены
+с клоном и локалью @b75bd17 (идентичны).
+
 **НЕ вендорено (и почему):** `engine/` — это движок-ЭТАЛОН (parity-источник для бэктестов), живым путём
-НЕ импортируется → хлам для картриджа; `dashboard/` — у платформы своя консоль (кокпит Пифагора S9 —
-прокси позже); `legacy_bot_reference/`, `backtest/`; `railway.json`/`start.sh` Пифагора (у нас свой
-Контракт-env и деплой); `pifagor.db`/`*.lock` (рантайм-состояние).
+НЕ импортируется → хлам для картриджа; `dashboard/dashboard.py`(FastAPI-кокпит)/`prices.py`/`static/`/
+`templates/` — у платформы своя консоль (кокпит Пифагора S9 — прокси позже; берём лишь агрегацию-viewmodel);
+`legacy_bot_reference/`, `backtest/`; `railway.json`/`start.sh` Пифагора (у нас свой Контракт-env и деплой);
+`pifagor.db`/`*.lock` (рантайм-состояние).
 
 ⚠️ **Отклонение от эвристического списка Куратора (#7) — по его же указанию «проверь по реальным
 импортам».** #7 называл «engine», не называл «app»/«state». Трасса живого графа показала обратное:
@@ -28,6 +36,7 @@ top-level `engine/` живым путём не нужен (эталон), а `ap
 на разбор. Оригинал не тронут; всё воспроизводимо из пина.
 
 ## Дальше (план — progress/f2-pifagor-cartridge.md)
-Recon-2: извлечение телеметрии из `state`/`storage` (dashboard-viewmodel не вендорили) → адаптер по
-Контракту (heartbeat ≤60с, equity/trades/events, pause/stop_close→killswitch; 4xx-классификация
-обязательна) → образ → деплой Railway в БЕЗОПАСНОМ режиме (без реальных ключей, go-live отдельно).
+Recon-2 ✅ (session 5): телеметрия — через вендоренный `build_monitor` (Вариант A). Далее: адаптер
+`bots/pifagor-cartridge/` по Контракту (heartbeat ≤60с, equity/trades/events, pause→PAUSE_ENABLED /
+stop_close→killswitch; **4xx-классификация транзиентное/перманентное + backoff обязательна**) +
+parity-тест (#10) → образ → деплой Railway в БЕЗОПАСНОМ режиме (без реальных ключей, go-live отдельно).
