@@ -1,0 +1,10 @@
+# Контекст сборки = bots/ ; тащим только адаптер + вендоренный снимок, без мусора.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.ruff_cache
+**/*.egg-info
+paper-bot
+pifagor/vendor/**/__pycache__
+pifagor-cartridge/tests

@@ -65,14 +65,14 @@ legacy/backtest/db/lock не взяты. Клон удалён. Детали —
 ## План Ф2 (по маршруту DIRECTIVES, уточнён recon-2)
 Последний коммит ветки: ce66543
 - [x] 1. Recon-2: источники телеметрии/контролов (см. выше) — Вариант A подтверждён (session 5).
-- [ ] 2. Вендор `dashboard/{__init__,viewmodel}.py` @b75bd17 из свежего клона (не из локали, #8/#9) в
-       `bots/pifagor/vendor/dashboard/`; сверить sha, README/index/log.
-- [ ] 3. Адаптер `bots/pifagor-cartridge/` (тонкий, НЕ копия Пифагора): CoreClient (эталон paper-bot) +
-       **4xx-классификация транзиентное/перманентное + backoff (ОБЯЗАТЕЛЬНА, #6/#7)** + маппер build_monitor→Контракт
-       + цикл heartbeat ≤60с + poll команд→pause/resume/stop_close. Тесты: маппинг (мок db/store), 4xx-классификация.
-- [ ] 4. **Parity-тест (#10):** адаптерная телеметрия == `build_monitor(b75bd17)` на одном засеянном состоянии
-       (в tests/, не рантайм) — гарантия faithfulness на уровне цифр.
-- [ ] 5. Образ-обёртка: Dockerfile (vendor/ + адаптер), сборка. Safe-режим (LIVE_TRADING_ENABLED=0, BYBIT_DEMO=1).
+- [x] 2. Вендор `dashboard/{__init__,viewmodel}.py` @b75bd17 из свежего клона (sha сверены) — 59e0619.
+- [x] 3. Адаптер `bots/pifagor-cartridge/` (тонкий, НЕ копия Пифагора): CoreClient + **4xx-классификация
+       транзиентное/перманентное + backoff (#6/#7)** + маппер build_monitor→Контракт + цикл heartbeat ≤60с +
+       poll команд→pause/resume/stop_close. 58 юнит-тестов (client/mapper/bot) зелёные, ruff clean.
+- [x] 4. **Parity-тест (#10):** адаптерная телеметрия == `build_monitor(b75bd17)` на засеянной SQLite —
+       снимок ридера == прямой build_monitor + faithful маппинг + контролы бьют в killswitch/config. 4 теста.
+- [~] 5. Образ-обёртка: Dockerfile (context=bots/: vendor→/pifagor + адаптер) + start.sh (движок dry-run demo
+       + адаптер) + .dockerignore. Safe-режим (LIVE_TRADING_ENABLED=0/BYBIT_DEMO=1). Локальная сборка — след.
 - [ ] 6. Деплой Railway тем же конвейером (безопасный режим, БЕЗ реальных ключей) → сквозняк телеметрии+команд →
        доложить Куратору. ⛔ реальные ключи/торговля = отдельный гейт go-live.
 - [ ] 7. (отложено, гейт go-live) Конверт-шифрование ключей биржи end-to-end (ADR-0004/0010) + тесты.
