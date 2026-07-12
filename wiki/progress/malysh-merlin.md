@@ -34,10 +34,10 @@ sources: [_curator/DIRECTIVES.md#11]
       SHA256=`04f81c6196e76768ebf1eb6746a37d49a3f2668edc52c09a73d752ca8b5d4b34` (в scratchpad, не в дереве)
 - [x] 4. `reference/README.md`: архив (коммит/SHA256/где) + профиль + 3 копии + инвариант
 - [x] 5. **C/D. ADR-0014** + строка в index.md (log — на шаге 8)
-- [~] 6. Коммит локальных артефактов (ветка `task/malysh-merlin`) — reference/ + ADR-0014 + index + progress
-- [ ] 7. **F2 (внешние записи, #22 одобрено):** (a) annotated-тег `malysh-merlin/v8.3-b75bd17` + release на
-      pifagor-v81; (b) release Цитадели + upload tar.gz; SHA256 загруженного сверить с README
-- [ ] 8. Merge ветки в main (--no-ff) + roadmap (#11 done) + log.md + QUEUE «#11 готово к разбору»
+- [x] 6. Коммит локальных артефактов (dd4b3db) — reference/ + ADR-0014 + index + progress
+- [x] 7. **F2 (внешние записи, #22):** (a) тег `malysh-merlin/v8.3-b75bd17` в pifagor-v81 + release ✓;
+      (b) release Цитадели + ассет tar.gz ✓; SHA256 загруженного == README (04f81c61…) ✓
+- [~] 8. roadmap (#11 done) + log ✓ → merge ветки в main (--no-ff) → QUEUE «#11 готово к разбору»
 
 ## Границы
 pifagor-v81 не править (только тег-указатель + чтение клона); архив/профиль — read-only; реальные
