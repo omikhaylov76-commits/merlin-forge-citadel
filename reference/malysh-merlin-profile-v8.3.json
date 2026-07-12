@@ -1,0 +1,167 @@
+{
+  "_note": "Замороженный профиль-эталон «Малыш Мерлин». READ-ONLY. Клонируй, НЕ редактируй.",
+  "name": "Малыш Мерлин",
+  "role": "эталон · нулевой пациент",
+  "engine": "Пифагор",
+  "engine_version": "v8.3",
+  "snapshot_commit": "b75bd176193abba1803899c092052c1f9c00a9eb",
+  "captured_from": "config.knobs @ b75bd17 (заводские дефолты, окружение чистое)",
+  "invariant": "Эталон не редактируют — с него КЛОНИРУЮТ. Любой эксперимент = форк от «Малыша Мерлина», всегда сравним с оригиналом. Полный залок-в-UI — Ф5 (сейчас — замороженный артефакт).",
+  "knob_count": 23,
+  "knobs": {
+    "RISK_PCT_PER_LEG": {
+      "value": 1.3,
+      "t": "num",
+      "py": "float",
+      "lo": 0.5,
+      "hi": 10.0
+    },
+    "RISK_PCT_ALARM": {
+      "value": 0.65,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "hi": 10.0,
+      "lo_inc": false
+    },
+    "KILLSWITCH_DD": {
+      "value": 0.5,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "hi": 1.0,
+      "lo_inc": false,
+      "hi_inc": false
+    },
+    "ALARM_DD": {
+      "value": 0.4,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "hi": 1.0,
+      "lo_inc": false,
+      "hi_inc": false
+    },
+    "CONCURRENCY_CAP": {
+      "value": 8,
+      "t": "num",
+      "py": "int",
+      "lo": 1,
+      "hi": 16
+    },
+    "MAX_LEVERAGE": {
+      "value": 5,
+      "t": "num",
+      "py": "int",
+      "lo": 1,
+      "hi": 5
+    },
+    "REFINANCE_SPLIT": {
+      "value": 0.5,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "hi": 1.0,
+      "lo_inc": false,
+      "hi_inc": false
+    },
+    "WORKING_START": {
+      "value": 10000.0,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "lo_inc": false
+    },
+    "CUSHION_START": {
+      "value": 10000.0,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0
+    },
+    "STOP_FIB": {
+      "value": 1.0,
+      "t": "num",
+      "py": "float",
+      "lo": 0.5,
+      "hi": 1.5
+    },
+    "SL_TRIGGER_BY": {
+      "value": "LastPrice",
+      "t": "enum",
+      "py": "str",
+      "values": [
+        "LastPrice",
+        "MarkPrice",
+        "IndexPrice"
+      ]
+    },
+    "SHORTS_ENABLED": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "EMA_FILTER_ENABLED": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "REANCHOR_AFTER_SCALP": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "PAUSE_ENABLED": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "WARM_ON_START": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "WARM_MAX_AGE_BARS": {
+      "value": 72,
+      "t": "num",
+      "py": "int",
+      "lo": 1,
+      "hi": 500
+    },
+    "RUNNER_TP_HOLD": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "LEG2_EXT": {
+      "value": 1.0,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "hi": 3.0
+    },
+    "DOUBLE_DIP_ENABLED": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "DOUBLE_DIP_TOL": {
+      "value": 0.04,
+      "t": "num",
+      "py": "float",
+      "lo": 0.0,
+      "hi": 0.1
+    },
+    "TRAIL_ENABLED": {
+      "value": false,
+      "t": "bool",
+      "py": "bool"
+    },
+    "TRAIL_R": {
+      "value": 0.4,
+      "t": "num",
+      "py": "float",
+      "lo": 0.1,
+      "hi": 3.0
+    }
+  }
+}
