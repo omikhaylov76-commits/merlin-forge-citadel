@@ -64,3 +64,4 @@ updated: 2026-07-10
 - [HANDOFF_2026-07-11_session_2](handoffs/HANDOFF_2026-07-11_session_2.md) — MFC-000 швы + ADR 0007–0011, GOV-1, MFC-001 core (merged).
 - [HANDOFF_2026-07-11_session_3](handoffs/HANDOFF_2026-07-11_session_3.md) — MFC-002 часовой + MFC-003 instances/stale-скан (ADR 0012–0013, merged).
 - [HANDOFF_2026-07-11_session_4](handoffs/HANDOFF_2026-07-11_session_4.md) — Ф1 закрыта (MFC-004/005/006 + Railway обкатка merged); Ф2 начата (снимок Пифагора b75bd17 вендорен).
+- [HANDOFF_2026-07-12_session_5](handoffs/HANDOFF_2026-07-12_session_5.md) — **Ф2 ЗАКРЫТА**: адаптер картриджа + облачная сборка + ядро/Postgres/картридж в облаке, сквозняк облако-в-облако. Дальше — Малыш Мерлин (#11).
