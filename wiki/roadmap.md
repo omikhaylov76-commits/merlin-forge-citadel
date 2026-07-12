@@ -52,17 +52,20 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
       сирот (разбор Куратора #2, вариант A). **Гейт: ДО Ф2** (до первого реального деплоя) — todo
 - [ ] Консоль Оператора: минимальный флот-дашборд (после мокапа) — todo
 
-## Ф2 — Пифагор-картридж (in-progress) — план: progress/f2-pifagor-cartridge.md
-Цель: первый боевой движок за Контрактом, без правок pifagor-v81. Снимок: ветка main, коммит **b75bd17**
-(подтверждён Оператором 2026-07-11).
+## Ф2 — Пифагор-картридж (ЗАКРЫТА 2026-07-12) — план: progress/f2-pifagor-cartridge.md
+Цель ДОСТИГНУТА: первый боевой движок за Контрактом, без правок pifagor-v81, живёт в облаке (Railway).
+Снимок: main @ **b75bd17**. Осталось из веха как хвосты go-live: конверт-ключей + reference-hardening (ниже/Icebox).
 - [x] Recon: dashboard/viewmodel.py (build_monitor отдаёт equity/curve/working/cushion/kill-switch/сделки) —
       допущение «обёртка без правок репо» **ПОДТВЕРЖДЕНО** 2026-07-11. Recon-2 (контролы pause/kill) — след.
 - [x] Обёртка-адаптер: `bots/pifagor-cartridge` — read-only по Контракту (viewmodel→heartbeat/equity/trades/
       events + команды→PAUSE_ENABLED/killswitch, 4xx-классификация #6/#7) — done 2026-07-12 · 70 тестов +
       parity(реальный build_monitor) + schema-conformance; ЖИВОЙ сквозняк против ядра ✅; независимое ревью
       (фиксы #1–#5). Образ: облачная сборка CI→ghcr (#12), локальный Docker убран.
-- [ ] Деплой картриджа на Railway облачной сборкой (безопасный режим) — ГЕЙТ Оператора: ghcr-доступ Railway
-      + demo-ключи Bybit + согласие на compute (RAILWAY token/project уже в .env). Затем сквозняк demo.
+- [x] **Ф2 ЗАКРЫТА (2026-07-12): картридж Пифагора живой в облаке, сквозняк ОБЛАКО-В-ОБЛАКО (#15).**
+      Railway-проект `merlin-forge-citadel`: Postgres + ядро (публичный `core-production-429b.up.railway.app`,
+      healthz/readyz 200) + картридж (worker DEMO api-demo.bybit.com, safe LIVE_TRADING_ENABLED=0). Телеметрия
+      картридж→облачное ядро (heartbeat 204/equity 202/events 202, приватная сеть) + pause сквозь ядро
+      (enqueue→command_delivered→command_ack). Bootstrap ядра (оператор+instance-токен из env). Образы CI→ghcr.
 - [ ] «Малыш Мерлин» (#11, ПОСЛЕ деплоя картриджа — ПОРЯДОК Оператора): полный архив @b75bd17 в 2 местах
       (тег `malysh-merlin/v8.3-b75bd17` на репо Пифагора + tar.gz-ассет Цитадели + SHA256) + залоченный
       профиль-эталон `reference/malysh-merlin-profile-v8.3.json` (захват дефолтов) + ADR-0014. Полный залок в UI — Ф5.
