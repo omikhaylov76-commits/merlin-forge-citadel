@@ -66,6 +66,10 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
       healthz/readyz 200) + картридж (worker DEMO api-demo.bybit.com, safe LIVE_TRADING_ENABLED=0). Телеметрия
       картридж→облачное ядро (heartbeat 204/equity 202/events 202, приватная сеть) + pause сквозь ядро
       (enqueue→command_delivered→command_ack). Bootstrap ядра (оператор+instance-токен из env). Образы CI→ghcr.
+- [x] Хардненинг #20 (2026-07-12, main cde329f): дыра-гигиена на ПУБЛИЧНОМ ядре закрыта — `create_app`
+      по умолчанию отключает /docs·/redoc·/openapi.json (ENABLE_DOCS=1 для локали), +2 теста. Передеплой +
+      сырой curl-простук без токена: доки 404, /v1/* и internal/telemetry без токена 401, healthz/readyz 200;
+      Postgres не публичен; BOOTSTRAP_* сильные. **Ф2 БЕЗОПАСНО закрыта.**
 - [ ] «Малыш Мерлин» (#11, ПОСЛЕ деплоя картриджа — ПОРЯДОК Оператора): полный архив @b75bd17 в 2 местах
       (тег `malysh-merlin/v8.3-b75bd17` на репо Пифагора + tar.gz-ассет Цитадели + SHA256) + залоченный
       профиль-эталон `reference/malysh-merlin-profile-v8.3.json` (захват дефолтов) + ADR-0014. Полный залок в UI — Ф5.
