@@ -34,7 +34,7 @@ def seed_operator() -> None:
 
 
 def seed_demo_instance() -> None:
-    """Демо-инстанс + instance-токен из env (для сквозняка облако-в-облако). Токен задаём МЫ (env-стор),
+    """Демо-инстанс + instance-токен из env (сквозняк облако-в-облако). Токен задаём МЫ (env-стор),
     core хранит его SHA-256 — картридж юзает сырой как MF_INSTANCE_TOKEN. ДЕМО-обход: боевой путь
     инстанса — через create_instance→оркестратор (токен в job). Идемпотентно по instance id."""
     iid = os.environ.get("BOOTSTRAP_INSTANCE_ID")
