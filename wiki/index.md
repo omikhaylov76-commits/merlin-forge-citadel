@@ -35,6 +35,10 @@ updated: 2026-07-10
 - [0011](decisions/0011-billing-hwm-model.md) — модель HWM (cashflows, уровень счёта, сверка); формула — Ф3.
 - [0012](decisions/0012-healthz-scheduler-deadman.md) — dead-man часового в /healthz (вариант A: показывать, не гейтить).
 - [0013](decisions/0013-instances-deferred-fk.md) — отложенные FK у instances (материализуем без родителей, YAGNI).
+- [0014](decisions/0014-malysh-merlin-reference.md) — «Малыш Мерлин»: архив @b75bd17 + тег + залоченный профиль-эталон + инвариант «клонируй-не-редактируй».
+
+## reference
+- [reference/README](../reference/README.md) — «Малыш Мерлин»: профиль-эталон v8.3 (в дереве) + архив @b75bd17 (release-ассет, SHA256) + инвариант.
 
 ## runbooks
 - [onboarding-client](runbooks/onboarding-client.md) — путь клиента до go-live.
