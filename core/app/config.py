@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     env: str = "dev"          # dev | staging | prod
     database_url: str = ""    # заполняется в шаге 2 (Alembic + сессии)
     log_level: str = "INFO"
+    # Swagger/OpenAPI-доки. По умолчанию ВЫКЛЮЧЕНЫ (#18.3): ядро торчит в интернет, карту API
+    # наружу не палим. Для локали можно включить ENABLE_DOCS=1. В проде — только off.
+    enable_docs: bool = False
     # URL ядра, по которому бот шлёт телеметрию/берёт команды (MF_CORE_URL в env картриджа, S4).
     core_public_url: str = "http://127.0.0.1:8000"
     # Окно приёма телеметрии по времени бота: |ts−now| < N (S4; защита от мусора/дрейфа часов).

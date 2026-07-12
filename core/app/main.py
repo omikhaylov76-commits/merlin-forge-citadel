@@ -52,7 +52,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             await scheduler.stop()
 
-    app = FastAPI(title="Merlin Forge Citadel — core", version="0.1.0", lifespan=lifespan)
+    # Доки закрыты по умолчанию (#18.3): на публичном ядре /docs, /redoc, /openapi.json не
+    # отдаём — иначе карта API уходит в интернет. ENABLE_DOCS=1 включает их для локали.
+    doc_urls = (
+        {}
+        if settings.enable_docs
+        else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    )
+    app = FastAPI(
+        title="Merlin Forge Citadel — core", version="0.1.0", lifespan=lifespan, **doc_urls
+    )
     app.state.scheduler = scheduler
 
     @app.middleware("http")
