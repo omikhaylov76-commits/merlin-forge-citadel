@@ -2,8 +2,8 @@
 CHECK (fee/capital/enum/amount), FK, immutability ЗАКРЫТОГО периода (триггер). Нужен Postgres.
 
 Чистка — фикстура `clean` (setup+teardown) через TRUNCATE ... CASCADE: TRUNCATE обходит row-триггер
-immutability (иначе закрытый период не удалить), teardown не даёт billing-строкам утечь в другие файлы
-(их FK на clients/exchange_accounts иначе ломает DELETE-чистку соседей)."""
+immutability (иначе закрытый период не удалить); teardown не даёт billing-строкам утечь в соседние
+файлы (их FK на clients/exchange_accounts иначе ломает DELETE-чистку соседей)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
