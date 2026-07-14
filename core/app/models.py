@@ -18,6 +18,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -74,6 +75,57 @@ class AuditLog(Base):
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Client(Base):
+    __tablename__ = "clients"
+    __table_args__ = (
+        CheckConstraint(
+            "fee_pct_default >= 0 AND fee_pct_default < 1", name="ck_clients_fee_pct_default"
+        ),
+        {
+            "comment": "Клиент managed-счёта (Ф3, CRM). fee_pct_default — тариф-дефолт (MON8), "
+            "снапшот в период при закрытии. is_active — мягкое отключение без удаления."
+        },
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    contacts: Mapped[str | None] = mapped_column(Text, nullable=True)  # e-mail/телега/заметки
+    contract_ref: Mapped[str | None] = mapped_column(Text, nullable=True)  # ссылка на договор
+    # тариф-дефолт как доля (0.2 = 20%); NULL пока не задан; CHECK 0<=x<1 (не берём >100%)
+    fee_pct_default: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    # связь с учёткой для портала; UUID без FK (FK включим в Ф4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    is_active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExchangeAccount(Base):
+    __tablename__ = "exchange_accounts"
+    __table_args__ = (
+        CheckConstraint(
+            "exchange IN ('bybit','okx','bitget')", name="ck_exchange_accounts_exchange"
+        ),
+        {
+            "comment": "Биржевой счёт клиента (Ф3). key_ciphertext — шифр ключей, ADR-0004/0010; "
+            "NULL пока нет; расшифровка только в оркестраторе, в лог/ответ НИКОГДА."
+        },
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    exchange: Mapped[str] = mapped_column(String(16), nullable=False)  # bybit|okx|bitget (+CHECK)
+    label: Mapped[str | None] = mapped_column(String(255), nullable=True)  # человекочитаемая метка
+    key_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)  # СЕКРЕТ: не в лог
+    perms_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    is_active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Instance(Base):
     __tablename__ = "instances"
     __table_args__ = (
@@ -85,13 +137,17 @@ class Instance(Base):
         ),
         {
             "comment": "Инстанс бота: status=намерение, health=свежесть heartbeat (flows). "
-            "FK на clients/accounts/bot_types/profiles отложены — ADR-0013 (родители в Ф2/Ф3/Ф5)."
+            "FK client_id/account_id включены в Ф3 (0005); bot_type_id/profile_id — Ф5 (ADR-0013)."
         },
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    # Ссылки на родителей — UUID БЕЗ FK-constraint (родители появятся со своими фичами, ADR-0013)
-    client_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
-    account_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    # client_id/account_id — FK в Ф3; bot_type_id/profile_id — UUID без FK (ADR-0013, Ф5)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("clients.id", ondelete="RESTRICT"), nullable=False
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exchange_accounts.id", ondelete="RESTRICT"), nullable=False
+    )
     bot_type_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     profile_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # жизненный цикл (flows)

@@ -12,6 +12,7 @@ from app.config import Settings
 from app.db import get_sessionmaker
 from app.instance_health import classify, scan_once
 from app.models import Instance
+from tests.crm_helpers import ensure_parents
 
 
 @pytest.fixture
@@ -21,15 +22,21 @@ def sm(_migrated: None):
         for t in ("commands", "jobs", "equity_points", "trades", "events"):
             s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
+        # родители instances (FK Ф3): удаляем ПОСЛЕ инстансов
+        s.execute(text("DELETE FROM exchange_accounts"))
+        s.execute(text("DELETE FROM clients"))
         s.commit()
     return m
 
 
 def _mk(session, status="running", hb_age_s=10.0, account_id=None) -> Instance:
     hb = None if hb_age_s is None else datetime.now(UTC) - timedelta(seconds=hb_age_s)
+    client_id = uuid.uuid4()
+    account_id = account_id or uuid.uuid4()
+    ensure_parents(session, client_id, account_id)  # FK client_id/account_id (0005)
     inst = Instance(
-        client_id=uuid.uuid4(),
-        account_id=account_id or uuid.uuid4(),
+        client_id=client_id,
+        account_id=account_id,
         bot_type_id=uuid.uuid4(),
         profile_id=uuid.uuid4(),
         status=status,

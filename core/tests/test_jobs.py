@@ -15,6 +15,7 @@ from app.db import get_sessionmaker
 from app.jobs import LeaseConflict, ack, lease_next
 from app.main import create_app
 from app.models import Instance, Job
+from tests.crm_helpers import ensure_parents
 
 
 @pytest.fixture
@@ -24,14 +25,17 @@ def sm(_migrated: None):
         for t in ("commands", "jobs", "equity_points", "trades", "events"):
             s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
+        s.execute(text("DELETE FROM exchange_accounts"))
+        s.execute(text("DELETE FROM clients"))
         s.commit()
     return m
 
 
 def _mk_instance(session, status="pending", infra_ref=None) -> Instance:
+    cid, aid = ensure_parents(session, uuid.uuid4(), uuid.uuid4())  # FK Ф3
     inst = Instance(
-        client_id=uuid.uuid4(),
-        account_id=uuid.uuid4(),
+        client_id=cid,
+        account_id=aid,
         bot_type_id=uuid.uuid4(),
         profile_id=uuid.uuid4(),
         status=status,

@@ -11,14 +11,17 @@ from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Instance, Job
+from tests.crm_helpers import ensure_parents
 
 
 @pytest.fixture
 def clean(_migrated: None):
-    with get_sessionmaker()() as s:  # дети instances → instances (FK-порядок)
+    with get_sessionmaker()() as s:  # дети instances → instances → родители (FK-порядок)
         for t in ("commands", "jobs", "equity_points", "trades", "events"):
             s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
+        s.execute(text("DELETE FROM exchange_accounts"))
+        s.execute(text("DELETE FROM clients"))
         s.commit()
 
 
@@ -29,9 +32,15 @@ def _login(c: TestClient, email: str, pw: str) -> dict:
 
 
 def _body(account_id: str | None = None) -> dict:
+    # FK Ф3: client_id/account_id должны существовать → сеем родителей под тело запроса.
+    client_id = str(uuid.uuid4())
+    account_id = account_id or str(uuid.uuid4())
+    with get_sessionmaker()() as s:
+        ensure_parents(s, uuid.UUID(client_id), uuid.UUID(account_id))
+        s.commit()
     return {
-        "client_id": str(uuid.uuid4()),
-        "account_id": account_id or str(uuid.uuid4()),
+        "client_id": client_id,
+        "account_id": account_id,
         "bot_type_id": str(uuid.uuid4()),
         "profile_id": str(uuid.uuid4()),
         "image": "paper-bot:v0",
@@ -69,10 +78,22 @@ def test_create_instance_conflict_on_busy_account(users, clean):
     assert c.post("/v1/instances", headers=h, json=_body(acct)).status_code == 409
 
 
+def test_create_instance_404_for_unknown_parents(users, clean):
+    # FK Ф3: инстанс на несуществующего клиента/счёт → чёткий 404 (не 409 «занятый счёт»)
+    c = TestClient(create_app())
+    h = _login(c, "op@mfc.local", "op-pass")
+    body = {
+        "client_id": str(uuid.uuid4()), "account_id": str(uuid.uuid4()),
+        "bot_type_id": str(uuid.uuid4()), "profile_id": str(uuid.uuid4()), "image": "paper-bot:v0",
+    }
+    assert c.post("/v1/instances", headers=h, json=body).status_code == 404
+
+
 def test_teardown_enqueues_job(users, clean):
     with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())  # FK Ф3
         inst = Instance(
-            client_id=uuid.uuid4(), account_id=uuid.uuid4(), bot_type_id=uuid.uuid4(),
+            client_id=cid, account_id=aid, bot_type_id=uuid.uuid4(),
             profile_id=uuid.uuid4(), status="running", health="ok", infra_ref="railway:p:s",
         )
         s.add(inst)
@@ -102,8 +123,9 @@ def test_teardown_rejects_pending(users, clean):
 
 def test_teardown_idempotent_rejects_double(users, clean):
     with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())  # FK Ф3
         inst = Instance(
-            client_id=uuid.uuid4(), account_id=uuid.uuid4(), bot_type_id=uuid.uuid4(),
+            client_id=cid, account_id=aid, bot_type_id=uuid.uuid4(),
             profile_id=uuid.uuid4(), status="running", health="ok",
         )
         s.add(inst)
