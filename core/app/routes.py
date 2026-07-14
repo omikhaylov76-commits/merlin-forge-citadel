@@ -108,7 +108,7 @@ def create_instance(
     account = session.get(ExchangeAccount, body.account_id)
     if account is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "биржевой счёт не найден")
-    # счёт обязан принадлежать ЭТОМУ клиенту — иначе биллинг Ф3 атрибутирует equity не тому клиенту (деньги)
+    # счёт обязан принадлежать ЭТОМУ клиенту — иначе биллинг Ф3 спишет equity не тому (деньги)
     if account.client_id != body.client_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "счёт принадлежит другому клиенту")
     inst = Instance(
