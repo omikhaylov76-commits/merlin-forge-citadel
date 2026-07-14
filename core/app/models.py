@@ -299,3 +299,104 @@ class Command(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Contract(Base):
+    __tablename__ = "contracts"
+    __table_args__ = (
+        CheckConstraint(
+            "payment_model IN ('profit_hwm','capital_fixed','hybrid','subscription')",
+            name="ck_contracts_payment_model",
+        ),
+        CheckConstraint("fee_pct >= 0 AND fee_pct < 1", name="ck_contracts_fee_pct"),
+        CheckConstraint("mgmt_fee_pct >= 0", name="ck_contracts_mgmt_fee_pct"),
+        CheckConstraint("hurdle_pct >= 0", name="ck_contracts_hurdle_pct"),
+        CheckConstraint("billing_period IN ('month','quarter')", name="ck_contracts_bperiod"),
+        CheckConstraint("capital >= 500", name="ck_contracts_capital_floor"),
+        CheckConstraint("currency IN ('USDT','USDC')", name="ck_contracts_currency"),
+        CheckConstraint("status IN ('draft','signed','suspended')", name="ck_contracts_status"),
+        {"comment": "Договор клиента (Ф3): типизированные условия биллинга; fee_pct снапшотится "
+         "в период (ADR-0011). billing_period v1=month, quarter — колонка на будущее (#26)."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    payment_model: Mapped[str] = mapped_column(
+        String(16), nullable=False, server_default="profit_hwm"
+    )
+    fee_pct: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False, server_default="0.15")
+    high_water_mark: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    mgmt_fee_pct: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False, server_default="0")
+    hurdle_pct: Mapped[Decimal] = mapped_column(Numeric(5, 4), nullable=False, server_default="0")
+    billing_period: Mapped[str] = mapped_column(String(8), nullable=False, server_default="month")
+    capital: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default="1000")
+    withdrawal_notice_days: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, server_default="USDT")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="draft")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class BillingPeriod(Base):
+    __tablename__ = "billing_periods"
+    __table_args__ = (
+        CheckConstraint("status IN ('open','closed')", name="ck_billing_periods_status"),
+        {"comment": "Период биллинга: счёт+клиент+инстанс во времени (роллап #23-доп). Закрытый "
+         "immutable (триггер). hwm/cum_profit/commission — ADR-0011; fee_pct — снапшот."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exchange_accounts.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    client_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("clients.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    contract_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("contracts.id", ondelete="RESTRICT"), nullable=False
+    )
+    # instance_id — активный бот в периоде (per-instance роллап #23-доп); UUID без FK (бот сносится)
+    instance_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    start_equity: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
+    end_equity: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    net_deposits: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), nullable=False, server_default="0"
+    )
+    period_net_trading: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    cum_profit: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    hwm: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default="0")
+    fee_pct: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)  # снапшот
+    commission: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(8), nullable=False, server_default="USDT")
+    status: Mapped[str] = mapped_column(String(8), nullable=False, server_default="open")
+    adjustments_json: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Cashflow(Base):
+    __tablename__ = "cashflows"
+    __table_args__ = (
+        CheckConstraint("kind IN ('deposit','withdrawal')", name="ck_cashflows_kind"),
+        CheckConstraint("amount > 0", name="ck_cashflows_amount_positive"),
+        {"comment": "Пополнения/выводы клиента (ADR-0011 MON1). НЕ прибыль/убыток — исключаются "
+         "из торгового Δ, сдвигают планку HWM на сумму (абсолютно, #24)."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("exchange_accounts.id", ondelete="RESTRICT"),
+        nullable=False, index=True,
+    )
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # deposit|withdrawal (+CHECK)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)  # >0 (+CHECK)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)  # кто записал (аудит)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
