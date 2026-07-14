@@ -11,7 +11,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select, text
 
-from app.billing import close_period, compute_period
+from app.billing import close_period, compute_period, v1_unsupported_reason
 from app.db import get_sessionmaker
 from app.models import AuditLog, BillingPeriod, Cashflow, Contract
 from tests.crm_helpers import ensure_parents
@@ -67,6 +67,16 @@ def test_deposit_not_profit() -> None:
                        hwm_prev=D(0), cum_profit_prev=D(0), fee_pct=D("0.15"))
     assert r["period_net_trading"] == D("0.00")   # 15000 − 10000 − 5000
     assert r["commission"] == D("0.00")
+
+
+def test_v1_unsupported_reason() -> None:
+    ok = dict(payment_model="profit_hwm", hurdle_pct=D(0), mgmt_fee_pct=D(0),
+              billing_period="month", high_water_mark=True)
+    assert v1_unsupported_reason(**ok) is None
+    assert v1_unsupported_reason(**{**ok, "billing_period": "quarter"}) is not None
+    assert v1_unsupported_reason(**{**ok, "high_water_mark": False}) is not None
+    assert v1_unsupported_reason(**{**ok, "payment_model": "subscription"}) is not None
+    assert v1_unsupported_reason(**{**ok, "hurdle_pct": D("0.01")}) is not None
 
 
 def test_withdrawal_not_loss() -> None:
@@ -259,6 +269,50 @@ def test_integration_withdrawal_not_loss(clean) -> None:
         assert bp.net_deposits == D("-5000.00")            # вывод отрицательный
         assert bp.period_net_trading == D("2000.00")
         assert bp.commission == D("300.00")                # 0.15×2000 (вывод не убыток)
+
+
+def test_close_rejects_quarter_contract(clean) -> None:
+    # защита-в-глубину: движок тоже отвергает неподдержанную каденцию (C1)
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, billing_period="quarter")
+        s.add(contract)
+        s.flush()
+        pid = _open_period(s, cid, aid, contract.id, D("1000"),
+                           datetime.now(UTC) - timedelta(days=30), datetime.now(UTC))
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):
+            close_period(s, pid, end_equity=D("1100"), actor="op")
+
+
+def test_close_rejects_no_hwm_contract(clean) -> None:
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, high_water_mark=False)
+        s.add(contract)
+        s.flush()
+        pid = _open_period(s, cid, aid, contract.id, D("1000"),
+                           datetime.now(UTC) - timedelta(days=30), datetime.now(UTC))
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):
+            close_period(s, pid, end_equity=D("1100"), actor="op")
+
+
+def test_close_rejects_currency_mismatch(clean) -> None:
+    # NEW-2: валюта договора (USDC) ≠ валюта периода (дефолт USDT) → close_period отказывается
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, currency="USDC")
+        s.add(contract)
+        s.flush()
+        pid = _open_period(s, cid, aid, contract.id, D("1000"),
+                           datetime.now(UTC) - timedelta(days=30), datetime.now(UTC))
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):
+            close_period(s, pid, end_equity=D("1100"), actor="op")
 
 
 def test_v1_guard_rejects_mgmt_fee(clean) -> None:

@@ -26,6 +26,23 @@ def _q(x: Decimal) -> Decimal:
     return Decimal(x).quantize(CENTS, rounding=ROUND_HALF_UP)
 
 
+def v1_unsupported_reason(
+    *, payment_model: str, hurdle_pct, mgmt_fee_pct, billing_period: str, high_water_mark: bool
+) -> str | None:
+    """ЕДИНАЯ проверка v1-совместимости договора (для API-подписания и движка — чтоб не разошлись).
+    Возвращает причину-строку, если условия НЕ поддержаны v1, иначе None. v1 = profit_hwm + HWM +
+    месяц + hurdle/mgmt=0; иначе — тихий недосчёт/чужая каденция (деньги), поэтому fail-loud."""
+    if payment_model != "profit_hwm":
+        return f"payment_model={payment_model} не поддержан (только profit_hwm)"
+    if billing_period != "month":
+        return f"billing_period={billing_period} не поддержан (только month)"
+    if not high_water_mark:
+        return "high_water_mark=False не поддержан (только HWM-биллинг)"
+    if hurdle_pct != 0 or mgmt_fee_pct != 0:
+        return "hurdle_pct и mgmt_fee_pct должны быть 0"
+    return None
+
+
 def compute_period(
     *,
     start_equity: Decimal,
@@ -90,11 +107,18 @@ def close_period(session: Session, period_id, end_equity: Decimal, actor: str) -
     contract = session.get(Contract, bp.contract_id)
     if contract is None:
         raise ValueError(f"contract {bp.contract_id} не найден")
-    # v1-гейт: неподдержанные условия НЕ считаем молча (недосчёт комиссии/mgmt-fee = потеря денег).
-    if contract.payment_model != "profit_hwm":
-        raise ValueError(f"v1: payment_model={contract.payment_model} не реализован")
-    if contract.hurdle_pct != 0 or contract.mgmt_fee_pct != 0:
-        raise ValueError("v1: hurdle_pct и mgmt_fee_pct должны быть 0 (не реализованы)")
+    # v1-гейт: неподдержанные условия НЕ считаем молча (недосчёт/чужая каденция = деньги).
+    reason = v1_unsupported_reason(
+        payment_model=contract.payment_model, hurdle_pct=contract.hurdle_pct,
+        mgmt_fee_pct=contract.mgmt_fee_pct, billing_period=contract.billing_period,
+        high_water_mark=contract.high_water_mark,
+    )
+    if reason is not None:
+        raise ValueError(f"v1: {reason}")
+    # NEW-2 (защита-в-глубину): валюта периода обязана совпадать с договором — иначе суммируем
+    # разновалютные суммы и метим комиссию не той валютой. Генератор копирует валюту договора.
+    if contract.currency != bp.currency:
+        raise ValueError(f"валюта договора {contract.currency} ≠ валюта периода {bp.currency}")
     # Порядок: более раннего НЕзакрытого периода счёта быть не должно (иначе рвётся цепочка HWM).
     earlier_open = session.execute(
         select(BillingPeriod.id).where(
