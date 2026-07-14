@@ -1,7 +1,7 @@
 """contracts: ≤1 подписанный договор на клиента (адверс-ревью M2)
 
 Партиал-уникальный индекс по client_id для status='signed': два подписанных договора одному клиенту
-делали бы снапшот fee_pct в billing_period неоднозначным (деньги). App-слой (routes_crm) проверяет это
+делали бы снапшот fee_pct в billing_period неоднозначным (деньги). App-слой (routes_crm) проверяет
 до записи и даёт 409; индекс — backstop от гонки. draft/suspended не ограничены.
 
 Revision ID: 0007_contract_one_signed
