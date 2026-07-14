@@ -102,6 +102,66 @@ def test_contract_v1_guard_rejects_unsupported(crm) -> None:
                   json={"client_id": cid, "mgmt_fee_pct": "0.02"}).status_code == 422
 
 
+def test_contract_v1_guard_rejects_quarter_and_no_hwm(crm) -> None:
+    # C1/M1: billing_period=quarter и high_water_mark=false не поддержаны v1 → 422
+    c = TestClient(create_app())
+    h = _op(c)
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    assert c.post("/v1/contracts", headers=h,
+                  json={"client_id": cid, "billing_period": "quarter"}).status_code == 422
+    assert c.post("/v1/contracts", headers=h,
+                  json={"client_id": cid, "high_water_mark": False}).status_code == 422
+
+
+def test_one_signed_contract_per_client(crm) -> None:
+    # M2: второй подписанный договор одному клиенту → 409
+    c = TestClient(create_app())
+    h = _op(c)
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    k1 = c.post("/v1/contracts", headers=h, json={"client_id": cid}).json()["id"]
+    k2 = c.post("/v1/contracts", headers=h, json={"client_id": cid}).json()["id"]
+    r1 = c.patch(f"/v1/contracts/{k1}/status", headers=h, json={"status": "signed"})
+    assert r1.status_code == 200
+    r2 = c.patch(f"/v1/contracts/{k2}/status", headers=h, json={"status": "signed"})
+    assert r2.status_code == 409  # второй signed отвергнут
+    # прямое создание второго signed — тоже 409
+    assert c.post("/v1/contracts", headers=h,
+                  json={"client_id": cid, "status": "signed"}).status_code == 409
+
+
+def test_contract_status_transition_guard(crm) -> None:
+    # M5: signed→draft запрещён (сначала suspend)
+    c = TestClient(create_app())
+    h = _op(c)
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    kid = c.post("/v1/contracts", headers=h, json={"client_id": cid}).json()["id"]
+    c.patch(f"/v1/contracts/{kid}/status", headers=h, json={"status": "signed"})
+    assert c.patch(f"/v1/contracts/{kid}/status", headers=h,
+                   json={"status": "draft"}).status_code == 409
+
+
+def test_rbac_on_contracts(crm) -> None:
+    c = TestClient(create_app())
+    cid_op = _op(c)
+    cid = c.post("/v1/clients", headers=cid_op, json={"name": "Acme"}).json()["id"]
+    hcl = _login(c, "a@mfc.local", "a-pass")  # роль client
+    assert c.post("/v1/contracts", headers=hcl, json={"client_id": cid}).status_code == 403
+    assert c.post("/v1/contracts", json={"client_id": cid}).status_code == 401  # без токена
+
+
+def test_contract_bad_uuid_and_overflow_422(crm) -> None:
+    # M3/M4: битый UUID и capital-overflow ловятся Pydantic → 422 (не 500)
+    c = TestClient(create_app())
+    h = _op(c)
+    assert c.post("/v1/contracts", headers=h, json={"client_id": "garbage"}).status_code == 422
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    assert c.post("/v1/contracts", headers=h,
+                  json={"client_id": cid, "capital": "1e20"}).status_code == 422
+    # N1: fee_pct с 5 знаками → 422 (не тихое округление тарифа)
+    assert c.post("/v1/contracts", headers=h,
+                  json={"client_id": cid, "fee_pct": "0.15007"}).status_code == 422
+
+
 def test_contract_field_validation(crm) -> None:
     c = TestClient(create_app())
     h = _op(c)
