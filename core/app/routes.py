@@ -105,8 +105,12 @@ def create_instance(
     # иначе FK-IntegrityError ниже смешался бы с 409 «занятый счёт». bot_type/profile — без FK (Ф5).
     if session.get(Client, body.client_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "клиент не найден")
-    if session.get(ExchangeAccount, body.account_id) is None:
+    account = session.get(ExchangeAccount, body.account_id)
+    if account is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "биржевой счёт не найден")
+    # счёт обязан принадлежать ЭТОМУ клиенту — иначе биллинг Ф3 атрибутирует equity не тому клиенту (деньги)
+    if account.client_id != body.client_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "счёт принадлежит другому клиенту")
     inst = Instance(
         client_id=body.client_id,
         account_id=body.account_id,

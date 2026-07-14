@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
-from app.models import Instance, Job
+from app.models import Client, Instance, Job
 from tests.crm_helpers import ensure_parents
 
 
@@ -72,10 +72,10 @@ def test_create_instance_requires_operator(users, clean):
 def test_create_instance_conflict_on_busy_account(users, clean):
     c = TestClient(create_app())
     h = _login(c, "op@mfc.local", "op-pass")
-    acct = str(uuid.uuid4())
-    assert c.post("/v1/instances", headers=h, json=_body(acct)).status_code == 201
+    body = _body()  # консистентная пара client+account; постим ДВАЖДЫ на тот же счёт
+    assert c.post("/v1/instances", headers=h, json=body).status_code == 201
     # второй живой инстанс на тот же счёт — 409 (партиал-уникальность instances, OPS3)
-    assert c.post("/v1/instances", headers=h, json=_body(acct)).status_code == 409
+    assert c.post("/v1/instances", headers=h, json=body).status_code == 409
 
 
 def test_create_instance_404_for_unknown_parents(users, clean):
@@ -87,6 +87,22 @@ def test_create_instance_404_for_unknown_parents(users, clean):
         "bot_type_id": str(uuid.uuid4()), "profile_id": str(uuid.uuid4()), "image": "paper-bot:v0",
     }
     assert c.post("/v1/instances", headers=h, json=body).status_code == 404
+
+
+def test_create_instance_400_account_of_another_client(users, clean):
+    # Счёт принадлежит клиенту A, а в запросе клиент B → 400 (защита атрибуции биллинга)
+    c = TestClient(create_app())
+    h = _login(c, "op@mfc.local", "op-pass")
+    with get_sessionmaker()() as s:
+        _, acc_of_a = ensure_parents(s, uuid.uuid4(), uuid.uuid4())  # счёт acc_of_a у клиента A
+        client_b = uuid.uuid4()
+        s.add(Client(id=client_b, name="client B"))
+        s.commit()
+    body = {
+        "client_id": str(client_b), "account_id": str(acc_of_a),
+        "bot_type_id": str(uuid.uuid4()), "profile_id": str(uuid.uuid4()), "image": "paper-bot:v0",
+    }
+    assert c.post("/v1/instances", headers=h, json=body).status_code == 400
 
 
 def test_teardown_enqueues_job(users, clean):
