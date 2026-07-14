@@ -12,7 +12,7 @@ import uuid
 from sqlalchemy import select
 
 from app.db import get_sessionmaker
-from app.models import ApiToken, Instance, User
+from app.models import ApiToken, Client, ExchangeAccount, Instance, User
 from app.security import hash_password, hash_token
 
 
@@ -34,21 +34,36 @@ def seed_operator() -> None:
 
 
 def seed_demo_instance() -> None:
-    """Демо-инстанс + instance-токен из env (сквозняк облако-в-облако). Токен задаём МЫ (env-стор),
-    core хранит его SHA-256 — картридж юзает сырой как MF_INSTANCE_TOKEN. ДЕМО-обход: боевой путь
-    инстанса — через create_instance→оркестратор (токен в job). Идемпотентно по instance id."""
+    """Демо-инстанс + его родители (client + exchange_account для FK Ф3) + instance-токен из env.
+    Токен задаём МЫ (env-стор), core хранит SHA-256; картридж юзает сырой как MF_INSTANCE_TOKEN.
+    ДЕМО-обход: боевой путь — create_instance→оркестратор. Идемпотентно по instance id.
+    client/account id — из env (BOOTSTRAP_CLIENT_ID/ACCOUNT_ID) либо генерятся консистентно.
+
+    У существующего облачного демо-инстанса (до Ф3) родители — плейсхолдеры из бэкофилла 0005;
+    свежий деплой заводит нормальных родителей."""
     iid = os.environ.get("BOOTSTRAP_INSTANCE_ID")
     tok = os.environ.get("BOOTSTRAP_INSTANCE_TOKEN")
     if not iid or not tok:
         print("[bootstrap] BOOTSTRAP_INSTANCE_* не заданы — пропуск демо-инстанса")
         return
+    client_id = uuid.UUID(os.environ.get("BOOTSTRAP_CLIENT_ID", str(uuid.uuid4())))
+    account_id = uuid.UUID(os.environ.get("BOOTSTRAP_ACCOUNT_ID", str(uuid.uuid4())))
     sm = get_sessionmaker()
     with sm() as session:
         if session.get(Instance, uuid.UUID(iid)) is not None:
             print(f"[bootstrap] демо-инстанс {iid} уже есть — no-op")
             return
+        # Родители ДО инстанса (FK client_id/account_id, Ф3). Идемпотентно по id.
+        if session.get(Client, client_id) is None:
+            session.add(Client(id=client_id, name="demo client", is_active=True))
+        if session.get(ExchangeAccount, account_id) is None:
+            session.add(ExchangeAccount(
+                id=account_id, client_id=client_id, exchange="bybit",
+                label="demo (api-demo.bybit.com)", is_active=True,
+            ))
+        session.flush()  # родители материализованы до инстанса
         session.add(Instance(
-            id=uuid.UUID(iid), client_id=uuid.uuid4(), account_id=uuid.uuid4(),
+            id=uuid.UUID(iid), client_id=client_id, account_id=account_id,
             bot_type_id=uuid.uuid4(), profile_id=uuid.uuid4(), status="running", health="ok",
         ))
         session.add(ApiToken(
@@ -56,7 +71,7 @@ def seed_demo_instance() -> None:
             scope="instance", expires_at=None,  # машинный токен (не протухает, ADR-0008v2)
         ))
         session.commit()
-        print(f"[bootstrap] демо-инстанс {iid} + instance-токен посеяны")
+        print(f"[bootstrap] демо-инстанс {iid} (+client/account) + instance-токен посеяны")
 
 
 if __name__ == "__main__":

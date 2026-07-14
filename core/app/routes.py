@@ -15,7 +15,7 @@ from app.audit import write_audit
 from app.auth import current_user, ensure_owns, get_token, issue_token, require_role
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.models import ApiToken, Command, Instance, Job, User
+from app.models import ApiToken, Client, Command, ExchangeAccount, Instance, Job, User
 from app.security import DUMMY_PASSWORD_HASH, verify_password
 
 router = APIRouter(prefix="/v1")
@@ -101,6 +101,16 @@ def create_instance(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     """Оператор заводит инстанс: строка instances(pending) + deploy-job. Railway тут не зовётся."""
+    # FK Ф3 (миграция 0005): родители должны существовать. Проверяем ЯВНО → чёткий 404,
+    # иначе FK-IntegrityError ниже смешался бы с 409 «занятый счёт». bot_type/profile — без FK (Ф5).
+    if session.get(Client, body.client_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "клиент не найден")
+    account = session.get(ExchangeAccount, body.account_id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "биржевой счёт не найден")
+    # счёт обязан принадлежать ЭТОМУ клиенту — иначе биллинг Ф3 спишет equity не тому (деньги)
+    if account.client_id != body.client_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "счёт принадлежит другому клиенту")
     inst = Instance(
         client_id=body.client_id,
         account_id=body.account_id,

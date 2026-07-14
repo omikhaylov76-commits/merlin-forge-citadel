@@ -14,6 +14,7 @@ from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Instance
+from tests.crm_helpers import ensure_parents
 
 _CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
 
@@ -24,6 +25,8 @@ def clean(_migrated: None):
         for t in ("commands", "jobs", "equity_points", "trades", "events"):
             s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
+        s.execute(text("DELETE FROM exchange_accounts"))
+        s.execute(text("DELETE FROM clients"))
         s.commit()
 
 
@@ -39,8 +42,9 @@ def _hdr(raw: str) -> dict:
 
 def _mk_instance(status="running") -> uuid.UUID:
     with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())  # FK Ф3
         inst = Instance(
-            client_id=uuid.uuid4(), account_id=uuid.uuid4(), bot_type_id=uuid.uuid4(),
+            client_id=cid, account_id=aid, bot_type_id=uuid.uuid4(),
             profile_id=uuid.uuid4(), status=status, health="ok",
         )
         s.add(inst)

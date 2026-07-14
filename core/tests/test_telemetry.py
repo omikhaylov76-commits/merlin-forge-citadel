@@ -16,6 +16,7 @@ from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Instance
 from app.routes_telemetry import EquityIn, EventIn, HeartbeatIn, TradeIn
+from tests.crm_helpers import ensure_parents
 
 _CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
 
@@ -27,6 +28,8 @@ def sm(_migrated: None):
         for t in ("equity_points", "trades", "events", "commands", "jobs"):
             s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
+        s.execute(text("DELETE FROM exchange_accounts"))
+        s.execute(text("DELETE FROM clients"))
         s.execute(text("DELETE FROM api_tokens"))
         s.commit()
     return m
@@ -34,8 +37,9 @@ def sm(_migrated: None):
 
 def _mk_instance_token(sm, status="running") -> tuple[uuid.UUID, str]:
     with sm() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())  # FK Ф3
         inst = Instance(
-            client_id=uuid.uuid4(), account_id=uuid.uuid4(), bot_type_id=uuid.uuid4(),
+            client_id=cid, account_id=aid, bot_type_id=uuid.uuid4(),
             profile_id=uuid.uuid4(), status=status, health="ok",
         )
         s.add(inst)
