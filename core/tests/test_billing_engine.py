@@ -195,3 +195,106 @@ def test_close_rejects_already_closed(clean) -> None:
     with get_sessionmaker()() as s:
         with pytest.raises(ValueError):
             close_period(s, pid, end_equity=D("1200"), actor="op")
+
+
+def test_close_out_of_order_raises(clean) -> None:
+    # #1: закрыть поздний период РАНЬШЕ раннего открытого → guard (иначе неверный immutable-расчёт)
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid)
+        s.add(contract)
+        s.flush()
+        t0 = datetime.now(UTC) - timedelta(days=60)
+        t1 = datetime.now(UTC) - timedelta(days=30)
+        t2 = datetime.now(UTC)
+        _open_period(s, cid, aid, contract.id, D("10000"), t0, t1)      # p1 остаётся open
+        p2 = _open_period(s, cid, aid, contract.id, D("7000"), t1, t2)
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):
+            close_period(s, p2, end_equity=D("15000"), actor="op")
+
+
+def test_gap_between_periods_raises(clean) -> None:
+    # разрыв (пропущенный период) → предыдущий не примыкает → guard
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid)
+        s.add(contract)
+        s.flush()
+        t0 = datetime.now(UTC) - timedelta(days=90)
+        t1 = datetime.now(UTC) - timedelta(days=60)
+        t2 = datetime.now(UTC) - timedelta(days=30)  # разрыв [t1, t2)
+        t3 = datetime.now(UTC)
+        p1 = _open_period(s, cid, aid, contract.id, D("10000"), t0, t1)
+        p3 = _open_period(s, cid, aid, contract.id, D("11000"), t2, t3)
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=D("11000"), actor="op")
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):  # prior=p1, period_end=t1 ≠ p3.period_start=t2
+            close_period(s, p3, end_equity=D("12000"), actor="op")
+
+
+def test_integration_withdrawal_not_loss(clean) -> None:
+    # интеграция: вывод в периоде → net_deposits<0 в БД, вывод не убыток
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, fee_pct=D("0.15"))
+        s.add(contract)
+        s.flush()
+        t0 = datetime.now(UTC) - timedelta(days=30)
+        t1 = datetime.now(UTC)
+        pid = _open_period(s, cid, aid, contract.id, D("10000"), t0, t1)
+        s.add(Cashflow(account_id=aid, kind="withdrawal", amount=D("5000"),
+                       ts=t0 + timedelta(days=1), actor="op"))
+        s.commit()
+    with get_sessionmaker()() as s:
+        # торговля +2000 (10000→12000), вывод 5000 → end=7000
+        close_period(s, pid, end_equity=D("7000"), actor="op")
+        s.commit()
+    with get_sessionmaker()() as s:
+        bp = s.get(BillingPeriod, pid)
+        assert bp.net_deposits == D("-5000.00")            # вывод отрицательный
+        assert bp.period_net_trading == D("2000.00")
+        assert bp.commission == D("300.00")                # 0.15×2000 (вывод не убыток)
+
+
+def test_v1_guard_rejects_mgmt_fee(clean) -> None:
+    # mgmt_fee_pct≠0 не реализован в v1 → close_period падает громко, не считает молча
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, mgmt_fee_pct=D("0.02"))
+        s.add(contract)
+        s.flush()
+        pid = _open_period(s, cid, aid, contract.id, D("1000"),
+                           datetime.now(UTC) - timedelta(days=30), datetime.now(UTC))
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):
+            close_period(s, pid, end_equity=D("1100"), actor="op")
+
+
+def test_flows_outside_window_excluded(clean) -> None:
+    # депозит ВНЕ окна [start,end) не учитывается в net_deposits периода
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, fee_pct=D("0.15"))
+        s.add(contract)
+        s.flush()
+        t0 = datetime.now(UTC) - timedelta(days=30)
+        t1 = datetime.now(UTC)
+        pid = _open_period(s, cid, aid, contract.id, D("10000"), t0, t1)
+        s.add(Cashflow(account_id=aid, kind="deposit", amount=D("9999"),
+                       ts=t0 - timedelta(days=1), actor="op"))  # ДО периода
+        s.add(Cashflow(account_id=aid, kind="deposit", amount=D("8888"),
+                       ts=t1 + timedelta(days=1), actor="op"))  # ПОСЛЕ периода
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, pid, end_equity=D("12000"), actor="op")
+        s.commit()
+    with get_sessionmaker()() as s:
+        bp = s.get(BillingPeriod, pid)
+        assert bp.net_deposits == D("0.00")           # оба потока вне окна
+        assert bp.commission == D("300.00")           # торговля +2000 → 0.15×2000

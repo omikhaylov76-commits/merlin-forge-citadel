@@ -114,6 +114,13 @@ def upgrade() -> None:
         FOR EACH ROW EXECUTE FUNCTION billing_period_closed_immutable();
         """
     )
+    # Инвариант денег: периоды одного счёта НЕ пересекаются (иначе двойной биллинг окна). btree_gist
+    # «=» по account_id рядом с range-overlap. tstzrange [) → смежные (end==start) не пересекаются.
+    op.execute("CREATE EXTENSION IF NOT EXISTS btree_gist;")
+    op.execute(
+        "ALTER TABLE billing_periods ADD CONSTRAINT ex_billing_periods_no_overlap "
+        "EXCLUDE USING gist (account_id WITH =, tstzrange(period_start, period_end) WITH &&);"
+    )
 
     op.create_table(
         "cashflows",
