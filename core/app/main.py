@@ -17,6 +17,7 @@ from app.logging import setup_logging
 from app.readiness import is_ready
 from app.routes import router
 from app.routes_commands import router as commands_router
+from app.routes_crm import router as crm_router
 from app.routes_internal import router as internal_router
 from app.routes_telemetry import router as telemetry_router
 from app.scheduler import Scheduler
@@ -76,6 +77,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(internal_router)  # internal jobs API (шов S3, ADR-0009)
     app.include_router(telemetry_router)  # приём телеметрии бота (шов S4, Контракт v0)
     app.include_router(commands_router)  # команды боту (шов S4←, ADR-0005)
+    app.include_router(crm_router)  # CRM-API оператора (Ф3): clients/exchange_accounts/contracts
 
     @app.get("/healthz")
     def healthz() -> dict[str, object]:
