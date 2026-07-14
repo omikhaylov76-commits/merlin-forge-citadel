@@ -1,6 +1,9 @@
 """Гвозди на схему биллинга Ф3 (миграция 0006): таблицы contracts/billing_periods/cashflows,
 CHECK (fee/capital/enum/amount), FK, immutability ЗАКРЫТОГО периода (триггер). Нужен Postgres.
-Чистка через TRUNCATE — обходит row-триггер immutability (иначе закрытый период не удалить)."""
+
+Чистка — фикстура `clean` (setup+teardown) через TRUNCATE ... CASCADE: TRUNCATE обходит row-триггер
+immutability (иначе закрытый период не удалить), teardown не даёт billing-строкам утечь в другие файлы
+(их FK на clients/exchange_accounts иначе ломает DELETE-чистку соседних тестов)."""
 
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -15,13 +18,20 @@ from app.models import BillingPeriod, Cashflow, Contract
 from tests.crm_helpers import ensure_parents
 
 
-def _clean() -> None:
+def _truncate() -> None:
     with get_sessionmaker()() as s:
         s.execute(text(
             "TRUNCATE billing_periods, cashflows, contracts, instances, "
             "exchange_accounts, clients CASCADE"
         ))
         s.commit()
+
+
+@pytest.fixture
+def clean(_migrated: None):
+    _truncate()
+    yield
+    _truncate()  # teardown: убрать даже закрытый период (TRUNCATE минует триггер)
 
 
 def _mk_contract_parents(s):
@@ -38,8 +48,7 @@ def test_billing_tables_exist(_migrated) -> None:
             assert s.execute(text(f"SELECT to_regclass('{t}')")).scalar() is not None, t
 
 
-def test_contract_defaults(_migrated) -> None:
-    _clean()
+def test_contract_defaults(clean) -> None:
     with get_sessionmaker()() as s:
         cid, _ = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
         c = Contract(client_id=cid)
@@ -50,8 +59,7 @@ def test_contract_defaults(_migrated) -> None:
         assert c.high_water_mark is True and c.currency == "USDT" and c.status == "draft"
 
 
-def test_contract_fee_pct_out_of_range(_migrated) -> None:
-    _clean()
+def test_contract_fee_pct_out_of_range(clean) -> None:
     with get_sessionmaker()() as s:
         cid, _ = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
         s.add(Contract(client_id=cid, fee_pct=Decimal("1.5")))  # ≥1 нельзя
@@ -60,8 +68,7 @@ def test_contract_fee_pct_out_of_range(_migrated) -> None:
         s.rollback()
 
 
-def test_contract_capital_floor(_migrated) -> None:
-    _clean()
+def test_contract_capital_floor(clean) -> None:
     with get_sessionmaker()() as s:
         cid, _ = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
         s.add(Contract(client_id=cid, capital=Decimal("100")))  # < floor 500
@@ -70,8 +77,7 @@ def test_contract_capital_floor(_migrated) -> None:
         s.rollback()
 
 
-def test_contract_enum_check(_migrated) -> None:
-    _clean()
+def test_contract_enum_check(clean) -> None:
     with get_sessionmaker()() as s:
         cid, _ = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
         s.add(Contract(client_id=cid, payment_model="ponzi"))  # не из списка
@@ -80,8 +86,7 @@ def test_contract_enum_check(_migrated) -> None:
         s.rollback()
 
 
-def test_cashflow_kind_and_amount_checks(_migrated) -> None:
-    _clean()
+def test_cashflow_kind_and_amount_checks(clean) -> None:
     with get_sessionmaker()() as s:
         _, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
         s.add(Cashflow(account_id=aid, kind="bribe", amount=Decimal("10"),
@@ -98,8 +103,7 @@ def test_cashflow_kind_and_amount_checks(_migrated) -> None:
         s.rollback()
 
 
-def test_billing_period_requires_parents(_migrated) -> None:
-    _clean()
+def test_billing_period_requires_parents(clean) -> None:
     with get_sessionmaker()() as s:
         s.add(BillingPeriod(
             account_id=uuid.uuid4(), client_id=uuid.uuid4(), contract_id=uuid.uuid4(),
@@ -111,8 +115,7 @@ def test_billing_period_requires_parents(_migrated) -> None:
         s.rollback()
 
 
-def test_open_period_closes_then_immutable(_migrated) -> None:
-    _clean()
+def test_open_period_closes_then_immutable(clean) -> None:
     with get_sessionmaker()() as s:
         cid, aid, contract_id = _mk_contract_parents(s)
         bp = BillingPeriod(
