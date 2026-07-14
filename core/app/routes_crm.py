@@ -232,6 +232,9 @@ def set_contract_status(
         raise HTTPException(status.HTTP_409_CONFLICT,
                             f"недопустимый переход {c.status}→{body.status}")
     if body.status == "signed":
+        client = session.get(Client, c.client_id)
+        if client is not None and not client.is_active:  # NEW-1: не подписать отключённому клиенту
+            raise HTTPException(status.HTTP_409_CONFLICT, "клиент отключён (is_active=false)")
         _gate_v1(c.payment_model, c.hurdle_pct, c.mgmt_fee_pct, c.billing_period,
                  c.high_water_mark)  # дубль-гейт подписания (#29)
         _one_signed_per_client(session, c.client_id, exclude_id=c.id)

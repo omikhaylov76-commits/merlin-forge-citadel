@@ -300,6 +300,21 @@ def test_close_rejects_no_hwm_contract(clean) -> None:
             close_period(s, pid, end_equity=D("1100"), actor="op")
 
 
+def test_close_rejects_currency_mismatch(clean) -> None:
+    # NEW-2: валюта договора (USDC) ≠ валюта периода (дефолт USDT) → close_period отказывается
+    with get_sessionmaker()() as s:
+        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        contract = Contract(client_id=cid, currency="USDC")
+        s.add(contract)
+        s.flush()
+        pid = _open_period(s, cid, aid, contract.id, D("1000"),
+                           datetime.now(UTC) - timedelta(days=30), datetime.now(UTC))
+        s.commit()
+    with get_sessionmaker()() as s:
+        with pytest.raises(ValueError):
+            close_period(s, pid, end_equity=D("1100"), actor="op")
+
+
 def test_v1_guard_rejects_mgmt_fee(clean) -> None:
     # mgmt_fee_pct≠0 не реализован в v1 → close_period падает громко, не считает молча
     with get_sessionmaker()() as s:

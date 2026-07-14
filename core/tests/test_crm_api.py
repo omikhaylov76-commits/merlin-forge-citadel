@@ -149,6 +149,30 @@ def test_rbac_on_contracts(crm) -> None:
     assert c.post("/v1/contracts", json={"client_id": cid}).status_code == 401  # без токена
 
 
+def test_sign_inactive_client_rejected(crm) -> None:
+    # NEW-1: draft-договор + деактивация клиента → подписание отвергается (409)
+    c = TestClient(create_app())
+    h = _op(c)
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    kid = c.post("/v1/contracts", headers=h, json={"client_id": cid}).json()["id"]
+    with get_sessionmaker()() as s:  # эндпоинта деактивации пока нет — правим напрямую
+        s.execute(text("UPDATE clients SET is_active=false WHERE id=:i"), {"i": cid})
+        s.commit()
+    r = c.patch(f"/v1/contracts/{kid}/status", headers=h, json={"status": "signed"})
+    assert r.status_code == 409
+
+
+def test_rbac_patch_status(crm) -> None:
+    c = TestClient(create_app())
+    h = _op(c)
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    kid = c.post("/v1/contracts", headers=h, json={"client_id": cid}).json()["id"]
+    hcl = _login(c, "a@mfc.local", "a-pass")  # роль client
+    body = {"status": "signed"}
+    assert c.patch(f"/v1/contracts/{kid}/status", headers=hcl, json=body).status_code == 403
+    assert c.patch(f"/v1/contracts/{kid}/status", json=body).status_code == 401  # без токена
+
+
 def test_contract_bad_uuid_and_overflow_422(crm) -> None:
     # M3/M4: битый UUID и capital-overflow ловятся Pydantic → 422 (не 500)
     c = TestClient(create_app())

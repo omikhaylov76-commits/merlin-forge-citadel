@@ -115,6 +115,10 @@ def close_period(session: Session, period_id, end_equity: Decimal, actor: str) -
     )
     if reason is not None:
         raise ValueError(f"v1: {reason}")
+    # NEW-2 (защита-в-глубину): валюта периода обязана совпадать с договором — иначе суммируем
+    # разновалютные суммы и метим комиссию не той валютой. Генератор копирует валюту договора.
+    if contract.currency != bp.currency:
+        raise ValueError(f"валюта договора {contract.currency} ≠ валюта периода {bp.currency}")
     # Порядок: более раннего НЕзакрытого периода счёта быть не должно (иначе рвётся цепочка HWM).
     earlier_open = session.execute(
         select(BillingPeriod.id).where(
