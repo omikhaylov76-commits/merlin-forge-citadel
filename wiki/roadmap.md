@@ -87,7 +87,11 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
       (contracts/billing_periods/cashflows + immutable-триггер + EXCLUDE overlap) + движок billing.py
       (compute_period + close_period, снапшот fee_pct, аудит commission_calculated). Адверс-ревью ×2
       (поймало critical money-баг порядка закрытия → закрыт). v1: profit_hwm, hurdle/mgmt=0, месяц.
-- [ ] CRM-API оператора (CRUD клиент/счёт/договор, RBAC, аудит) + генератор периодов — todo (MFC-F3-next)
+- [x] CRM-API оператора (MFC-F3-2, main 7520463): CRUD clients/exchange_accounts/contracts + RBAC + аудит
+      + v1-гейт договора (единый billing.v1_unsupported_reason для API и движка). Независимое ревью ×2
+      (поймало critical C1 billing_period=quarter в обход гейта → закрыто). CI зелёный.
+- [ ] Генератор периодов (политика паузы #29: месяц-от-активации-до-терминации, bit-в-бит, no backdating,
+      валюта договора) — деньги, независимое ревью — todo (MFC-F3-next)
 - [ ] Алерты Оператору в Telegram (событие commission_calculated уже пишется) — todo
 
 ## Ф4 — Клиентский портал (todo)
