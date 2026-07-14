@@ -27,6 +27,9 @@ def _cfg() -> Config:
 def _clean() -> None:
     sm = get_sessionmaker()
     with sm() as s:
+        # дети instances → instances → родители (FK-порядок удаления)
+        for t in ("commands", "jobs", "equity_points", "trades", "events"):
+            s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
         s.execute(text("DELETE FROM exchange_accounts"))
         s.execute(text("DELETE FROM clients"))
