@@ -13,7 +13,7 @@ sources: [decisions/0001…0011, concepts/seams.md]
 
 ## Люди и клиенты
 - **users**(id, role[operator|client], totp_secret?, created_at) — Оператор с TOTP; клиенты v1 — пароль.
-- **clients**(id, name, contacts, contract_ref, fee_pct_default, user_id?) — тариф по умолчанию тут (MON8).
+- **clients**(id, name, contacts, contract_ref, fee_pct_default, user_id?, is_active) — тариф по умолчанию тут (MON8). Материализована в 0005 (Ф3).
 - **api_tokens**(id, principal[instance|ensemble|orchestrator|user], subject_id, token_hash, scope,
   created_at, revoked_at) — ADR-0008: отзыв = revoked_at; hash, не сам токен.
 
@@ -21,7 +21,7 @@ sources: [decisions/0001…0011, concepts/seams.md]
 - **bot_types**(id, name, image_digest, version, contract_version) — образ по allowlist-digest (ADR-0010v2).
 - **profiles**(id, bot_type_id, config_json, status[draft|passported])
 - **passports**(profile_id, oos_metrics_json, engine_commit, data_range, created_at) — без OOS не создаётся (constraint).
-- **exchange_accounts**(id, client_id, exchange[bybit|okx|bitget], label, key_ciphertext, perms_checked_at)
+- **exchange_accounts**(id, client_id, exchange[bybit|okx|bitget], label, key_ciphertext, perms_checked_at, is_active) — материализована в 0005 (Ф3); FK instances.client_id/account_id включены.
 - **exchange_capabilities**(exchange, features_json) — труба бирж (v1: одна строка bybit).
 
 ## Инстансы и управление
@@ -49,8 +49,8 @@ sources: [decisions/0001…0011, concepts/seams.md]
 ## Деньги, приём ключей, аудит, наблюдаемость
 - **billing_periods**(id, account_id, client_id, start, end, start_equity, end_equity, hwm, fee_pct,
   fee_amount, status, adjustments_json) — МОДЕЛЬ HWM целиком в ADR-0011 (Ф3): cashflows, перенос
-  hwm, валюта, сверка. v1 таблица есть, математика — по 0011.
-- **cashflows**(id, account_id, kind[deposit|withdrawal], amount, ts, actor) — Ф3, ADR-0011 (MON1).
+  hwm, валюта, сверка. Таблицы ещё НЕТ — материализуется в Ф3 ПОСЛЕ финализации формулы ADR-0011.
+- **cashflows**(id, account_id, kind[deposit|withdrawal], amount, ts, actor) — Ф3, ADR-0011 (MON1); таблицы ещё нет.
 - **key_intake_links**(id, account_id?, token_hash, expires_at, consumed_at) — одноразовая форма S8.
 - **outbox_events**(id, kind, severity, payload_json, created_at, dispatched_at, attempts) — durable
   алерты, диспетчер с приоритетом+dead-man (SCL3). **research_artifacts**(id, kind, title, body/link, tags).

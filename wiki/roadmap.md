@@ -77,10 +77,13 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
       инвариант «клонируй-не-редактируй». Полный залок в UI — Ф5. pifagor-v81 не тронут (только тег-указатель).
 - [ ] Конверт-шифрование ключей биржи end-to-end (ADR-0004/0010) + тесты — todo (реальные ключи — только «go»)
 
-## Ф3 — CRM + биллинг HWM (todo)
+## Ф3 — CRM + биллинг HWM (in-progress)
 Цель: клиенты, договорные параметры, комиссия % от прибыли по high-water mark.
-- [ ] CRM-модель: клиент → договор → инстансы — todo
-- [ ] Финализировать ADR-0011 (модель HWM: cashflows, уровень счёта, сверка) ДО кода биллинга — todo
+- [x] MFC-F3-1 CRM-схема (2026-07-14, main 532399c): таблицы clients + exchange_accounts (миграция 0005,
+      CHECK fee/enum) + активация отложенных FK instances.client_id/account_id (ADR-0013 триггер) + бэкофилл
+      сирот + bootstrap-родители + create_instance 404/400. CI зелёный. bot_type/profile FK — Ф5.
+- [ ] CRM: contracts (договор) + API оператора (CRUD клиент/счёт, RBAC, аудит) — todo (MFC-F3-2)
+- [ ] Финализировать ADR-0011 (модель HWM: месяц, cashflows, уровень счёта, сверка) ДО кода биллинга — todo (у Куратора)
 - [ ] Биллинг HWM + обязательные тесты (закон 8, формула из ADR-0011) — todo
 - [ ] Алерты Оператору в Telegram (runbooks/alerts) — todo
 
