@@ -1,10 +1,16 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import { NAV } from '@/lib/nav'
+import { logout } from '@/lib/api'
 import { cn } from '@/lib/cn'
 
-// Сайдбар консоли (по макету): бренд · сводка AUM · навигация группами · футер (здоровье+оператор).
+// Сайдбар консоли (по макету): бренд · сводка AUM · навигация группами · футер (здоровье+оператор+выход).
 // Сводка/бейджи пока статичны (демо) — заменятся живыми при агрегат-эндпоинтах (TODO Ф4-backend).
 export function Sidebar() {
+  const nav = useNavigate()
+  const onLogout = () => {
+    logout()
+    nav('/login', { replace: true })
+  }
   return (
     <aside className="flex h-full w-[248px] shrink-0 flex-col border-r border-line bg-void">
       <div className="flex items-center gap-3 px-5 py-4">
@@ -85,10 +91,18 @@ export function Sidebar() {
           <div className="flex h-7 w-7 items-center justify-center rounded-pill bg-floating text-[12px] text-mist">
             М
           </div>
-          <div className="leading-tight">
+          <div className="min-w-0 flex-1 leading-tight">
             <div className="text-[12px] text-silver">Оператор</div>
             <div className="text-[10px] text-ash">merlin@citadel</div>
           </div>
+          <button
+            onClick={onLogout}
+            title="Выйти"
+            aria-label="Выйти"
+            className="shrink-0 rounded-pill px-2 py-1 text-[13px] text-ash transition-colors hover:text-danger"
+          >
+            ⏻
+          </button>
         </div>
       </div>
     </aside>

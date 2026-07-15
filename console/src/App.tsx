@@ -1,5 +1,8 @@
-import { createBrowserRouter } from 'react-router-dom'
+import { type ReactNode } from 'react'
+import { createBrowserRouter, Navigate } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
+import { Login } from '@/screens/Login'
+import { getToken } from '@/lib/api'
 import { Overview } from '@/screens/Overview'
 import { Fleet } from '@/screens/Fleet'
 import { Deals } from '@/screens/Deals'
@@ -13,11 +16,21 @@ import { Alerts } from '@/screens/Alerts'
 import { Settings } from '@/screens/Settings'
 import { Portal } from '@/screens/Portal'
 
-// Роутер консоли: оболочка + 11 экранов. Реальны: Обзор/Флот/Сделки/Клиенты; прочие — заглушки.
+// Гейт: нет токена оператора → на экран входа. Токен — opaque, в localStorage (api.getToken).
+function RequireAuth({ children }: { children: ReactNode }) {
+  return getToken() ? <>{children}</> : <Navigate to="/login" replace />
+}
+
+// Роутер консоли: /login (вне оболочки) + оболочка под гейтом с 11 экранами.
 export const router = createBrowserRouter([
+  { path: '/login', element: <Login /> },
   {
     path: '/',
-    element: <AppShell />,
+    element: (
+      <RequireAuth>
+        <AppShell />
+      </RequireAuth>
+    ),
     children: [
       { index: true, element: <Overview /> },
       { path: 'fleet', element: <Fleet /> },
