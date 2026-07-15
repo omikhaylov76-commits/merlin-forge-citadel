@@ -491,8 +491,16 @@ def test_normal_pending_not_stuck(clean) -> None:
 
 
 def test_stuck_accounts_endpoint(users, clean) -> None:
+    # период в ПРОШЛОМ (2020) → due при реальном now эндпоинта; нет signed-договора → застрял
+    past = datetime(2020, 1, 15, tzinfo=UTC)
     with get_sessionmaker()() as s:
-        aid = _stuck_setup_no_contract(s)
+        cid, aid, kid = _signed_setup(s)
+        p1 = activate_billing(s, aid, kid, Decimal("10000"), "op", past).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.execute(text("UPDATE contracts SET status='suspended' WHERE id=:i"), {"i": kid})
+        s.commit()
     c = TestClient(create_app())
     h = _login(c, "op@mfc.local", "op-pass")
     r = c.get("/v1/billing/stuck-accounts", headers=h)
