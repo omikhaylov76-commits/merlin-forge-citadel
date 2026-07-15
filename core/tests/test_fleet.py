@@ -50,10 +50,13 @@ def _equity(s, iid, eq, ts) -> None:
 
 def test_overview_bots_clients_aum(clean) -> None:
     with get_sessionmaker()() as s:
-        cid, aid = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
-        i1 = _instance(s, cid, aid, "running")
-        i2 = _instance(s, cid, aid, "running")
-        i3 = _instance(s, cid, aid, "paused")
+        # один клиент, ТРИ счёта (партиал-индекс ≤1 живой инстанс на счёт, ADR-0013)
+        cid, a1 = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        _, a2 = ensure_parents(s, cid, uuid.uuid4())
+        _, a3 = ensure_parents(s, cid, uuid.uuid4())
+        i1 = _instance(s, cid, a1, "running")
+        i2 = _instance(s, cid, a2, "running")
+        i3 = _instance(s, cid, a3, "paused")
         # AUM = сумма ПОСЛЕДНЕЙ equity по каждому инстансу
         _equity(s, i1, "1000", datetime(2026, 7, 1, tzinfo=UTC))
         _equity(s, i1, "1500", datetime(2026, 7, 2, tzinfo=UTC))  # последняя i1 = 1500
