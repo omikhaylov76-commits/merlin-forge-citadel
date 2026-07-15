@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
-from app.models import BillingPeriod, Cashflow, Contract
+from app.models import BillingPeriod, Cashflow, Contract, ExchangeAccount
 
 CENTS = Decimal("0.01")
 
@@ -141,7 +141,15 @@ def close_period(session: Session, period_id, end_equity: Decimal, actor: str) -
         hwm_prev = prior.hwm
         cum_prev = prior.cum_profit if prior.cum_profit is not None else Decimal("0")
     end_equity = _q(Decimal(str(end_equity)))  # безопасная нормализация (float на входе → мусор)
-    nd = net_deposits(session, bp.account_id, bp.period_start, bp.period_end)
+    # Окно потоков: обычно [period_start, period_end). Для ПЕРВОГО периода baseline введён в момент
+    # активации и уже включает до-активационные потоки — иначе задвоим их (адверс-ревью 🔴).
+    # Зажимаем низ окна до billing_activated_at, если он позже начала периода (первый период).
+    account = session.get(ExchangeAccount, bp.account_id)
+    window_start = bp.period_start
+    if account is not None and account.billing_activated_at is not None:
+        if account.billing_activated_at > window_start:
+            window_start = account.billing_activated_at
+    nd = net_deposits(session, bp.account_id, window_start, bp.period_end)
     r = compute_period(
         start_equity=bp.start_equity,
         end_equity=end_equity,

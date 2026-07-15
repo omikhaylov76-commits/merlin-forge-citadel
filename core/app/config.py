@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Период тика «часового» (core-scheduler, MFC-002). Порог смерти dead-man = 3×период
     # (деривативно в Scheduler). В env: MFC_… не нужен — читается как SCHEDULER_TICK_SECONDS.
     scheduler_tick_seconds: int = 60
+    # Как часто часовой генерирует периоды (MFC-F3-3). Час хватает: действие лишь на смене месяца,
+    # проверка дёшева (активные счета с закрытым прошлым периодом).
+    billing_generator_interval_seconds: int = 3600
     # Пороги health инстанса для свёртки stale-скан (MFC-003), сек. stale = 3×60с (seams:62);
     # dead — молчит существенно дольше. Это про здоровье ИНСТАНСА, не про сам часовой.
     instance_stale_after_seconds: int = 180
