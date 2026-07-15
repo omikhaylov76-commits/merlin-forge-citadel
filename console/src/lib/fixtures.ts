@@ -31,3 +31,55 @@ export const overviewFixture = {
 }
 
 export type OverviewData = typeof overviewFixture
+
+// ── Флот (демо; живой источник — список инстансов ядра, TODO Ф4-backend) ───────
+export type BotStatus = 'live' | 'pause' | 'alarm' | 'kill'
+export const fleetFixture: {
+  bot: string
+  client: string
+  profile: string
+  dd: number
+  hb: 'ok' | 'dead'
+  pnl: number | null
+  status: BotStatus
+}[] = [
+  { bot: 'bot-002', client: 'Клиент-01', profile: 'Консерватор-10', dd: 22, hb: 'ok', pnl: 1240, status: 'live' },
+  { bot: 'bot-006', client: 'Клиент-03', profile: 'Агрессор v3', dd: 76, hb: 'ok', pnl: -310, status: 'alarm' },
+  { bot: 'bot-009', client: 'Клиент-02', profile: 'Консерватор-10', dd: 31, hb: 'dead', pnl: null, status: 'pause' },
+  { bot: 'bot-014', client: 'Клиент-07', profile: 'Агрессор v3', dd: 100, hb: 'ok', pnl: -2050, status: 'kill' },
+  { bot: 'bot-021', client: 'Клиент-11', profile: 'Скальпер', dd: 18, hb: 'ok', pnl: 640, status: 'live' },
+]
+
+// ── Сделки (демо; живой источник — журнал trades ядра, TODO Ф4-backend) ────────
+export const dealsFixture: {
+  t: string
+  bot: string
+  pair: string
+  side: string
+  leg: string
+  price: string
+  pnl: number
+}[] = [
+  { t: '09:12', bot: 'bot-002', pair: 'ETHUSDT', side: 'Long', leg: '0.5', price: '1 834.20', pnl: 180 },
+  { t: '08:40', bot: 'bot-021', pair: 'SOLUSDT', side: 'Long', leg: '0.382', price: '168.44', pnl: 92 },
+  { t: '08:05', bot: 'bot-006', pair: 'INJUSDT', side: 'Long', leg: '0.618', price: '21.07', pnl: -44 },
+  { t: '07:22', bot: 'bot-002', pair: 'BTCUSDT', side: 'Long', leg: '0.5', price: '64 210', pnl: 310 },
+]
+
+// ── Клиенты (демо; живой источник — CRM-API ядра /v1 clients, TODO Ф4-backend) ─
+export const clientsFixture: {
+  name: string
+  fav: boolean
+  capital: number
+  gild: boolean
+  sub: string
+  meta: string[]
+  toBill: number
+  note: string
+}[] = [
+  { name: 'Клиент-01', fav: true, capital: 42100, gild: true, sub: 'net +$3.1K · HWM $39K', meta: ['2 бота', '3 сделки', 'DD 22%'], toBill: 465, note: '7 дн до закрытия' },
+  { name: 'Клиент-11', fav: true, capital: 61400, gild: true, sub: 'net +$5.4K · HWM $56K', meta: ['1 бот', '1 сделка', 'DD 18%'], toBill: 812, note: 'ключ ⚠ 3 дня' },
+  { name: 'Клиент-03', fav: false, capital: 28300, gild: false, sub: 'net −$0.3K · HWM $30K', meta: ['1 бот', '2 сделки', 'DD 38%'], toBill: 0, note: 'под HWM' },
+  { name: 'Клиент-07', fav: false, capital: 18050, gild: false, sub: 'net −$2.0K · стоп сработал', meta: ['1 бот', 'стоп', 'DD 51%'], toBill: 0, note: 'разобрать' },
+  { name: 'Клиент-02', fav: false, capital: 15900, gild: false, sub: 'пауза · HWM $16K', meta: ['1 бот', 'пауза'], toBill: 0, note: '—' },
+]

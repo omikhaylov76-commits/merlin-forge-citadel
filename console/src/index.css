@@ -67,3 +67,19 @@
   /* табличные цифры (одинаковая ширина) для денег/таблиц */
   .tnum { font-variant-numeric: tabular-nums; }
 }
+
+@layer components {
+  /* таблица данных «слаш»: заголовок тусклый, строки с тонкой линией, числа — справа/табличные */
+  .dt { width: 100%; border-collapse: collapse; }
+  .dt th {
+    text-align: left; font-size: 11px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--color-ash); padding: 10px 14px;
+  }
+  .dt td { padding: 11px 14px; border-top: 1px solid var(--color-line); color: var(--color-silver); }
+  .dt tbody tr:hover td { background: rgba(255, 255, 255, 0.015); }
+  .dt .num { text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* мини-полоса просадки (запас до тормозов): заливка = глубина, цвет от меди к danger */
+  .mini-dd { display: inline-block; width: 84px; height: 6px; border-radius: 9999px; background: var(--color-floating); overflow: hidden; vertical-align: middle; }
+  .mini-dd > i { display: block; height: 100%; border-radius: 9999px; background: linear-gradient(90deg, var(--color-copper), var(--color-danger)); }
+}
