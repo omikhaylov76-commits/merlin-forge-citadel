@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { PageHead, Toolbar, Chip } from '@/components/ui/page'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -22,7 +23,10 @@ export function Clients() {
       </Toolbar>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {clients.map((c) => (
-          <Card key={c.name} className={c.fav ? 'border-gold/25' : undefined}>
+          <Link key={c.name} to={`/clients/${encodeURIComponent(c.name)}`} className="block">
+            <Card
+              className={`h-full transition-colors hover:border-copper/30 ${c.fav ? 'border-gold/25' : ''}`}
+            >
             <div className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold text-bone">
               {c.name}
               {c.fav && <span className="text-gold">★</span>}
@@ -42,7 +46,8 @@ export function Clients() {
               </span>
               <span className="text-ash">{c.note}</span>
             </div>
-          </Card>
+            </Card>
+          </Link>
         ))}
         <button className="flex min-h-[150px] items-center justify-center rounded-card border border-dashed border-line text-[13px] text-fog transition-colors hover:text-mist">
           + Завести клиента

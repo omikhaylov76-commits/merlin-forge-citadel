@@ -3,8 +3,14 @@ import { NAV } from '@/lib/nav'
 import { Button } from '@/components/ui/button'
 
 function currentLabel(pathname: string): string {
-  for (const g of NAV) for (const it of g.items) if (it.path === pathname) return it.label
-  return 'Обзор'
+  const items = NAV.flatMap((g) => g.items)
+  const exact = items.find((it) => it.path === pathname)
+  if (exact) return exact.label
+  // под-роут (напр. /clients/:id) → самый длинный совпавший префикс раздела
+  const prefix = items
+    .filter((it) => it.path !== '/' && pathname.startsWith(it.path))
+    .sort((a, b) => b.path.length - a.path.length)[0]
+  return prefix?.label ?? 'Обзор'
 }
 
 // Хедер (h=60px по макету): хлебная крошка · поиск ⌘K · колокол · СТОП ФЛОТ (аварийный).
