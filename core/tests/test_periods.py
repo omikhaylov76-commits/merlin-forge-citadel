@@ -227,7 +227,8 @@ def test_first_period_deposit_window_clamped_to_activation(clean) -> None:
                                datetime(2026, 7, 15, 12, tzinfo=UTC)).id
         s.commit()
     with get_sessionmaker()() as s:
-        close_period(s, pid, end_equity=Decimal("10500"), actor="op")  # baseline+пост-депозит, торговли 0
+        # end = baseline 10000 + пост-депозит 500, торговли нет
+        close_period(s, pid, end_equity=Decimal("10500"), actor="op")
         s.commit()
     with get_sessionmaker()() as s:
         bp = s.get(BillingPeriod, pid)

@@ -143,7 +143,7 @@ def close_period(session: Session, period_id, end_equity: Decimal, actor: str) -
     end_equity = _q(Decimal(str(end_equity)))  # безопасная нормализация (float на входе → мусор)
     # Окно потоков: обычно [period_start, period_end). Для ПЕРВОГО периода baseline введён в момент
     # активации и уже включает до-активационные потоки — иначе задвоим их (адверс-ревью 🔴).
-    # Зажимаем низ окна до billing_activated_at, если он позже начала периода (только первый период).
+    # Зажимаем низ окна до billing_activated_at, если он позже начала периода (первый период).
     account = session.get(ExchangeAccount, bp.account_id)
     window_start = bp.period_start
     if account is not None and account.billing_activated_at is not None:
