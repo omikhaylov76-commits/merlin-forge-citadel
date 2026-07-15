@@ -67,19 +67,39 @@ export const dealsFixture: {
 ]
 
 // ── Клиенты (демо; живой источник — CRM-API ядра /v1 clients, TODO Ф4-backend) ─
-export const clientsFixture: {
+export type ClientRow = {
   name: string
   fav: boolean
   capital: number
+  net: number
+  hwm: number
   gild: boolean
   sub: string
   meta: string[]
   toBill: number
   note: string
-}[] = [
-  { name: 'Клиент-01', fav: true, capital: 42100, gild: true, sub: 'net +$3.1K · HWM $39K', meta: ['2 бота', '3 сделки', 'DD 22%'], toBill: 465, note: '7 дн до закрытия' },
-  { name: 'Клиент-11', fav: true, capital: 61400, gild: true, sub: 'net +$5.4K · HWM $56K', meta: ['1 бот', '1 сделка', 'DD 18%'], toBill: 812, note: 'ключ ⚠ 3 дня' },
-  { name: 'Клиент-03', fav: false, capital: 28300, gild: false, sub: 'net −$0.3K · HWM $30K', meta: ['1 бот', '2 сделки', 'DD 38%'], toBill: 0, note: 'под HWM' },
-  { name: 'Клиент-07', fav: false, capital: 18050, gild: false, sub: 'net −$2.0K · стоп сработал', meta: ['1 бот', 'стоп', 'DD 51%'], toBill: 0, note: 'разобрать' },
-  { name: 'Клиент-02', fav: false, capital: 15900, gild: false, sub: 'пауза · HWM $16K', meta: ['1 бот', 'пауза'], toBill: 0, note: '—' },
+  exchange: string
+  contractStatus: string
+}
+export const clientsFixture: ClientRow[] = [
+  { name: 'Клиент-01', fav: true, capital: 42100, net: 3100, hwm: 39000, gild: true, sub: 'net +$3.1K · HWM $39K', meta: ['2 бота', '3 сделки', 'DD 22%'], toBill: 465, note: '7 дн до закрытия', exchange: 'Bybit', contractStatus: 'подписан' },
+  { name: 'Клиент-11', fav: true, capital: 61400, net: 5400, hwm: 56000, gild: true, sub: 'net +$5.4K · HWM $56K', meta: ['1 бот', '1 сделка', 'DD 18%'], toBill: 812, note: 'ключ ⚠ 3 дня', exchange: 'Bybit', contractStatus: 'подписан' },
+  { name: 'Клиент-03', fav: false, capital: 28300, net: -300, hwm: 30000, gild: false, sub: 'net −$0.3K · HWM $30K', meta: ['1 бот', '2 сделки', 'DD 38%'], toBill: 0, note: 'под HWM', exchange: 'Bybit', contractStatus: 'подписан' },
+  { name: 'Клиент-07', fav: false, capital: 18050, net: -2000, hwm: 20050, gild: false, sub: 'net −$2.0K · стоп сработал', meta: ['1 бот', 'стоп', 'DD 51%'], toBill: 0, note: 'разобрать', exchange: 'Bybit', contractStatus: 'подписан' },
+  { name: 'Клиент-02', fav: false, capital: 15900, net: 0, hwm: 16000, gild: false, sub: 'пауза · HWM $16K', meta: ['1 бот', 'пауза'], toBill: 0, note: '—', exchange: 'Bybit', contractStatus: 'подписан' },
 ]
+
+// Деталь карточки клиента (демо, представительная — по макету s-client).
+export const clientDetailFixture = {
+  bots: [{ bot: 'bot-021', profile: 'Скальпер', dd: 18, pnl: 640, status: 'live' as const }],
+  positions: [
+    { pair: 'ETHUSDT', leg: '0.5', entry: '1 834', pnl: 180 },
+    { pair: 'SOLUSDT', leg: '0.382', entry: '168.4', pnl: 92 },
+  ],
+  periods: [
+    { month: 'Июнь 2026', note: 'HWM $56K → equity $61.4K', amount: 812, open: true },
+    { month: 'Май 2026', note: 'оплачено', amount: 540, open: false },
+  ],
+  cashflows: [{ label: 'Ввод $10 000', note: '02.06 · HWM ↑', sign: '+' }],
+  contract: { hwm: '15%', period: 'месяц', currency: 'USDT', min: '$1000' },
+}
