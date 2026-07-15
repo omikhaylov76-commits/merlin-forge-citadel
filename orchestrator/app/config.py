@@ -22,6 +22,11 @@ class OrchestratorSettings(BaseSettings):
     # ghcr pull для ПРИВАТНОГО образа картриджа (#46): username + PAT (read:packages). Только env.
     ghcr_pull_username: str = ""
     ghcr_pull_token: str = ""
+    # demo-ключи Bybit для БУТА картриджа (config.validate требует, #14/#16) — инжектим в env деплоя
+    # оркестратором, НЕ через ядро (закон №2: не в payload/API). Один комплект (Персиваль, з.2);
+    # per-instance ключи 5 субсчётов — з.3/go-live (конверт ADR-0010).
+    bybit_api_key: str = ""
+    bybit_api_secret: str = ""
     # Аренда: окно long-poll и параметры backoff при отказе инфры (OPS16).
     poll_wait_seconds: int = 25
     backoff_base_seconds: float = 1.0

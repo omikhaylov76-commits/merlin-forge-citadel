@@ -26,6 +26,12 @@ def build_driver(settings: OrchestratorSettings) -> InfraDriver:
         return FakeDriver()
     if settings.driver == "docker":
         return DockerDriver()
+    # demo-ключи Bybit (если заданы) инжектим в env КАЖДОГО деплоя картриджа — картридж без них не
+    # бутится (config.validate). Не в payload ядра (закон №2), а тут, в оркестраторе (#16).
+    deploy_env_extra: dict[str, str] = {}
+    if settings.bybit_api_key and settings.bybit_api_secret:
+        deploy_env_extra["BYBIT_API_KEY"] = settings.bybit_api_key
+        deploy_env_extra["BYBIT_API_SECRET"] = settings.bybit_api_secret
     return RailwayDriver(
         api_token=settings.railway_api_token,
         project_id=settings.railway_project_id,
@@ -33,6 +39,7 @@ def build_driver(settings: OrchestratorSettings) -> InfraDriver:
         environment_id=settings.railway_environment_id,
         registry_username=settings.ghcr_pull_username,
         registry_token=settings.ghcr_pull_token,
+        deploy_env_extra=deploy_env_extra,
     )
 
 

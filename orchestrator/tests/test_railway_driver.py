@@ -124,6 +124,27 @@ def test_no_registry_credentials_when_absent():
     assert "registryCredentials" not in _call(rec, "serviceCreate")["vars"]["input"]
 
 
+def test_deploy_env_extra_injected():
+    # demo-ключи из конфига оркестратора вливаются в env деплоя (картридж бутится, #16).
+    rec: list = []
+    d = _driver(
+        _handler(existing_names=(), record=rec),
+        deploy_env_extra={"BYBIT_API_KEY": "k", "BYBIT_API_SECRET": "s"},
+    )
+    d.deploy(_spec())
+    v = _call(rec, "serviceCreate")["vars"]["input"]["variables"]
+    assert v["BYBIT_API_KEY"] == "k" and v["BYBIT_API_SECRET"] == "s"  # вливка есть
+    assert v["MFC_INSTANCE_ID"] == "abc"  # spec.env (из payload) сохранён
+
+
+def test_deploy_spec_env_overrides_extra():
+    # per-instance env (из payload ядра) перекрывает общую вливку — приоритет spec.env.
+    rec: list = []
+    d = _driver(_handler(existing_names=(), record=rec), deploy_env_extra={"MFC_INSTANCE_ID": "G"})
+    d.deploy(_spec())  # spec env MFC_INSTANCE_ID=abc
+    assert _call(rec, "serviceCreate")["vars"]["input"]["variables"]["MFC_INSTANCE_ID"] == "abc"
+
+
 def test_environment_id_from_config_skips_lookup():
     # environmentId задан в конфиге → драйвер не тратит запрос на поиск окружения.
     rec: list = []

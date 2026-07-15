@@ -69,6 +69,7 @@ class RailwayDriver(InfraDriver):
         environment_id: str = "",
         registry_username: str = "",
         registry_token: str = "",
+        deploy_env_extra: dict[str, str] | None = None,
         client: httpx.Client | None = None,
         timeout: float = 30.0,
     ) -> None:
@@ -80,6 +81,9 @@ class RailwayDriver(InfraDriver):
         # registry-креды для ПРИВАТНОГО образа (ghcr): в env оркестратора, не в git/лог (закон №2).
         self._registry_username = registry_username
         self._registry_token = registry_token
+        # env-вливка в КАЖДЫЙ деплой (demo-ключи Bybit для бута, #16) — из env оркестратора, НЕ из
+        # payload ядра (закон №2). spec.env приоритетнее вливки (per-instance перекрывает общее).
+        self._deploy_env_extra = deploy_env_extra or {}
         # Инъекция клиента — точка подмены в тестах (MockTransport); иначе — реальный httpx.
         # trust_env=False: обкатка показала зависание клиента при чтении netrc/CA/proxy из env;
         # прямому вызову Railway API прокси не нужен (без этого POST висел мимо своего таймаута).
@@ -119,7 +123,8 @@ class RailwayDriver(InfraDriver):
                 "projectId": self._project,
                 "name": spec.name,
                 "source": {"image": spec.image},
-                "variables": spec.env,
+                # вливка (demo-ключи) + spec.env; spec.env приоритетнее (per-instance перекрывает).
+                "variables": {**self._deploy_env_extra, **spec.env},
             }
             # ПРИВАТНЫЙ образ (ghcr): registry-креды прямо в serviceCreate.
             # Пусто → образ считаем публичным, ключ не шлём (обратная совместимость paper-bot).
