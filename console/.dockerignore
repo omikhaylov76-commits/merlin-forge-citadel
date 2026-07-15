@@ -1,0 +1,5 @@
+# Не тащить в build-контекст (Railway up / docker): зависимости и артефакты ставятся/собираются внутри.
+node_modules
+dist
+.git
+*.log
