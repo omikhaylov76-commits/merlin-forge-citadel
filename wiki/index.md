@@ -69,3 +69,4 @@ updated: 2026-07-10
 - [HANDOFF_2026-07-11_session_3](handoffs/HANDOFF_2026-07-11_session_3.md) — MFC-002 часовой + MFC-003 instances/stale-скан (ADR 0012–0013, merged).
 - [HANDOFF_2026-07-11_session_4](handoffs/HANDOFF_2026-07-11_session_4.md) — Ф1 закрыта (MFC-004/005/006 + Railway обкатка merged); Ф2 начата (снимок Пифагора b75bd17 вендорен).
 - [HANDOFF_2026-07-12_session_5](handoffs/HANDOFF_2026-07-12_session_5.md) — **Ф2 ЗАКРЫТА**: адаптер картриджа + облачная сборка + ядро/Postgres/картридж в облаке, сквозняк облако-в-облако. Дальше — Малыш Мерлин (#11).
+- [HANDOFF_2026-07-15_session_6](handoffs/HANDOFF_2026-07-15_session_6.md) — **Ф3 денежный блок построен+отревьюен**: #20, Малыш Мерлин (ADR-0014), CRM-схема, движок HWM (ADR-0011), CRM-API, генератор периодов. Осталось Telegram (отложено). main @ 15abecb.
