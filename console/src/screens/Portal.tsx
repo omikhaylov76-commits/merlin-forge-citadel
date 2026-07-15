@@ -16,7 +16,7 @@ const portal = { capital: 61400, net: 5400, hwm: 56000, toBill: 812, bot: 'Ск�
 export function Portal() {
   const [modal, setModal] = useState<null | 'pause' | 'stop'>(null)
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <div className="mb-4 flex items-center gap-2 rounded-card border border-copper/25 bg-copper/5 px-4 py-2 text-[12px] text-copper">
         ◐ Портал клиента — превью. Клиент видит только свои результаты; рецепт (крутилки/логика/пороги) скрыт.
       </div>

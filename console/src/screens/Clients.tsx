@@ -9,7 +9,7 @@ const money = (n: number) => '$' + n.toLocaleString('ru-RU')
 // Экран Клиенты (по макету): плитки клиентов. Демо — живой источник = CRM-API ядра (/v1 clients).
 export function Clients() {
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead
         eyebrow="Клиенты"
         title="Клиенты"

@@ -7,7 +7,7 @@ const pnl = (n: number) => (n >= 0 ? '+' : '−') + '$' + Math.abs(n).toLocaleSt
 // Экран Сделки (по макету): журнал ордеров флота. Демо — живой источник = trades ядра.
 export function Deals() {
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead eyebrow="Флот" title="Сделки" desc="журнал ордеров по всему флоту" />
       <Toolbar>
         <Chip active>Сегодня</Chip>

@@ -20,14 +20,27 @@ export const overviewFixture = {
     { kind: 'a', who: 'Клиент-11', what: 'Ключ протухает 3 дня', tag: 'ключ' },
     { kind: 'p', who: 'bot-009', what: 'Heartbeat молчит 12 мин', tag: 'проверить' },
     { kind: 'p', who: 'Клиент-05', what: 'Период к закрытию', tag: '$612' },
+    { kind: 'p', who: 'bot-002 · Клиент-01', what: 'Реинвест ожидает подтверждения', tag: 'открыть' },
   ] as { kind: 'k' | 'a' | 'p'; who: string; what: string; tag: string }[],
-  health: { worst: 'bot-014', current: 51, alarm: 40, stop: 50, median: 22 },
+  health: {
+    worst: 'bot-014',
+    current: 51,
+    alarm: 40,
+    stop: 50,
+    median: 22,
+    botsOk: 14,
+    botsAlarm: 2,
+    botsStopped: 1,
+    medianEquity: '$14,6K',
+  },
   feed: [
     { t: '09:14', kind: 'kill', text: 'bot-014 остановлен' },
     { t: '08:47', kind: 'bill', text: 'Клиент-05 готов к счёту' },
     { t: '07:32', kind: 'alarm', text: 'bot-006 −38%' },
+    { t: '05:20', kind: 'key', text: 'Клиент-11 · ключ истекает' },
+    { t: '03:58', kind: 'hb', text: 'bot-009 heartbeat восстановлен' },
     { t: '02:55', kind: 'ok', text: 'Кавалл: облако и БД в норме' },
-  ] as { t: string; kind: 'kill' | 'bill' | 'alarm' | 'ok'; text: string }[],
+  ] as { t: string; kind: 'kill' | 'bill' | 'alarm' | 'key' | 'hb' | 'ok'; text: string }[],
 }
 
 export type OverviewData = typeof overviewFixture
@@ -119,14 +132,16 @@ export const profilesFixture: {
   status: 'допущен' | 'demo'
   track: string
   calmar: string
-  dd: string
+  dd: string // макс. просадка
+  avgReturn: string // средняя доходность %/год за весь трек
+  recentReturn: string // недавняя доходность за 12 мес
   deploys: number
   oos: string
   fav?: boolean
 }[] = [
-  { name: 'Консерватор-10', status: 'допущен', track: 'живой трек 8 нед', calmar: '2.0', dd: '−24%', deploys: 4, oos: 'OOS ✓ 02.07', fav: true },
-  { name: 'Агрессор v3', status: 'demo', track: 'бэктест', calmar: '3.5', dd: '−34%', deploys: 2, oos: 'не обкатан' },
-  { name: 'Скальпер', status: 'допущен', track: 'живой трек 4 нед', calmar: '1.9', dd: '−19%', deploys: 1, oos: 'OOS ✓' },
+  { name: 'Консерватор-10', status: 'допущен', track: 'живой трек 8 нед', calmar: '2.0', dd: '−24%', avgReturn: '+26%', recentReturn: '+21%', deploys: 4, oos: 'OOS ✓ 02.07', fav: true },
+  { name: 'Агрессор v3', status: 'demo', track: 'бэктест', calmar: '3.5', dd: '−34%', avgReturn: '+48%', recentReturn: '+39%', deploys: 2, oos: 'не обкатан' },
+  { name: 'Скальпер', status: 'допущен', track: 'живой трек 4 нед', calmar: '1.9', dd: '−19%', avgReturn: '+24%', recentReturn: '+18%', deploys: 1, oos: 'OOS ✓' },
 ]
 
 // ── Отчёты (архив документов; демо) ────────────────────────────────────────────

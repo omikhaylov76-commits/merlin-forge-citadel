@@ -31,7 +31,7 @@ export function Alerts() {
   const activeCount = alertsFixture.filter((a) => !a.resolved).length
 
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead eyebrow="Журналы" title="Тревоги" desc={`${activeCount} неразобранных`} />
 
       <div className="mb-4 flex flex-wrap items-center gap-2">

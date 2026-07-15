@@ -16,7 +16,7 @@ export function ClientCard() {
   const { id } = useParams()
   const c = clientsFixture.find((x) => x.name === id) ?? clientsFixture[0]
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <Link to="/clients" className="text-[12px] text-copper hover:underline">
         ← Клиенты
       </Link>
