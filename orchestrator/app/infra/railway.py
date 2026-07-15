@@ -2,8 +2,12 @@
 
 ✅ СХЕМА ПОДТВЕРЖДЕНА НА ЖИВОМ RAILWAY (обкатка 2026-07-11): FindService (project.services.edges),
 serviceCreate (ServiceCreateInput), serviceDelete и формат infra_ref прошли против реального API —
-полный цикл deploy→status→destroy отработал. Детальный маппинг deployment-статуса и многошаговость
-(variableCollectionUpsert/redeploy) — по мере надобности; на v1 хватает существования сервиса.
+полный цикл deploy→status→destroy отработал. Маппинг deployment-статуса — по мере надобности.
+
+Деплой картриджа в облако (#46): serviceCreate САМ образ не запускает — после него зовём
+serviceInstanceDeploy(serviceId, environmentId). Для ПРИВАТНОГО ghcr-образа кладём
+registryCredentials (username+PAT read:packages) прямо в serviceCreate — креды живут в env
+оркестратора, не в git/лог (закон №2).
 
 Идемпотентность по имени (S3/S5, OPS2): сервис зовётся mfc-inst-{id} (ядро задаёт детерминированно);
 перед созданием ищем его в проекте — «усынови или создай», дубль после create удаляем.
@@ -39,6 +43,21 @@ mutation DeleteService($id: String!) {
 }
 """.strip()
 
+# Запуск образа: serviceCreate только создаёт сервис, деплой контейнера — отдельным вызовом
+# (пробел драйвера с.5). environmentId обязателен — резолвим в _environment_id().
+_M_DEPLOY_INSTANCE = """
+mutation DeployInstance($serviceId: String!, $environmentId: String!) {
+  serviceInstanceDeploy(serviceId: $serviceId, environmentId: $environmentId)
+}
+""".strip()
+
+# Список окружений проекта → id (предпочитаем production). Нужен для serviceInstanceDeploy.
+_Q_ENVIRONMENTS = """
+query Environments($projectId: String!) {
+  project(id: $projectId) { environments { edges { node { id name } } } }
+}
+""".strip()
+
 
 class RailwayDriver(InfraDriver):
     def __init__(
@@ -47,12 +66,20 @@ class RailwayDriver(InfraDriver):
         api_token: str,
         project_id: str,
         api_url: str = "https://backboard.railway.app/graphql/v2",
+        environment_id: str = "",
+        registry_username: str = "",
+        registry_token: str = "",
         client: httpx.Client | None = None,
         timeout: float = 30.0,
     ) -> None:
         self._token = api_token
         self._project = project_id
         self._url = api_url
+        # Окружение для serviceInstanceDeploy: если пусто — определим по проекту (production).
+        self._env_id = environment_id
+        # registry-креды для ПРИВАТНОГО образа (ghcr): в env оркестратора, не в git/лог (закон №2).
+        self._registry_username = registry_username
+        self._registry_token = registry_token
         # Инъекция клиента — точка подмены в тестах (MockTransport); иначе — реальный httpx.
         # trust_env=False: обкатка показала зависание клиента при чтении netrc/CA/proxy из env;
         # прямому вызову Railway API прокси не нужен (без этого POST висел мимо своего таймаута).
@@ -88,20 +115,49 @@ class RailwayDriver(InfraDriver):
         # Усынови-или-создай по детерминированному имени (дубль недопустим, OPS2).
         existing = self._find_service_id(spec.name)
         if existing is None:
+            create_input = {
+                "projectId": self._project,
+                "name": spec.name,
+                "source": {"image": spec.image},
+                "variables": spec.env,
+            }
+            # ПРИВАТНЫЙ образ (ghcr): registry-креды прямо в serviceCreate.
+            # Пусто → образ считаем публичным, ключ не шлём (обратная совместимость paper-bot).
+            if self._registry_token:
+                create_input["registryCredentials"] = {
+                    "username": self._registry_username,
+                    "password": self._registry_token,
+                }
+            data = self._gql(_M_CREATE_SERVICE, {"input": create_input})
+            service_id = (data.get("serviceCreate") or {}).get("id")
+        else:
+            # Сервис уже есть — усыновляем (variableUpsert существующего — при нужде, QUEUE).
+            service_id = existing
+        # Запустить образ: serviceCreate сам по себе контейнер НЕ деплоит (пробел драйвера с.5).
+        env_id = self._environment_id()
+        if service_id and env_id:
             self._gql(
-                _M_CREATE_SERVICE,
-                {
-                    "input": {
-                        "projectId": self._project,
-                        "name": spec.name,
-                        # ⚠️ source/variables/restartPolicy=never (OPS1) — форма уточняется обкаткой.
-                        "source": {"image": spec.image},
-                        "variables": spec.env,
-                    }
-                },
+                _M_DEPLOY_INSTANCE,
+                {"serviceId": service_id, "environmentId": env_id},
             )
-        # else: сервис уже есть — усыновляем (⚠️ push переменных + redeploy — на обкатке).
         return make_ref(self._project, spec.name)
+
+    def _environment_id(self) -> str | None:
+        """environmentId для serviceInstanceDeploy: из конфига или найденный по проекту."""
+        if self._env_id:
+            return self._env_id
+        data = self._gql(_Q_ENVIRONMENTS, {"projectId": self._project})
+        edges = (((data.get("project") or {}).get("environments") or {}).get("edges")) or []
+        chosen = None
+        for edge in edges:
+            node = edge.get("node") or {}
+            if node.get("name") == "production":  # мульти-env: предпочитаем production
+                chosen = node.get("id")
+                break
+        if chosen is None and edges:  # иначе первое доступное
+            chosen = (edges[0].get("node") or {}).get("id")
+        self._env_id = chosen or ""  # кэш (в т.ч. пустой — не долбим API повторно)
+        return self._env_id or None
 
     def destroy(self, infra_ref: str) -> None:
         _, _, name = parse_ref(infra_ref)

@@ -18,6 +18,10 @@ class OrchestratorSettings(BaseSettings):
     railway_api_token: str = ""
     railway_project_id: str = ""
     railway_api_url: str = "https://backboard.railway.app/graphql/v2"
+    railway_environment_id: str = ""  # для serviceInstanceDeploy; пусто → драйвер найдёт production
+    # ghcr pull для ПРИВАТНОГО образа картриджа (#46): username + PAT (read:packages). Только env.
+    ghcr_pull_username: str = ""
+    ghcr_pull_token: str = ""
     # Аренда: окно long-poll и параметры backoff при отказе инфры (OPS16).
     poll_wait_seconds: int = 25
     backoff_base_seconds: float = 1.0
