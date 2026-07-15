@@ -22,10 +22,14 @@ def fleet_overview(session: Session) -> dict:
 
     clients = int(session.execute(select(func.count()).select_from(Client)).scalar_one())
 
-    # ── AUM = сумма ПОСЛЕДНЕЙ equity по каждому инстансу (телеметрия S4, USDT) ─────
+    # ── AUM = сумма ПОСЛЕДНЕЙ equity по каждому АКТИВНОМУ инстансу (телеметрия S4, USDT) ────
     # Дисплей-метрика обзора. Для БИЛЛИНГА equity авторитетно (сверка, MON3) — это НЕ оно.
+    # Только running+paused (#40 ш.2/#38а): у stopped/terminated деньги возвращены клиенту,
+    # в AUM попадать не должны (иначе «мёртвые» боты завышают активы под управлением).
     latest = (
         select(EquityPoint.instance_id, EquityPoint.equity)
+        .join(Instance, Instance.id == EquityPoint.instance_id)
+        .where(Instance.status.in_(("running", "paused")))
         .distinct(EquityPoint.instance_id)
         .order_by(EquityPoint.instance_id, EquityPoint.ts.desc())
         .subquery()

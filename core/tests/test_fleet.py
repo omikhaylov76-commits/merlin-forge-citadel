@@ -70,6 +70,20 @@ def test_overview_bots_clients_aum(clean) -> None:
     assert ov["currency"] == "USDT"
 
 
+def test_aum_excludes_inactive(clean) -> None:
+    # #40 ш.2: stopped/остановленный инстанс с equity НЕ попадает в AUM (деньги возвращены клиенту).
+    with get_sessionmaker()() as s:
+        cid, a1 = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        _, a2 = ensure_parents(s, cid, uuid.uuid4())
+        i_run = _instance(s, cid, a1, "running")
+        i_stop = _instance(s, cid, a2, "stopped")
+        _equity(s, i_run, "1000", datetime(2026, 7, 2, tzinfo=UTC))
+        _equity(s, i_stop, "9999", datetime(2026, 7, 2, tzinfo=UTC))  # остановлен → не в AUM
+        s.commit()
+        ov = fleet_overview(s)
+    assert Decimal(ov["aum"]) == Decimal("1000")  # только running; stopped исключён
+
+
 def test_overview_empty(clean) -> None:
     with get_sessionmaker()() as s:
         ov = fleet_overview(s)
