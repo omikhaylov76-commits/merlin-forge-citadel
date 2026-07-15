@@ -3,26 +3,42 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Loading, ErrorState, EmptyState } from '@/components/ui/states'
-import { useAsync } from '@/lib/useAsync'
+import { useAsync, type AsyncState } from '@/lib/useAsync'
+import { getFleetOverview, type FleetOverview } from '@/lib/api'
 import { overviewFixture as ov } from '@/lib/fixtures'
 
 const money = (n: number) => '$' + Math.round(n).toLocaleString('ru-RU')
 const moneyK = (n: number) => '$' + (n / 1000).toFixed(1).replace('.', ',') + 'K'
 
-// ── экран Обзор (адаптивная раскладка #40) ──────────────────────────────────────
-// Full-height grid (auto/auto/1.3fr/1fr) заполняет высоту main и НЕ скроллит (floor 900px).
-// Карточки рядов — flex min-h-0; кривая тянется по высоте; списки распределяются. Данные — фикстуры
-// (деньги считает ядро, #32); живой /fleet/overview подключается шагом 3.
+type Fleet = AsyncState<FleetOverview>
+
+// Живое значение из /fleet/overview с честными состояниями (грузится «…» / ошибка «—» / данные).
+// Тот же футпринт → floor не меняется. Endpoint даёт AUM/боты/P&L/комиссию (деньги из ядра, #32).
+function Live({ fleet, children }: { fleet: Fleet; children: (d: FleetOverview) => ReactNode }) {
+  if (fleet.loading) return <span className="animate-pulse text-ash">…</span>
+  if (fleet.error || !fleet.data)
+    return (
+      <span className="text-danger" title={fleet.error?.message}>
+        —
+      </span>
+    )
+  return <>{children(fleet.data)}</>
+}
+
+// ── экран Обзор (адаптивная #40 + живой /fleet/overview #42 ш.3) ────────────────
+// Full-height grid заполняет высоту main и НЕ скроллит (floor). AUM/боты/P&L/комиссия — ЖИВЫЕ из ядра;
+// кривая капитала и ленты внимания/тревог — демо-фикстуры (их эндпоинты — отдельной задачей).
 export function Overview() {
+  const fleet = useAsync(getFleetOverview, [])
   return (
     <div
       className="mx-auto grid h-full max-w-[1880px] gap-4 overflow-hidden"
       style={{ gridTemplateRows: 'auto auto minmax(0,1.3fr) minmax(0,1fr)' }}
     >
-      <Hero />
-      <Kpis />
+      <Hero fleet={fleet} />
+      <Kpis fleet={fleet} />
       <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-[1.55fr_1fr]">
-        <CapitalCard />
+        <CapitalCard fleet={fleet} />
         <AttentionCard />
       </div>
       <div className="grid min-h-0 grid-cols-1 gap-4 lg:grid-cols-2">
@@ -33,21 +49,35 @@ export function Overview() {
   )
 }
 
-function Hero() {
+function SourceChip({ fleet }: { fleet: Fleet }) {
+  const [text, cls] = fleet.loading
+    ? ['загрузка…', 'border-line text-steel']
+    : fleet.error
+      ? ['нет связи с ядром', 'border-danger/40 text-danger']
+      : ['ядро · живое', 'border-ok/40 text-ok']
+  return (
+    <span className={`rounded-pill border px-1.5 py-0.5 text-[9px] normal-case tracking-normal ${cls}`}>
+      {text}
+    </span>
+  )
+}
+
+function Hero({ fleet }: { fleet: Fleet }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4 rounded-card border border-line bg-card px-6 py-4">
       <div>
         <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-widest text-ash">
           Флот · сводка
-          <span className="rounded-pill border border-line px-1.5 py-0.5 text-[9px] normal-case tracking-normal text-steel">
-            демо-данные
-          </span>
+          <SourceChip fleet={fleet} />
         </div>
-        <div className="gild font-serif text-[clamp(34px,3vw,46px)] leading-none tnum">{money(ov.aum)}</div>
+        <div className="gild font-serif text-[clamp(34px,3vw,46px)] leading-none tnum">
+          <Live fleet={fleet}>{(d) => money(Number(d.aum))}</Live>
+        </div>
         <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[13px] text-fog">
-          <span>Активы под управлением</span>
-          <span className="text-ok">▲ {ov.aumDeltaPct}% за месяц</span>
-          <Badge tone="gold">P&amp;L +{moneyK(ov.pnlNet)} net</Badge>
+          <span>Активы под управлением · {fleet.data?.currency ?? 'USDT'}</span>
+          <Badge tone="gold">
+            P&amp;L <Live fleet={fleet}>{(d) => `+${moneyK(Number(d.pnl_net_closed))}`}</Live> net
+          </Badge>
         </div>
       </div>
       <div className="flex gap-2.5">
@@ -82,27 +112,44 @@ function Kpi({
   )
 }
 
-function Kpis() {
+function Kpis({ fleet }: { fleet: Fleet }) {
   return (
     <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-      <Kpi label="Активы (AUM)" value={moneyK(ov.aum)} gild sub={<span className="text-ok">▲ {ov.aumDeltaPct}%</span>} />
+      <Kpi
+        label="Активы (AUM)"
+        gild
+        value={<Live fleet={fleet}>{(d) => moneyK(Number(d.aum))}</Live>}
+        sub="активные боты"
+      />
       <Kpi
         label="Боты в работе"
         value={
-          <>
-            {ov.botsRunning}
-            <span className="text-[15px] text-ash"> / {ov.botsTotal}</span>
-          </>
+          <Live fleet={fleet}>
+            {(d) => (
+              <>
+                {d.bots.running}
+                <span className="text-[15px] text-ash"> / {d.bots.total}</span>
+              </>
+            )}
+          </Live>
         }
-        sub={`${ov.botsPaused} на паузе`}
+        sub={<Live fleet={fleet}>{(d) => `${d.bots.paused} на паузе`}</Live>}
       />
-      <Kpi label="P&L за период" value={<span className="text-ok">+{moneyK(ov.pnlNet)}</span>} sub="net, после издержек" />
+      <Kpi
+        label="Чистый P&L · закрыто"
+        value={
+          <span className="text-ok">
+            <Live fleet={fleet}>{(d) => `+${moneyK(Number(d.pnl_net_closed))}`}</Live>
+          </span>
+        }
+        sub="по закрытым периодам"
+      />
       <Kpi
         label="Комиссия начислена ◆"
-        value={money(ov.toBill)}
         gild
         accent
-        sub={`${ov.periodsToClose} периода к закрытию`}
+        value={<Live fleet={fleet}>{(d) => money(Number(d.commission_accrued))}</Live>}
+        sub={<Live fleet={fleet}>{(d) => `${d.open_periods} периодов открыто`}</Live>}
       />
     </div>
   )
@@ -141,7 +188,7 @@ function EquityCurve({ points }: { points: number[] }) {
   )
 }
 
-function CapitalCard() {
+function CapitalCard({ fleet }: { fleet: Fleet }) {
   const periods = ['Д', 'Н', 'М', 'Кв', 'Всё']
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden p-4">
@@ -158,9 +205,12 @@ function CapitalCard() {
           ))}
         </div>
       </CardHeader>
-      <div className="gild font-serif text-[26px] tnum">{money(ov.aum)}</div>
+      <div className="gild font-serif text-[26px] tnum">
+        <Live fleet={fleet}>{(d) => money(Number(d.aum))}</Live>
+      </div>
       <div className="mb-2 mt-0.5 text-[12px] text-fog">
         +{money(ov.capitalDelta30d)} за 30 дней · просадка от пика {ov.drawdownFromPeak}%
+        <span className="text-steel"> · график демо</span>
       </div>
       <div className="relative min-h-0 flex-1">
         <EquityCurve points={ov.equityCurve} />
