@@ -214,6 +214,18 @@ def test_contract_sign_status(crm) -> None:
     assert r.status_code == 200 and r.json()["status"] == "signed"
 
 
+def test_contract_usdc_create_and_sign(crm) -> None:
+    # USDC-договор законен (ADR-0011): создаётся и подписывается
+    c = TestClient(create_app())
+    h = _op(c)
+    cid = c.post("/v1/clients", headers=h, json={"name": "Acme"}).json()["id"]
+    kid = c.post("/v1/contracts", headers=h,
+                 json={"client_id": cid, "currency": "USDC"}).json()["id"]
+    assert c.get(f"/v1/contracts/{kid}", headers=h).json()["currency"] == "USDC"
+    r = c.patch(f"/v1/contracts/{kid}/status", headers=h, json={"status": "signed"})
+    assert r.status_code == 200 and r.json()["status"] == "signed"
+
+
 def test_audit_written_on_client_create(crm) -> None:
     c = TestClient(create_app())
     h = _op(c)
