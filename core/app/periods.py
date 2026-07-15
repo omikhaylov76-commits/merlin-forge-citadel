@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.audit import write_audit
 from app.billing import v1_unsupported_reason
-from app.models import BillingPeriod, Contract, ExchangeAccount
+from app.models import AuditLog, BillingPeriod, Contract, ExchangeAccount
 
 logger = logging.getLogger("mfc.periods")
 
@@ -48,6 +48,62 @@ def _last_period(session: Session, account_id):
         .order_by(BillingPeriod.period_end.desc())
         .limit(1)
     ).scalar_one_or_none()
+
+
+def _active_billing_accounts(session: Session):
+    """Счета с активным биллингом (activated и не terminated) — на них работает генератор."""
+    return session.execute(
+        select(ExchangeAccount).where(
+            ExchangeAccount.billing_activated_at.is_not(None),
+            ExchangeAccount.billing_terminated_at.is_(None),
+        )
+    ).scalars().all()
+
+
+def _blocked_reason(prev: BillingPeriod, contract: Contract | None) -> str | None:
+    """ЕДИНЫЙ источник решения: почему DUE-счёт (prev закрыт, месяц истёк) не даёт период.
+    None → период создаётся. Иначе счёт застрял (pending). Порядок причин важен (аудит)."""
+    if prev.end_equity is None:  # аномалия: период закрыт без авторитетного equity
+        return "closed_without_equity"
+    if contract is None:  # нет подписанного договора → биллинг застрял
+        return "no_signed_contract"
+    if contract.currency != prev.currency:  # смена валюты договора → терминация+новый счёт
+        return "currency_changed"
+    return None
+
+
+def _skip_payload(prev: BillingPeriod, contract: Contract | None, reason: str) -> dict:
+    payload = {"reason": reason, "pending_period_start": prev.period_end.isoformat()}
+    if reason == "currency_changed":  # контекст расхождения — оператору сразу видно, что чинить
+        payload["prev_currency"] = prev.currency
+        payload["contract_currency"] = contract.currency if contract else None
+    return payload
+
+
+def _last_skip_audit(session: Session, entity: str):
+    return session.execute(
+        select(AuditLog)
+        .where(AuditLog.action == "period_generation_skipped", AuditLog.entity == entity)
+        .order_by(AuditLog.ts.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _record_skip(session: Session, account: ExchangeAccount, prev: BillingPeriod,
+                 contract: Contract | None, reason: str) -> None:
+    """Зафиксировать застрявший счёт: WARNING-лог (реалтайм) + audit-событие (дюрабельный след).
+    Дедуп: один audit на (счёт, граница pending, причина) — часовой не спамит одинаковой строкой
+    каждый тик, пока счёт застрял; смена причины/границы → новая строка (значимое событие)."""
+    payload = _skip_payload(prev, contract, reason)
+    logger.warning("счёт %s: биллинг застрял (%s), период с %s не создан",
+                   account.id, reason, payload["pending_period_start"])
+    last = _last_skip_audit(session, str(account.id))
+    if last is not None and last.after \
+            and last.after.get("reason") == reason \
+            and last.after.get("pending_period_start") == payload["pending_period_start"]:
+        return  # уже зафиксировано для этой границы+причины
+    write_audit(session, actor="system:period-generator",
+                action="period_generation_skipped", entity=str(account.id), after=payload)
 
 
 def activate_billing(session: Session, account_id, contract_id, start_equity, actor: str, now):
@@ -113,27 +169,15 @@ def generate_due_periods(session: Session, now: datetime) -> list:
     создать СЛЕДУЮЩИЙ период [prev.end, +1мес), start_equity=prev.end_equity, валюта из подписанного
     договора клиента. Пауза НЕ пропускает; терминация останавливает; bit-в-bit (start==prev.end);
     no backdating; предыдущий открыт / нет equity/договора / смена валюты → не создаём (pending)."""
-    accounts = session.execute(
-        select(ExchangeAccount).where(
-            ExchangeAccount.billing_activated_at.is_not(None),
-            ExchangeAccount.billing_terminated_at.is_(None),
-        )
-    ).scalars().all()
     created = []
-    for account in accounts:
+    for account in _active_billing_accounts(session):
         prev = _last_period(session, account.id)
         if prev is None or prev.status != "closed" or prev.period_end > now:
             continue  # нет периода / предыдущий открыт / месяц не истёк → pending (норма, без шума)
-        if prev.end_equity is None:  # аномалия: закрыт без equity
-            logger.warning("счёт %s: закрытый период без end_equity — не создан", account.id)
-            continue
         contract = _signed_contract(session, account.client_id)
-        if contract is None:
-            logger.warning("счёт %s: нет signed-договора — биллинг застрял (pending)", account.id)
-            continue
-        if contract.currency != prev.currency:
-            logger.warning("счёт %s: смена валюты %s→%s — нужна терминация+новый счёт",
-                           account.id, prev.currency, contract.currency)
+        reason = _blocked_reason(prev, contract)
+        if reason is not None:  # DUE, но застрял → видимость (audit+WARNING), период не создаём
+            _record_skip(session, account, prev, contract, reason)
             continue
         ps = prev.period_end  # bit-в-bit: старт нового == конец предыдущего
         try:
@@ -149,6 +193,27 @@ def generate_due_periods(session: Session, now: datetime) -> list:
         except (IntegrityError, OperationalError):  # DB-сбой (гонка) → изолируем счёт, не батч
             logger.warning("счёт %s: создание периода не удалось (DB)", account.id, exc_info=True)
     return created
+
+
+def stuck_billing_accounts(session: Session, now: datetime) -> list[dict]:
+    """Readout операторской видимости (#32): активные счета, чей следующий период ДОЛЖЕН был
+    сгенериться (prev закрыт, месяц истёк), но застрял (нет equity/договора/смена валюты).
+    Только чтение, без эффектов; решение о «застрял» общее с генератором (_blocked_reason)."""
+    stuck = []
+    for account in _active_billing_accounts(session):
+        prev = _last_period(session, account.id)
+        if prev is None or prev.status != "closed" or prev.period_end > now:
+            continue  # не due (норма) — не «застрял»
+        contract = _signed_contract(session, account.client_id)
+        reason = _blocked_reason(prev, contract)
+        if reason is None:
+            continue  # следующий период создаётся штатно — не застрял
+        stuck.append({
+            "account_id": str(account.id), "client_id": str(account.client_id),
+            "exchange": account.exchange, "label": account.label,
+            **_skip_payload(prev, contract, reason),
+        })
+    return stuck
 
 
 def generate_periods_once(sessionmaker_, now: datetime | None = None) -> int:

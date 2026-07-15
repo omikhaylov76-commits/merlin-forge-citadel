@@ -19,6 +19,7 @@ from app.periods import (
     _next_month,
     activate_billing,
     generate_due_periods,
+    stuck_billing_accounts,
     terminate_billing,
 )
 from tests.crm_helpers import ensure_parents
@@ -400,3 +401,114 @@ def test_terminate_endpoint(users, clean) -> None:
     assert r.status_code == 200, r.text
     with get_sessionmaker()() as s:
         assert s.get(ExchangeAccount, aid).billing_terminated_at is not None
+
+
+# ── видимость застрявшего биллинга (#32: audit пропусков + readout) ──────────────
+
+def _stuck_setup_no_contract(s):
+    """Счёт с закрытым июльским периодом и БЕЗ signed-договора → застрял на августе."""
+    cid, aid, kid = _signed_setup(s)
+    p1 = _activate(s, aid, kid, "10000", 7).id
+    s.commit()
+    close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+    s.execute(text("UPDATE contracts SET status='suspended' WHERE id=:i"), {"i": kid})
+    s.commit()
+    return aid
+
+
+def _skip_rows(s, aid):
+    return s.execute(
+        select(AuditLog).where(
+            AuditLog.action == "period_generation_skipped", AuditLog.entity == str(aid)
+        )
+    ).scalars().all()
+
+
+def test_stuck_readout_and_skip_audit_once(clean) -> None:
+    # readout показывает застрявший счёт; генератор пишет РОВНО одну audit-строку (дедуп на тик).
+    with get_sessionmaker()() as s:
+        aid = _stuck_setup_no_contract(s)
+    aug5 = datetime(2026, 8, 5, tzinfo=UTC)
+    with get_sessionmaker()() as s:
+        stuck = stuck_billing_accounts(s, aug5)
+        assert len(stuck) == 1 and stuck[0]["account_id"] == str(aid)
+        assert stuck[0]["reason"] == "no_signed_contract"
+        assert stuck[0]["pending_period_start"] == datetime(2026, 8, 1, tzinfo=UTC).isoformat()
+    with get_sessionmaker()() as s:
+        assert generate_due_periods(s, aug5) == []          # период не создан
+        s.commit()
+    with get_sessionmaker()() as s:                          # второй тик → дедуп, новой строки нет
+        assert generate_due_periods(s, datetime(2026, 8, 6, tzinfo=UTC)) == []
+        s.commit()
+    with get_sessionmaker()() as s:
+        rows = _skip_rows(s, aid)
+        assert len(rows) == 1                                # ровно одна (граница+причина)
+        assert rows[0].after["reason"] == "no_signed_contract"
+        assert rows[0].actor == "system:period-generator"
+
+
+def test_stuck_currency_change_readout_and_audit(clean) -> None:
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s, currency="USDT")
+        p1 = _activate(s, aid, kid, "10000", 7).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.execute(text("UPDATE contracts SET status='suspended' WHERE id=:i"), {"i": kid})
+        s.add(Contract(client_id=cid, status="signed", currency="USDC"))  # новый в др. валюте
+        s.commit()
+    aug5 = datetime(2026, 8, 5, tzinfo=UTC)
+    with get_sessionmaker()() as s:
+        stuck = stuck_billing_accounts(s, aug5)
+        assert len(stuck) == 1
+        assert stuck[0]["reason"] == "currency_changed"
+        assert stuck[0]["prev_currency"] == "USDT"
+        assert stuck[0]["contract_currency"] == "USDC"
+    with get_sessionmaker()() as s:
+        generate_due_periods(s, aug5)
+        s.commit()
+    with get_sessionmaker()() as s:
+        row = _skip_rows(s, aid)[0]
+        assert row.after["contract_currency"] == "USDC"
+
+
+def test_normal_pending_not_stuck(clean) -> None:
+    # период закрыт, но месяц НЕ истёк (now в июле) → не «застрял»: readout пуст, audit-пропуска нет
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        p1 = _activate(s, aid, kid, "10000", 7).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.commit()
+    jul20 = datetime(2026, 7, 20, tzinfo=UTC)
+    with get_sessionmaker()() as s:
+        assert stuck_billing_accounts(s, jul20) == []
+        assert generate_due_periods(s, jul20) == []
+        s.commit()
+    with get_sessionmaker()() as s:
+        assert _skip_rows(s, aid) == []
+
+
+def test_stuck_accounts_endpoint(users, clean) -> None:
+    # период в ПРОШЛОМ (2020) → due при реальном now эндпоинта; нет signed-договора → застрял
+    past = datetime(2020, 1, 15, tzinfo=UTC)
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        p1 = activate_billing(s, aid, kid, Decimal("10000"), "op", past).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.execute(text("UPDATE contracts SET status='suspended' WHERE id=:i"), {"i": kid})
+        s.commit()
+    c = TestClient(create_app())
+    h = _login(c, "op@mfc.local", "op-pass")
+    r = c.get("/v1/billing/stuck-accounts", headers=h)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert "as_of" in body
+    assert str(aid) in [x["account_id"] for x in body["stuck"]]
+    # RBAC: клиент → 403, без токена → 401
+    hcl = _login(c, "a@mfc.local", "a-pass")
+    assert c.get("/v1/billing/stuck-accounts", headers=hcl).status_code == 403
+    assert c.get("/v1/billing/stuck-accounts").status_code == 401

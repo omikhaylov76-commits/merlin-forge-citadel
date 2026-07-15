@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_role
 from app.db import get_session
 from app.models import ExchangeAccount, User
-from app.periods import activate_billing, terminate_billing
+from app.periods import activate_billing, stuck_billing_accounts, terminate_billing
 
 router = APIRouter(prefix="/v1")
 
@@ -60,3 +60,14 @@ def terminate_billing_endpoint(
     except ValueError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from None
     return {"account_id": str(account_id), "billing_terminated": True}
+
+
+@router.get("/billing/stuck-accounts")
+def stuck_accounts_endpoint(
+    operator: User = Depends(require_role("operator")),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Readout застрявшего биллинга (#32): активные счета, чей период не сгенерился (нет equity /
+    нет договора / смена валюты). Только чтение (состояние не меняет → аудит не нужен, закон №4)."""
+    now = datetime.now(UTC)
+    return {"as_of": now.isoformat(), "stuck": stuck_billing_accounts(session, now)}
