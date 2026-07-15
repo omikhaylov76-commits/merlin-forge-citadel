@@ -26,11 +26,40 @@ def seed_operator() -> None:
     with sm() as session:
         existing = session.execute(select(User).where(User.email == email)).scalar_one_or_none()
         if existing is not None:
-            print(f"[bootstrap] оператор {email} уже есть — no-op")
+            # Пароль — из env (источник истины бутстрапа): синхронизируем при КАЖДОМ деплое
+            # (Оператор меняет пароль через env + передеплой; UI смены нет). В лог не пишем.
+            existing.password_hash = hash_password(password)
+            session.commit()
+            print(f"[bootstrap] оператор {email} есть — пароль синхронизирован из env")
             return
         session.add(User(email=email, role="operator", password_hash=hash_password(password)))
         session.commit()
         print(f"[bootstrap] оператор {email} создан (роль operator)")
+
+
+def seed_orchestrator() -> None:
+    """Сев токена принципала `orchestrator` (шов S3, ADR-0009) — чтобы оркестратор арендовал
+    deploy-jobs у облачного ядра. Токен из env BOOTSTRAP_ORCHESTRATOR_TOKEN (то же значение — в
+    orchestrator/.env). Машинный токен, не протухает (ADR-0008v2). Идемпотентно по хэшу.
+    """
+    tok = os.environ.get("BOOTSTRAP_ORCHESTRATOR_TOKEN")
+    if not tok:
+        print("[bootstrap] BOOTSTRAP_ORCHESTRATOR_TOKEN не задан — пропуск orchestrator-токена")
+        return
+    sm = get_sessionmaker()
+    with sm() as session:
+        h = hash_token(tok)
+        if session.execute(
+            select(ApiToken).where(ApiToken.token_sha256 == h)
+        ).scalar_one_or_none() is not None:
+            print("[bootstrap] orchestrator-токен уже есть — no-op")
+            return
+        session.add(ApiToken(
+            token_sha256=h, principal="orchestrator", subject_id="orchestrator",
+            scope="orchestrator", expires_at=None,
+        ))
+        session.commit()
+        print("[bootstrap] orchestrator-токен посеян")
 
 
 def seed_demo_instance() -> None:
@@ -76,4 +105,5 @@ def seed_demo_instance() -> None:
 
 if __name__ == "__main__":
     seed_operator()
+    seed_orchestrator()
     seed_demo_instance()

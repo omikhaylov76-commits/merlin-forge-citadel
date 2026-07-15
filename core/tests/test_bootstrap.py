@@ -4,7 +4,7 @@ import uuid
 
 from sqlalchemy import select, text
 
-from app.bootstrap import seed_demo_instance, seed_operator
+from app.bootstrap import seed_demo_instance, seed_operator, seed_orchestrator
 from app.db import get_sessionmaker
 from app.models import ApiToken, Instance, User
 from app.security import hash_token
@@ -51,6 +51,59 @@ def test_seed_operator_noop_without_env(_migrated, monkeypatch):
     sm = get_sessionmaker()
     with sm() as s:
         assert len(s.execute(select(User)).all()) == 0
+
+
+def test_seed_operator_syncs_password(_migrated, monkeypatch):
+    # Пароль из env — источник истины: повторный сев новым паролем ОБНОВЛЯЕТ хэш.
+    _clear()
+    monkeypatch.setenv("BOOTSTRAP_OPERATOR_EMAIL", "boot@mfc.local")
+    monkeypatch.setenv("BOOTSTRAP_OPERATOR_PASSWORD", "first-pass")
+    seed_operator()
+    sm = get_sessionmaker()
+    with sm() as s:
+        h1 = s.execute(select(User).where(User.email == "boot@mfc.local")).scalar_one()
+        h1 = h1.password_hash
+    monkeypatch.setenv("BOOTSTRAP_OPERATOR_PASSWORD", "second-pass")
+    seed_operator()
+    with sm() as s:
+        u = s.execute(select(User).where(User.email == "boot@mfc.local")).scalar_one()
+        assert u.password_hash != h1  # хэш сменился → новый пароль применён
+    assert _count("boot@mfc.local") == 1  # без дубля
+
+
+def test_seed_orchestrator_creates(_migrated, monkeypatch):
+    _clear()
+    monkeypatch.setenv("BOOTSTRAP_ORCHESTRATOR_TOKEN", "orch-token-abc")
+    seed_orchestrator()
+    sm = get_sessionmaker()
+    with sm() as s:
+        t = s.execute(
+            select(ApiToken).where(ApiToken.token_sha256 == hash_token("orch-token-abc"))
+        ).scalar_one()
+        assert t.principal == "orchestrator" and t.scope == "orchestrator"
+
+
+def test_seed_orchestrator_idempotent(_migrated, monkeypatch):
+    _clear()
+    monkeypatch.setenv("BOOTSTRAP_ORCHESTRATOR_TOKEN", "orch-token-xyz")
+    seed_orchestrator()
+    seed_orchestrator()
+    sm = get_sessionmaker()
+    with sm() as s:
+        rows = s.execute(
+            select(ApiToken).where(ApiToken.principal == "orchestrator")
+        ).all()
+        assert len(rows) == 1
+
+
+def test_seed_orchestrator_noop_without_env(_migrated, monkeypatch):
+    _clear()
+    monkeypatch.delenv("BOOTSTRAP_ORCHESTRATOR_TOKEN", raising=False)
+    seed_orchestrator()
+    sm = get_sessionmaker()
+    with sm() as s:
+        rows = s.execute(select(ApiToken).where(ApiToken.principal == "orchestrator")).all()
+        assert len(rows) == 0
 
 
 def test_seed_demo_instance(_migrated, monkeypatch):
