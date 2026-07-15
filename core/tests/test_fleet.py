@@ -11,7 +11,7 @@ from sqlalchemy import text
 
 from app.billing import close_period
 from app.db import get_sessionmaker
-from app.fleet import fleet_overview
+from app.fleet import fleet_instances, fleet_overview
 from app.main import create_app
 from app.models import Contract, EquityPoint, Instance
 from app.periods import activate_billing
@@ -127,6 +127,33 @@ def test_fleet_overview_endpoint(users, clean) -> None:
     assert r.status_code == 200, r.text
     body = r.json()
     assert "as_of" in body and "bots" in body and "aum" in body
+
+
+def test_fleet_instances_list(clean) -> None:
+    # Список инстансов: клиент присоединён, ПОСЛЕДНЯЯ equity, health; без телеметрии → equity None.
+    with get_sessionmaker()() as s:
+        cid, a1 = ensure_parents(s, uuid.uuid4(), uuid.uuid4())
+        _, a2 = ensure_parents(s, cid, uuid.uuid4())
+        i1 = _instance(s, cid, a1, "running")
+        i2 = _instance(s, cid, a2, "paused")
+        _equity(s, i1, "1000", datetime(2026, 7, 1, tzinfo=UTC))
+        _equity(s, i1, "1500", datetime(2026, 7, 2, tzinfo=UTC))  # последняя i1 = 1500
+        s.commit()
+        rows = fleet_instances(s)
+    by_id = {r["id"]: r for r in rows}
+    assert len(rows) == 2
+    assert by_id[str(i1)]["status"] == "running" and by_id[str(i1)]["health"] == "ok"
+    assert Decimal(by_id[str(i1)]["equity"]) == Decimal("1500")  # последняя точка, не 1000
+    assert by_id[str(i2)]["equity"] is None  # нет телеметрии → equity None
+    assert all(r["client"] for r in rows)  # имя клиента присоединено (JOIN)
+
+
+def test_fleet_instances_endpoint(users, clean) -> None:
+    c = TestClient(create_app())
+    h = _login(c, "op@mfc.local", "op-pass")
+    r = c.get("/v1/fleet/instances", headers=h)
+    assert r.status_code == 200, r.text
+    assert isinstance(r.json(), list)
     # RBAC: клиент → 403, без токена → 401
     hcl = _login(c, "a@mfc.local", "a-pass")
     assert c.get("/v1/fleet/overview", headers=hcl).status_code == 403

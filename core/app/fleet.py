@@ -59,3 +59,33 @@ def fleet_overview(session: Session) -> dict:
         "open_periods": open_periods,
         "currency": "USDT",
     }
+
+
+def fleet_instances(session: Session) -> list[dict]:
+    """Список инстансов флота для экрана «Флот» (readout): клиент, статус, health, последняя equity.
+
+    Только чтение. Профиль/просадка/P&L per-instance пока не выведены (profile без имён до Ф5;
+    P&L — на биллинг-периодах) — фронт покажет то, что есть. Инстанс = бот в терминах консоли.
+    """
+    latest = (
+        select(EquityPoint.instance_id, EquityPoint.equity)
+        .distinct(EquityPoint.instance_id)
+        .order_by(EquityPoint.instance_id, EquityPoint.ts.desc())
+        .subquery()
+    )
+    rows = session.execute(
+        select(Instance.id, Instance.status, Instance.health, Client.name, latest.c.equity)
+        .join(Client, Client.id == Instance.client_id)
+        .join(latest, latest.c.instance_id == Instance.id, isouter=True)
+        .order_by(Client.name, Instance.id)
+    ).all()
+    return [
+        {
+            "id": str(iid),
+            "client": name,
+            "status": status,
+            "health": health,
+            "equity": str(equity) if equity is not None else None,
+        }
+        for iid, status, health, name, equity in rows
+    ]
