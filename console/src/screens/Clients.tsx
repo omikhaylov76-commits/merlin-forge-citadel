@@ -1,19 +1,28 @@
-import { Link } from 'react-router-dom'
 import { PageHead, Toolbar, Chip } from '@/components/ui/page'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { clientsFixture as clients } from '@/lib/fixtures'
+import { useAsync } from '@/lib/useAsync'
+import { getClients } from '@/lib/api'
 
-const money = (n: number) => '$' + n.toLocaleString('ru-RU')
+const plural = (n: number) => (n % 10 === 1 && n % 100 !== 11 ? 'клиент' : n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'клиента' : 'клиентов')
 
-// Экран Клиенты (по макету): плитки клиентов. Демо — живой источник = CRM-API ядра (/v1 clients).
+// Экран Клиенты: ЖИВОЙ список из CRM-API ядра (/v1/clients) вместо фикстуры.
+// v1-плитка минимальна (имя + активность): капитал/комиссия на договорах — по мере вывода экранов на живьё.
 export function Clients() {
+  const clients = useAsync(getClients, [])
+  const list = clients.data ?? []
+  const desc = clients.loading
+    ? 'загрузка…'
+    : clients.error
+      ? '— · нет связи с ядром'
+      : `${list.length} ${plural(list.length)} · живые из ядра`
+
   return (
     <div className="mx-auto max-w-[1880px]">
       <PageHead
         eyebrow="Клиенты"
         title="Клиенты"
-        desc="12 клиентов · $248.6K под управлением"
+        desc={desc}
         action={<Button variant="primary">+ Новый клиент</Button>}
       />
       <Toolbar>
@@ -21,38 +30,33 @@ export function Clients() {
         <Chip>★ Избранные</Chip>
         <Chip>Ожидают биллинг</Chip>
       </Toolbar>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {clients.map((c) => (
-          <Link key={c.name} to={`/clients/${encodeURIComponent(c.name)}`} className="block">
-            <Card
-              className={`h-full transition-colors hover:border-copper/30 ${c.fav ? 'border-gold/25' : ''}`}
-            >
-            <div className="mb-2 flex items-center gap-1.5 text-[14px] font-semibold text-bone">
-              {c.name}
-              {c.fav && <span className="text-gold">★</span>}
-            </div>
-            <div className={`font-serif text-[24px] tnum ${c.gild ? 'gild' : 'text-bone'}`}>
-              {money(c.capital)}
-            </div>
-            <div className="mt-0.5 text-[12px] text-fog">{c.sub}</div>
-            <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-ash">
-              {c.meta.map((m, i) => (
-                <span key={i}>{m}</span>
-              ))}
-            </div>
-            <div className="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px]">
-              <span className={c.toBill > 0 ? 'text-copper' : 'text-ash'}>
-                К выставлению {money(c.toBill)}
-              </span>
-              <span className="text-ash">{c.note}</span>
-            </div>
+
+      {clients.error ? (
+        <Card className="text-[13px] text-danger">Нет связи с ядром: {clients.error.message}</Card>
+      ) : clients.loading ? (
+        <Card className="animate-pulse text-[13px] text-ash">Загрузка клиентов из ядра…</Card>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {list.map((c) => (
+            <Card key={c.id} className="h-full">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[14px] font-semibold text-bone">{c.name}</span>
+                <span className={`text-[11px] ${c.is_active ? 'text-ok' : 'text-ash'}`}>
+                  {c.is_active ? '● активен' : '○ неактивен'}
+                </span>
+              </div>
+              <div className="text-[12px] text-fog">клиент · живой из CRM ядра</div>
+              <div className="mt-3 flex items-center justify-between border-t border-line pt-2 text-[11px] text-ash">
+                <span className="tnum">{c.id.slice(0, 8)}…</span>
+                <span>ядро · живое</span>
+              </div>
             </Card>
-          </Link>
-        ))}
-        <button className="flex min-h-[150px] items-center justify-center rounded-card border border-dashed border-line text-[13px] text-fog transition-colors hover:text-mist">
-          + Завести клиента
-        </button>
-      </div>
+          ))}
+          <button className="flex min-h-[120px] items-center justify-center rounded-card border border-dashed border-line text-[13px] text-fog transition-colors hover:text-mist">
+            + Завести клиента
+          </button>
+        </div>
+      )}
     </div>
   )
 }

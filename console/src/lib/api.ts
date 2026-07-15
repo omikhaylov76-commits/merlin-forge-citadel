@@ -79,3 +79,8 @@ export type FleetOverview = {
   currency: string
 }
 export const getFleetOverview = () => api<FleetOverview>('/v1/fleet/overview')
+
+// Живой список клиентов CRM ядра (/v1/clients). v1-форма минимальна: id/имя/активность;
+// капитал/комиссия — на договорах (подключим по мере вывода экранов на живые данные).
+export type Client = { id: string; name: string; is_active: boolean }
+export const getClients = () => api<Client[]>('/v1/clients')
