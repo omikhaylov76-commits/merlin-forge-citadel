@@ -1,12 +1,14 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { NAV } from '@/lib/nav'
-import { logout } from '@/lib/api'
+import { logout, getFleetOverview } from '@/lib/api'
+import { useAsync } from '@/lib/useAsync'
 import { cn } from '@/lib/cn'
 
-// Сайдбар консоли (по макету): бренд · сводка AUM · навигация группами · футер (здоровье+оператор+выход).
-// Сводка/бейджи пока статичны (демо) — заменятся живыми при агрегат-эндпоинтах (TODO Ф4-backend).
+// Сайдбар консоли: бренд · ЖИВАЯ сводка AUM (/fleet/overview) · навигация · футер (оператор+выход).
 export function Sidebar() {
   const nav = useNavigate()
+  const fleet = useAsync(getFleetOverview, [])
+  const money = (n: string) => '$' + Number(n).toLocaleString('ru-RU')
   const onLogout = () => {
     logout()
     nav('/login', { replace: true })
@@ -25,10 +27,12 @@ export function Sidebar() {
 
       <div className="mx-4 mb-3 rounded-card border border-line bg-card px-4 py-3">
         <div className="text-[10px] uppercase tracking-widest text-ash">Активы под управлением</div>
-        <div className="gild font-serif text-[22px] tnum">$248 610</div>
+        <div className="gild font-serif text-[22px] tnum">
+          {fleet.loading ? '…' : fleet.error || !fleet.data ? '—' : money(fleet.data.aum)}
+        </div>
         <div className="flex items-center justify-between text-[11px] text-fog">
-          <span>17 / 19 ботов</span>
-          <span className="text-ok">▲ 4.2%</span>
+          <span>{fleet.data ? `${fleet.data.bots.running} / ${fleet.data.bots.total} ботов` : '— ботов'}</span>
+          <span className="text-ash">{fleet.data ? `${fleet.data.clients} кл.` : ''}</span>
         </div>
       </div>
 

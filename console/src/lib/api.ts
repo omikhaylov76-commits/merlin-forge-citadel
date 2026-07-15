@@ -84,3 +84,14 @@ export const getFleetOverview = () => api<FleetOverview>('/v1/fleet/overview')
 // капитал/комиссия — на договорах (подключим по мере вывода экранов на живые данные).
 export type Client = { id: string; name: string; is_active: boolean }
 export const getClients = () => api<Client[]>('/v1/clients')
+
+// Живой список инстансов флота (/v1/fleet/instances): бот = инстанс. Профиль/просадка/P&L
+// per-instance пока не выведены ядром — показываем что есть (клиент/статус/health/equity).
+export type FleetInstance = {
+  id: string
+  client: string
+  status: string
+  health: string
+  equity: string | null
+}
+export const getFleetInstances = () => api<FleetInstance[]>('/v1/fleet/instances')

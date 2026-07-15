@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import require_role
 from app.db import get_session
-from app.fleet import fleet_overview
+from app.fleet import fleet_instances, fleet_overview
 from app.models import User
 
 router = APIRouter(prefix="/v1")
@@ -23,3 +23,11 @@ def fleet_overview_endpoint(
 ) -> dict:
     now = datetime.now(UTC)
     return {"as_of": now.isoformat(), **fleet_overview(session)}
+
+
+@router.get("/fleet/instances")
+def fleet_instances_endpoint(
+    operator: User = Depends(require_role("operator")),
+    session: Session = Depends(get_session),
+) -> list[dict]:
+    return fleet_instances(session)
