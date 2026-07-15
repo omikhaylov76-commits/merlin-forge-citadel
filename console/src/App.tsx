@@ -1,18 +1,21 @@
 import { createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '@/components/layout/AppShell'
 import { Overview } from '@/screens/Overview'
+import { Fleet } from '@/screens/Fleet'
+import { Deals } from '@/screens/Deals'
+import { Clients } from '@/screens/Clients'
 import { Placeholder } from '@/screens/Placeholder'
 
-// Роутер консоли: оболочка + 11 экранов (Обзор реален, остальные — заглушки до раскатки).
+// Роутер консоли: оболочка + 11 экранов. Реальны: Обзор/Флот/Сделки/Клиенты; прочие — заглушки.
 export const router = createBrowserRouter([
   {
     path: '/',
     element: <AppShell />,
     children: [
       { index: true, element: <Overview /> },
-      { path: 'fleet', element: <Placeholder title="Флот" /> },
-      { path: 'deals', element: <Placeholder title="Сделки" /> },
-      { path: 'clients', element: <Placeholder title="Клиенты" /> },
+      { path: 'fleet', element: <Fleet /> },
+      { path: 'deals', element: <Deals /> },
+      { path: 'clients', element: <Clients /> },
       { path: 'scout', element: <Placeholder title="Разведка" /> },
       { path: 'profiles', element: <Placeholder title="Профили" /> },
       { path: 'constructor', element: <Placeholder title="Конструктор" /> },
