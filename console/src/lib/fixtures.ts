@@ -129,6 +129,29 @@ export const profilesFixture: {
   { name: 'Скальпер', status: 'допущен', track: 'живой трек 4 нед', calmar: '1.9', dd: '−19%', deploys: 1, oos: 'OOS ✓' },
 ]
 
+// ── Отчёты (архив документов; демо) ────────────────────────────────────────────
+export const reportsFixture: { doc: string; type: string; client: string; period: string; status: string }[] = [
+  { doc: 'Расчёт HWM · июнь', type: 'HWM-счёт', client: 'Клиент-01', period: '2026-06', status: 'отправлен' },
+  { doc: 'Выписка · июнь', type: 'Выписка', client: 'Клиент-11', period: '2026-06', status: 'скачан' },
+  { doc: 'Налоговая сводка', type: 'Налоговый', client: '—', period: '2026-06', status: 'сформирован' },
+]
+
+// ── Тревоги (две семьи: Торговые + Системные; демо) ─────────────────────────────
+export type AlertSev = 'KILL' | 'ALARM' | 'КЛЮЧ' | 'HEARTBEAT' | 'БИЛЛИНГ' | 'СИСТЕМА'
+export const alertsFixture: {
+  sev: AlertSev
+  family: 'Торговые' | 'Системные'
+  title: string
+  detail: string
+  action: string
+  resolved: boolean
+}[] = [
+  { sev: 'KILL', family: 'Торговые', title: 'bot-014 · Клиент-07 — сработал аварийный стоп', detail: 'Просадка −51% превысила порог −50%. Позиции закрыты, бот остановлен.', action: 'разобрать', resolved: false },
+  { sev: 'ALARM', family: 'Торговые', title: 'bot-006 · Клиент-03 — просадка у порога', detail: '−38%, приближается к тревоге −40%.', action: 'к боту', resolved: false },
+  { sev: 'КЛЮЧ', family: 'Торговые', title: 'Клиент-11 — API-ключ истекает через 3 дня', detail: 'Продлить или заменить ключ, иначе бот встанет.', action: 'сменить', resolved: false },
+  { sev: 'СИСТЕМА', family: 'Системные', title: 'Кавалл: скаут-сервис отвечал с задержкой', detail: 'pifagor-scout лаг 8с в 08:30, восстановился. Троттлинг REST. Действий не требуется.', action: 'лог', resolved: true },
+]
+
 // Деталь карточки клиента (демо, представительная — по макету s-client).
 export const clientDetailFixture = {
   bots: [{ bot: 'bot-021', profile: 'Скальпер', dd: 18, pnl: 640, status: 'live' as const }],

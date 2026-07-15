@@ -8,6 +8,8 @@ import { ClientCard } from '@/screens/ClientCard'
 import { Constructor } from '@/screens/Constructor'
 import { Scout } from '@/screens/Scout'
 import { Profiles } from '@/screens/Profiles'
+import { Reports } from '@/screens/Reports'
+import { Alerts } from '@/screens/Alerts'
 import { Placeholder } from '@/screens/Placeholder'
 
 // Роутер консоли: оболочка + 11 экранов. Реальны: Обзор/Флот/Сделки/Клиенты; прочие — заглушки.
@@ -24,8 +26,8 @@ export const router = createBrowserRouter([
       { path: 'scout', element: <Scout /> },
       { path: 'profiles', element: <Profiles /> },
       { path: 'constructor', element: <Constructor /> },
-      { path: 'reports', element: <Placeholder title="Отчёты" /> },
-      { path: 'alerts', element: <Placeholder title="Тревоги" /> },
+      { path: 'reports', element: <Reports /> },
+      { path: 'alerts', element: <Alerts /> },
       { path: 'settings', element: <Placeholder title="Настройки" /> },
       { path: 'portal', element: <Placeholder title="Портал клиента" /> },
     ],
