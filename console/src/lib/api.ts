@@ -17,6 +17,22 @@ export class ApiError extends Error {
   }
 }
 
+// Вход оператора: POST /v1/auth/login → {token} в localStorage. Пароль вводит Оператор (RBAC ядра).
+export async function login(email: string, password: string): Promise<void> {
+  const res = await fetch('/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password }),
+  })
+  if (!res.ok) {
+    throw new ApiError(res.status, res.status === 401 ? 'Неверный email или пароль' : `Ошибка ${res.status}`)
+  }
+  const data = (await res.json()) as { token: string }
+  setToken(data.token)
+}
+
+export const logout = () => setToken(null)
+
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken()
   const res = await fetch(`/api${path}`, {
