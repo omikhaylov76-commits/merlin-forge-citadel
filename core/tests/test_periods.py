@@ -321,8 +321,9 @@ def test_second_period_window_not_clamped(clean) -> None:
 
 
 def test_generate_batch_isolation(clean, monkeypatch) -> None:
-    # N2: два due-счёта, один "отравлен" (DB-сбой при создании) → второй всё равно получает период
-    import app.periods as pmod
+    # N2: два due-счёта, один "отравлен" DB-ошибкой при flush → второй всё равно получает период
+    # (savepoint изолирует). Патчим Session.flush (не класс — иначе ломаются select-запросы).
+    from sqlalchemy.orm import Session as _Session
     with get_sessionmaker()() as s:
         _, aid_a, kid_a = _signed_setup(s)
         _, aid_b, kid_b = _signed_setup(s)
@@ -333,18 +334,18 @@ def test_generate_batch_isolation(clean, monkeypatch) -> None:
         close_period(s, pa, end_equity=Decimal("11000"), actor="op")
         close_period(s, pb, end_equity=Decimal("11000"), actor="op")
         s.commit()
-    orig = pmod.BillingPeriod
+    real_flush = _Session.flush
 
-    def poisoned(**kw):
-        if kw.get("account_id") == aid_a:  # отравить счёт A DB-ошибкой
+    def patched_flush(self, *a, **k):
+        if any(isinstance(o, BillingPeriod) and o.account_id == aid_a for o in self.new):
             raise IntegrityError("INSERT", {}, Exception("simulated overlap"))
-        return orig(**kw)
+        return real_flush(self, *a, **k)
 
-    monkeypatch.setattr(pmod, "BillingPeriod", poisoned)
+    monkeypatch.setattr(_Session, "flush", patched_flush)
     with get_sessionmaker()() as s:
-        created = pmod.generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC))
-        s.commit()
+        created = generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC))
         assert len(created) == 1 and created[0].account_id == aid_b  # B выжил, A изолирован
+        s.commit()
 
 
 # ── API ───────────────────────────────────────────────────────────────────────
