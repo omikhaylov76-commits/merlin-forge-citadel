@@ -1,0 +1,69 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   Слаш-тема «midnight vault + gilded lines» — токены из _curator/design/slash-tokens.
+   Tailwind v4 CSS-first: @theme публикует токены как утилиты (bg-*, text-*, rounded-*).
+   Деньги/логика — в ядре; здесь только внешний слой (дисплей поверх бэкенда Ф3).
+   ========================================================================= */
+@theme {
+  /* поверхности (тёмные, от глубокого к приподнятому) */
+  --color-void: #08080a;        /* фон приложения */
+  --color-card: #040406;        /* карточка (глубже фона — «утоплена») */
+  --color-panel: #121317;       /* панель/поле */
+  --color-floating: #1c1d22;    /* всплывающее/ховер */
+  --color-line: #1c1d22;        /* границы */
+  --color-line-soft: #141519;   /* линии сетки графиков */
+
+  /* текст-оттенки поверх тёмного (от тусклого к яркому) */
+  --color-ash: #5e616e;
+  --color-steel: #777a88;
+  --color-fog: #9194a1;
+  --color-mist: #acafb9;
+  --color-silver: #c7c9d1;
+  --color-bone: #e2e3e9;
+
+  /* акценты: медь + золото (деньги/премиум), семафор ok/danger */
+  --color-copper: #cc9166;
+  --color-gold: #c9a15f;
+  --color-gild: #ae9357;
+  --color-ok: #7d9b6f;
+  --color-danger: #c56b62;
+
+  /* шрифты: Playfair (серифный дисплей — цифры/заголовки) + Inter (текст) */
+  --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* радиусы: навигация острая, карточки скруглены, интерактив — пилюли */
+  --radius-nav: 2px;
+  --radius-card: 10px;
+  --radius-pill: 9999px;
+}
+
+@layer base {
+  :root { color-scheme: dark; }
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    background: var(--color-void);
+    color: var(--color-bone);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #23252c; border-radius: 9999px; border: 2px solid var(--color-void); }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+@layer utilities {
+  /* золочёный текст-градиент — для денежных цифр и премиум-акцентов */
+  .gild {
+    background: linear-gradient(103deg, #ae9357, #fff0cc 42%, #ae9357 72%, #bd9d4f);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  /* табличные цифры (одинаковая ширина) для денег/таблиц */
+  .tnum { font-variant-numeric: tabular-nums; }
+}
