@@ -89,6 +89,46 @@ export const clientsFixture: ClientRow[] = [
   { name: 'Клиент-02', fav: false, capital: 15900, net: 0, hwm: 16000, gild: false, sub: 'пауза · HWM $16K', meta: ['1 бот', 'пауза'], toBill: 0, note: '—', exchange: 'Bybit', contractStatus: 'подписан' },
 ]
 
+// ── Разведка (скаут, kanban; демо — живой источник = scout-сервис) ─────────────
+export type ScoutCand = { pair: string; score: number | string; m1: string; m2: string; committed?: boolean }
+export const scoutFixture: { column: string; count: number; ready?: boolean; cands: ScoutCand[] }[] = [
+  {
+    column: 'Forming',
+    count: 12,
+    cands: [
+      { pair: 'WIFUSDT', score: 41, m1: '0.382 / 0.5', m2: '7 баров' },
+      { pair: 'TIAUSDT', score: 38, m1: 'формируется', m2: '3 бара' },
+    ],
+  },
+  { column: 'Tracking', count: 5, cands: [{ pair: 'SOLUSDT', score: 62, m1: 'вход 0.5', m2: '% до 1.2%' }] },
+  {
+    column: 'Ready',
+    count: 3,
+    ready: true,
+    cands: [
+      { pair: 'ETHUSDT', score: 78, m1: 'вход 0.5 · стоп fib1', m2: '% до 0.3%' },
+      { pair: 'INJUSDT', score: 71, m1: 'вход 0.382', m2: '% до 0.6%' },
+    ],
+  },
+  { column: 'Committed', count: 2, cands: [{ pair: 'BTCUSDT', score: 'взят', m1: 'bot-002 →', m2: '+$310', committed: true }] },
+]
+
+// ── Профили (библиотека рецептов; демо) ────────────────────────────────────────
+export const profilesFixture: {
+  name: string
+  status: 'допущен' | 'demo'
+  track: string
+  calmar: string
+  dd: string
+  deploys: number
+  oos: string
+  fav?: boolean
+}[] = [
+  { name: 'Консерватор-10', status: 'допущен', track: 'живой трек 8 нед', calmar: '2.0', dd: '−24%', deploys: 4, oos: 'OOS ✓ 02.07', fav: true },
+  { name: 'Агрессор v3', status: 'demo', track: 'бэктест', calmar: '3.5', dd: '−34%', deploys: 2, oos: 'не обкатан' },
+  { name: 'Скальпер', status: 'допущен', track: 'живой трек 4 нед', calmar: '1.9', dd: '−19%', deploys: 1, oos: 'OOS ✓' },
+]
+
 // Деталь карточки клиента (демо, представительная — по макету s-client).
 export const clientDetailFixture = {
   bots: [{ bot: 'bot-021', profile: 'Скальпер', dd: 18, pnl: 640, status: 'live' as const }],
