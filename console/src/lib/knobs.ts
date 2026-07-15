@@ -60,7 +60,7 @@ export const KNOB_CATEGORIES: KnobCategory[] = [
     ],
   },
   {
-    title: '5 · Служебные / старт',
+    title: '7 · Служебные / старт',
     note: 'рантайм-управление ботом',
     knobs: [
       { key: 'PAUSE_ENABLED', label: 'Авария: пауза', type: 'toggle', etalon: false, shelf: 'expert' },
@@ -74,3 +74,32 @@ export const ALL_KNOBS: Knob[] = KNOB_CATEGORIES.flatMap((c) => c.knobs)
 export const ETALON: Record<string, KnobValue> = Object.fromEntries(
   ALL_KNOBS.map((k) => [k.key, k.etalon]),
 )
+
+// ── Вселенная (раздел 5): 16 монет эталонного COINS_CONFIG @b75bd17 (mb1/mb2 из скелета). ──────
+// 🔵 из движка · read-only (фикстура; live-эндпоинт вселенной — TODO). Плечо/вес — эталонные (демо).
+export const UNIVERSE_COINS: { sym: string; mb1: number; mb2: number; lev: number; weight: number }[] = [
+  { sym: 'BTC', mb1: 1.5, mb2: 2.5, lev: 5, weight: 6.25 },
+  { sym: 'ETH', mb1: 1.5, mb2: 2.5, lev: 5, weight: 6.25 },
+  { sym: 'BNB', mb1: 1.5, mb2: 5.0, lev: 5, weight: 6.25 },
+  { sym: 'DOGE', mb1: 2.0, mb2: 5.0, lev: 5, weight: 6.25 },
+  { sym: 'XRP', mb1: 2.0, mb2: 3.5, lev: 5, weight: 6.25 },
+  { sym: 'ADA', mb1: 2.0, mb2: 3.5, lev: 5, weight: 6.25 },
+  { sym: 'SOL', mb1: 3.0, mb2: 3.5, lev: 5, weight: 6.25 },
+  { sym: 'LINK', mb1: 1.5, mb2: 5.0, lev: 5, weight: 6.25 },
+  { sym: 'LTC', mb1: 2.0, mb2: 5.0, lev: 5, weight: 6.25 },
+  { sym: 'ATOM', mb1: 3.0, mb2: 5.0, lev: 5, weight: 6.25 },
+  { sym: 'TRX', mb1: 2.5, mb2: 4.0, lev: 5, weight: 6.25 },
+  { sym: 'UNI', mb1: 2.0, mb2: 3.0, lev: 5, weight: 6.25 },
+  { sym: 'NEAR', mb1: 2.0, mb2: 3.5, lev: 5, weight: 6.25 },
+  { sym: 'AAVE', mb1: 2.5, mb2: 4.0, lev: 5, weight: 6.25 },
+  { sym: 'FIL', mb1: 2.0, mb2: 3.5, lev: 5, weight: 6.25 },
+  { sym: 'INJ', mb1: 3.0, mb2: 5.0, lev: 5, weight: 6.25 },
+]
+
+// Зафиксированная логика движка (🔵 read-only, из эталона @b75bd17) — «мозг», не настраивается.
+export const ENGINE_LOGIC: { label: string; text: string }[] = [
+  { label: 'Входы Fib', text: '0.382 / 0.5 / 0.618 · коммит сетапа на ноге 0.5 · нога 0.618 → 0.382 · таймаут 72 бара' },
+  { label: 'Детектор толчка', text: 'два толчка через консолидацию: граница 0.5 · чистый бар 0.5 · длина без лимита · сила по-монетно (mb1/mb2)' },
+  { label: 'Таймфреймы', text: 'сигнал 4h · исполнение 15m · EMA200 (тёплая) · причинность суб-бара' },
+  { label: 'Издержки бэктеста', text: 'комиссия 0.04% · проскальзывание 0.02% (реальную даст биржа)' },
+]
