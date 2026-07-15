@@ -13,14 +13,14 @@ const moneyK = (n: number) => '$' + (n / 1000).toFixed(1).replace('.', ',') + 'K
 // «Требует внимания» показывает реальную машину состояний (грузится/пусто/ошибка/данные).
 export function Overview() {
   return (
-    <div className="mx-auto flex max-w-[1216px] flex-col gap-5">
+    <div className="mx-auto flex max-w-[1216px] flex-col gap-3">
       <Hero />
       <Kpis />
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.4fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.4fr_1fr]">
         <CapitalCard />
         <AttentionCard />
       </div>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <HealthCard />
         <FeedCard />
       </div>
@@ -30,7 +30,7 @@ export function Overview() {
 
 function Hero() {
   return (
-    <div className="flex flex-wrap items-end justify-between gap-4 rounded-card border border-line bg-card px-6 py-5">
+    <div className="flex flex-wrap items-end justify-between gap-4 rounded-card border border-line bg-card px-6 py-4">
       <div>
         <div className="mb-1 flex items-center gap-2 text-[11px] uppercase tracking-widest text-ash">
           Флот · сводка
@@ -38,8 +38,8 @@ function Hero() {
             демо-данные
           </span>
         </div>
-        <div className="gild font-serif text-[46px] leading-none tnum">{money(ov.aum)}</div>
-        <div className="mt-2 flex flex-wrap items-center gap-3 text-[13px] text-fog">
+        <div className="gild font-serif text-[40px] leading-none tnum">{money(ov.aum)}</div>
+        <div className="mt-1.5 flex flex-wrap items-center gap-3 text-[13px] text-fog">
           <span>Активы под управлением</span>
           <span className="text-ok">▲ {ov.aumDeltaPct}% за месяц</span>
           <Badge tone="gold">P&amp;L +{moneyK(ov.pnlNet)} net</Badge>
@@ -69,12 +69,12 @@ function Kpi({
   children?: React.ReactNode
 }) {
   return (
-    <Card className={accent ? 'border-copper/30' : undefined}>
+    <Card className={`p-4 ${accent ? 'border-copper/30' : ''}`}>
       <div className="mb-1 text-[11px] uppercase tracking-widest text-ash">{label}</div>
-      <div className={`font-serif text-[28px] leading-none tnum ${gild ? 'gild' : 'text-bone'}`}>
+      <div className={`font-serif text-[24px] leading-none tnum ${gild ? 'gild' : 'text-bone'}`}>
         {value}
       </div>
-      {sub && <div className="mt-1.5 text-[12px] text-fog">{sub}</div>}
+      {sub && <div className="mt-1 text-[12px] text-fog">{sub}</div>}
       {children}
     </Card>
   )
@@ -82,7 +82,7 @@ function Kpi({
 
 function Kpis() {
   return (
-    <div className="grid grid-cols-2 gap-5 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <Kpi label="Активы (AUM)" value={moneyK(ov.aum)} gild sub={<span className="text-ok">▲ {ov.aumDeltaPct}%</span>} />
       <Kpi
         label="Боты в работе"
@@ -108,7 +108,7 @@ function Kpis() {
 
 function EquityCurve({ points }: { points: number[] }) {
   const W = 640
-  const H = 150
+  const H = 112
   const pad = 8
   const stepX = W / (points.length - 1)
   const y = (v: number) => H - pad - v * (H - pad * 2)
@@ -128,7 +128,7 @@ function EquityCurve({ points }: { points: number[] }) {
           <stop offset="1" stopColor="#cc9166" stopOpacity="0" />
         </linearGradient>
       </defs>
-      {[38, 76, 114].map((gy) => (
+      {[0.25, 0.5, 0.75].map((f) => Math.round(H * f)).map((gy) => (
         <line key={gy} x1="0" y1={gy} x2={W} y2={gy} stroke="#141519" />
       ))}
       <path d={`${path} L${W},${H} L0,${H} Z`} fill="url(#fl)" />
@@ -141,7 +141,7 @@ function EquityCurve({ points }: { points: number[] }) {
 function CapitalCard() {
   const periods = ['Д', 'Н', 'М', 'Кв', 'Всё']
   return (
-    <Card>
+    <Card className="p-4">
       <CardHeader>
         <CardTitle>Капитал флота</CardTitle>
         <div className="flex gap-1">
@@ -171,7 +171,7 @@ function AttentionCard() {
   // при живом readout сюда встанет getStuckAccounts() без изменения разметки.
   const { loading, error, data, reload } = useAsync(() => Promise.resolve(ov.attention), [])
   return (
-    <Card>
+    <Card className="p-4">
       <CardHeader>
         <CardTitle>Требует внимания</CardTitle>
         <a className="cursor-pointer text-[12px] text-copper hover:underline">все →</a>
@@ -185,7 +185,7 @@ function AttentionCard() {
       ) : (
         <div className="flex flex-col divide-y divide-line">
           {data.map((r, i) => (
-            <div key={i} className="flex items-center gap-3 py-2.5">
+            <div key={i} className="flex items-center gap-3 py-2">
               <span className={`h-2 w-2 shrink-0 rounded-full ${dotColor[r.kind]}`} />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[13px] text-silver">{r.who}</div>
@@ -203,7 +203,7 @@ function AttentionCard() {
 function HealthCard() {
   const h = ov.health
   return (
-    <Card>
+    <Card className="p-4">
       <CardHeader>
         <CardTitle>Здоровье флота · запас до тормозов</CardTitle>
         <span className="text-[12px] text-ash">худший: {h.worst}</span>
@@ -242,7 +242,7 @@ const feedTag: Record<string, { label: string; cls: string }> = {
 
 function FeedCard() {
   return (
-    <Card>
+    <Card className="p-4">
       <CardHeader>
         <CardTitle>Лента тревог</CardTitle>
         <a className="cursor-pointer text-[12px] text-copper hover:underline">все →</a>
