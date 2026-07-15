@@ -16,13 +16,17 @@ sources: [_curator/DIRECTIVES.md#46, wiki/handoffs/HANDOFF_2026-07-12_session_5.
 Последний коммит (ветка task/railway-private-pull от): 2094313
 
 ## План (под-шаги)
-- [ ] 1. `railway.py`: +конфиг (environment_id/registry_username/registry_token); `deploy()` кладёт
-        `registryCredentials` в serviceCreate при наличии токена; после create/adopt зовёт
-        `serviceInstanceDeploy(serviceId, environmentId)`; environmentId резолвит рантайм (production).
-- [ ] 2. `config.py` + `main.py`: поля ghcr_pull_username/ghcr_pull_token/railway_environment_id → в драйвер.
-- [ ] 3. `test_railway_driver.py`: хендлер учит environments + serviceInstanceDeploy; тесты:
-        креды в serviceCreate когда заданы / отсутствуют когда нет; serviceInstanceDeploy вызван после deploy.
-- [ ] 4. pytest orchestrator зелёный; code-reviewer; ⛔ diff → merge в main.
+- [x] 1. `railway.py` (39db511): registryCredentials в serviceCreate при токене; serviceInstanceDeploy
+        после create/adopt; environmentId из конфига или резолв production.
+- [x] 2. `config.py` + `main.py` (39db511): ghcr_pull_username/ghcr_pull_token/railway_environment_id → драйвер.
+- [x] 3. `test_railway_driver.py` (39db511): +5 тестов (креды есть/нет, образ запущен после create и adopt,
+        env из конфига без лишнего запроса). ruff clean, **28 passed**.
+- [~] 4. Код доказан на unit (MockTransport). ЖИВАЯ проверка формы (Railway примет registryCredentials +
+        serviceInstanceDeploy) — на з.2 (реальный деплой Персиваля с PAT). Затем code-reviewer + merge в main.
+
+## Статус
+Ветка готова, ждёт PAT Оператора (orchestrator/.env `GHCR_PULL_TOKEN=`). Как впишет → з.2: DRIVER=railway,
+деплой Персиваля картриджем в облако (dry-run) → если Railway принял форму живьём → code-reviewer → merge.
 
 ## Границы
 Секрет только в env (не в git/лог/чат). Образ приватный (Куратор #44). Реальная торговля — гейт go-live.
