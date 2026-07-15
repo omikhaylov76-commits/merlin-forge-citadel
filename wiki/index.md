@@ -39,6 +39,7 @@ updated: 2026-07-10
 
 ## reference
 - [reference/README](../reference/README.md) — «Малыш Мерлин»: профиль-эталон v8.3 (в дереве) + архив @b75bd17 (release-ассет, SHA256) + инвариант.
+- [reference/perceval-configdiff-b75bd17](../reference/perceval-configdiff-b75bd17.json) — #43 Шаг A: конфиг-diff Персиваля vs эталон @b75bd17, drift=[] (аудируемый артефакт, #44).
 
 ## runbooks
 - [onboarding-client](runbooks/onboarding-client.md) — путь клиента до go-live.

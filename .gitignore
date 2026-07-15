@@ -29,3 +29,7 @@ dist/
 
 # --- локальный канал Куратор↔Инженер (PROTOCOL/DIRECTIVES/QUEUE), не в git ---
 _curator/
+
+# --- рантайм-БД воркера Пифагора (создаётся при локальном севе картриджа; НЕ код) — закон №7 ---
+bots/pifagor/vendor/pifagor.db
+bots/pifagor/vendor/pifagor.db-*
