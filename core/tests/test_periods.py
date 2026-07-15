@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
 from app.billing import close_period
 from app.db import get_sessionmaker
@@ -289,6 +290,61 @@ def test_terminate_with_open_final_then_no_next(clean) -> None:
         s.commit()
     with get_sessionmaker()() as s:  # терминирован → следующего нет
         assert generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC)) == []
+
+
+def test_second_period_window_not_clamped(clean) -> None:
+    # N1: у ВТОРОГО периода clamp неактивен — июльский поток не течёт в август, авг-поток в августе
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        p1 = _activate(s, aid, kid, "10000", 7).id
+        s.add(Cashflow(account_id=aid, kind="deposit", amount=Decimal("1000"),
+                       ts=datetime(2026, 7, 20, tzinfo=UTC), actor="op"))  # июль (после активации)
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")  # 10000+1000, торговли 0
+        s.commit()
+    with get_sessionmaker()() as s:
+        p2 = generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC))[0].id
+        s.commit()
+    with get_sessionmaker()() as s:
+        s.add(Cashflow(account_id=aid, kind="deposit", amount=Decimal("500"),
+                       ts=datetime(2026, 8, 10, tzinfo=UTC), actor="op"))  # август
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p2, end_equity=Decimal("11500"), actor="op")  # 11000+500, торговли 0
+        s.commit()
+    with get_sessionmaker()() as s:
+        assert s.get(BillingPeriod, p1).net_deposits == Decimal("1000.00")  # июль → в июле
+        bp2 = s.get(BillingPeriod, p2)
+        assert bp2.net_deposits == Decimal("500.00")           # август → в августе (не протёк июль)
+        assert bp2.period_net_trading == Decimal("0.00")       # 11500−11000−500
+
+
+def test_generate_batch_isolation(clean, monkeypatch) -> None:
+    # N2: два due-счёта, один "отравлен" (DB-сбой при создании) → второй всё равно получает период
+    import app.periods as pmod
+    with get_sessionmaker()() as s:
+        _, aid_a, kid_a = _signed_setup(s)
+        _, aid_b, kid_b = _signed_setup(s)
+        pa = _activate(s, aid_a, kid_a, "10000", 7).id
+        pb = _activate(s, aid_b, kid_b, "10000", 7).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, pa, end_equity=Decimal("11000"), actor="op")
+        close_period(s, pb, end_equity=Decimal("11000"), actor="op")
+        s.commit()
+    orig = pmod.BillingPeriod
+
+    def poisoned(**kw):
+        if kw.get("account_id") == aid_a:  # отравить счёт A DB-ошибкой
+            raise IntegrityError("INSERT", {}, Exception("simulated overlap"))
+        return orig(**kw)
+
+    monkeypatch.setattr(pmod, "BillingPeriod", poisoned)
+    with get_sessionmaker()() as s:
+        created = pmod.generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC))
+        s.commit()
+        assert len(created) == 1 and created[0].account_id == aid_b  # B выжил, A изолирован
 
 
 # ── API ───────────────────────────────────────────────────────────────────────

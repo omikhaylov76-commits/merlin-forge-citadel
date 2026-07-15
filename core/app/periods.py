@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
@@ -145,8 +146,8 @@ def generate_due_periods(session: Session, now: datetime) -> list:
                 session.add(bp)
                 session.flush()
             created.append(bp)
-        except Exception:
-            logger.warning("счёт %s: создание периода не удалось", account.id, exc_info=True)
+        except (IntegrityError, OperationalError):  # DB-сбой (гонка) → изолируем счёт, не батч
+            logger.warning("счёт %s: создание периода не удалось (DB)", account.id, exc_info=True)
     return created
 
 
