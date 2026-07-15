@@ -19,10 +19,12 @@ updated: 2026-07-15
 
 Проверка: локально `ruff` + сбор тестов (БД-тесты скипаются без Postgres, #12) → CI ветки (Postgres) зелёный → merge.
 
-Последний коммит: d6c64d2
-- [~] 1. periods.py — _blocked_reason (единый источник) + generate_due_periods использует его
-- [ ] 2. periods.py — _record_skip (дедуп-аудит по границе+причине) + stuck_billing_accounts (readout)
-- [ ] 3. routes_billing.py — GET /v1/billing/stuck-accounts (operator)
-- [ ] 4. tests — readout / audit-once / норма-не-stuck / API+RBAC
-- [ ] 5. ruff + сбор тестов локально → push ветку → CI зелёный
-- [ ] 6. merge --no-ff в main + push; wiki (log/roadmap/QUEUE)
+Последний коммит: d6c64d2 → слито в main **2397716**
+- [x] 1. periods.py — _blocked_reason (единый источник) + generate_due_periods использует его
+- [x] 2. periods.py — _record_skip (дедуп-аудит по границе+причине) + stuck_billing_accounts (readout)
+- [x] 3. routes_billing.py — GET /v1/billing/stuck-accounts (operator)
+- [x] 4. tests — readout / audit-once / норма-не-stuck / API+RBAC
+- [x] 5. ruff «All checks passed» + CI ветки зелёный (Postgres, 167 passed)
+- [x] 6. merge --no-ff в main (2397716) + push; ветка удалена; wiki (log/roadmap/QUEUE)
+
+**ЗАКРЫТО** 2026-07-15. Остаточные #32 #2/#3/#4 — решения Куратора зафиксированы в roadmap Ф3.
