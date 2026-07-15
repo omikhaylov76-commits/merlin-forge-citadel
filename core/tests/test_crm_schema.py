@@ -112,7 +112,8 @@ def test_migration_0005_backfills_orphan_instances(_migrated) -> None:
                 {"i": iid, "c": orphan_c, "a": orphan_a, "b": uuid.uuid4(), "p": uuid.uuid4()},
             )
             s.commit()
-        command.upgrade(cfg, "0005_crm")  # бэкофилл + включение FK НЕ должны упасть на сироте
+        # апгрейд до head (0005-бэкофилл отрабатывает в пути); ORM-модели требуют полную схему
+        command.upgrade(cfg, "head")  # бэкофилл 0005 + включение FK НЕ должны упасть на сироте
         with sm() as s:
             assert s.get(Client, orphan_c) is not None       # плейсхолдер-клиент создан
             assert s.get(ExchangeAccount, orphan_a) is not None  # плейсхолдер-счёт создан
