@@ -17,12 +17,24 @@ def _spec(name="mfc-inst-abc") -> DeploySpec:
     return DeploySpec(image="paper-bot:v0", name=name, env={"MFC_INSTANCE_ID": "abc"})
 
 
-def _handler(existing_names=(), record=None, gql_error=False, http_status=200):
+def _handler(
+    existing_names=(),
+    record=None,
+    gql_error=False,
+    http_status=200,
+    env_edges=({"node": {"id": "env-prod", "name": "production"}},),
+):
     def handler(request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         query = body["query"]
         if record is not None:
-            record.append((query, request.headers.get("authorization")))
+            record.append(
+                {
+                    "query": query,
+                    "auth": request.headers.get("authorization"),
+                    "vars": body.get("variables", {}),
+                }
+            )
         if http_status != 200:
             return httpx.Response(http_status, json={})
         if gql_error:
@@ -30,8 +42,14 @@ def _handler(existing_names=(), record=None, gql_error=False, http_status=200):
         if query.startswith("query FindService"):
             edges = [{"node": {"id": f"id-{n}", "name": n}} for n in existing_names]
             return httpx.Response(200, json={"data": {"project": {"services": {"edges": edges}}}})
+        if query.startswith("query Environments"):
+            return httpx.Response(
+                200, json={"data": {"project": {"environments": {"edges": list(env_edges)}}}}
+            )
         if "serviceCreate" in query:
             return httpx.Response(200, json={"data": {"serviceCreate": {"id": "id-new"}}})
+        if "serviceInstanceDeploy" in query:
+            return httpx.Response(200, json={"data": {"serviceInstanceDeploy": True}})
         if "serviceDelete" in query:
             return httpx.Response(200, json={"data": {"serviceDelete": True}})
         return httpx.Response(200, json={"data": {}})
@@ -39,22 +57,26 @@ def _handler(existing_names=(), record=None, gql_error=False, http_status=200):
     return handler
 
 
-def _driver(handler) -> RailwayDriver:
+def _driver(handler, **kw) -> RailwayDriver:
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    return RailwayDriver(api_token="tok", project_id="proj-1", client=client)
+    return RailwayDriver(api_token="tok", project_id="proj-1", client=client, **kw)
 
 
 def _sent(record) -> str:
-    return " ".join(q for q, _ in record)
+    return " ".join(r["query"] for r in record)
+
+
+def _call(record, needle: str) -> dict:
+    return next(r for r in record if needle in r["query"])
 
 
 def test_deploy_creates_when_absent():
     rec: list = []
     d = _driver(_handler(existing_names=(), record=rec))
     ref = d.deploy(_spec())
-    assert ref == "railway:proj-1:mfc-inst-abc"          # ref детерминирован от имени
-    assert "serviceCreate" in _sent(rec)                 # отсутствовал → создали
-    assert all(auth == "Bearer tok" for _, auth in rec)  # токен в каждом запросе
+    assert ref == "railway:proj-1:mfc-inst-abc"              # ref детерминирован от имени
+    assert "serviceCreate" in _sent(rec)                     # отсутствовал → создали
+    assert all(r["auth"] == "Bearer tok" for r in rec)       # токен в каждом запросе
 
 
 def test_deploy_adopts_when_present():
@@ -62,6 +84,53 @@ def test_deploy_adopts_when_present():
     d = _driver(_handler(existing_names=("mfc-inst-abc",), record=rec))
     d.deploy(_spec())
     assert "serviceCreate" not in _sent(rec)  # уже есть → усыновили, дубль не создаём (OPS2)
+
+
+def test_deploy_launches_image_after_create():
+    # serviceCreate не запускает контейнер — образ деплоится serviceInstanceDeploy (пробел с.5).
+    rec: list = []
+    d = _driver(_handler(existing_names=(), record=rec))
+    d.deploy(_spec())
+    assert "serviceInstanceDeploy" in _sent(rec)
+    assert _call(rec, "serviceInstanceDeploy")["vars"]["environmentId"] == "env-prod"
+
+
+def test_deploy_launches_image_on_adopt():
+    # усыновлённый сервис тоже (пере)деплоим — иначе новый образ не подхватится.
+    rec: list = []
+    d = _driver(_handler(existing_names=("mfc-inst-abc",), record=rec))
+    d.deploy(_spec())
+    assert "serviceInstanceDeploy" in _sent(rec)
+
+
+def test_registry_credentials_sent_when_configured():
+    # ПРИВАТНЫЙ образ (ghcr): креды идут в serviceCreate.
+    rec: list = []
+    d = _driver(
+        _handler(existing_names=(), record=rec),
+        registry_username="ghuser",
+        registry_token="ghp_secret",
+    )
+    d.deploy(_spec())
+    creds = _call(rec, "serviceCreate")["vars"]["input"].get("registryCredentials")
+    assert creds == {"username": "ghuser", "password": "ghp_secret"}
+
+
+def test_no_registry_credentials_when_absent():
+    # Публичный образ (paper-bot): ключ не шлём — обратная совместимость.
+    rec: list = []
+    d = _driver(_handler(existing_names=(), record=rec))
+    d.deploy(_spec())
+    assert "registryCredentials" not in _call(rec, "serviceCreate")["vars"]["input"]
+
+
+def test_environment_id_from_config_skips_lookup():
+    # environmentId задан в конфиге → драйвер не тратит запрос на поиск окружения.
+    rec: list = []
+    d = _driver(_handler(existing_names=(), record=rec), environment_id="env-fixed")
+    d.deploy(_spec())
+    assert "query Environments" not in _sent(rec)
+    assert _call(rec, "serviceInstanceDeploy")["vars"]["environmentId"] == "env-fixed"
 
 
 def test_destroy_absent_is_noop():

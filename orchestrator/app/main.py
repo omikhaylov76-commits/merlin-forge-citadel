@@ -30,6 +30,9 @@ def build_driver(settings: OrchestratorSettings) -> InfraDriver:
         api_token=settings.railway_api_token,
         project_id=settings.railway_project_id,
         api_url=settings.railway_api_url,
+        environment_id=settings.railway_environment_id,
+        registry_username=settings.ghcr_pull_username,
+        registry_token=settings.ghcr_pull_token,
     )
 
 
