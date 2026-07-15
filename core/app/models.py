@@ -123,6 +123,13 @@ class ExchangeAccount(Base):
         DateTime(timezone=True), nullable=True
     )
     is_active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    # billing-lifecycle (MFC-F3-3): активация = старт биллинга; терминация останавливает генератор
+    billing_activated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    billing_terminated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

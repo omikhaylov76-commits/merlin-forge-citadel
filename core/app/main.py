@@ -14,8 +14,10 @@ from app.context import set_request_id
 from app.db import get_sessionmaker
 from app.instance_health import scan_once
 from app.logging import setup_logging
+from app.periods import generate_periods_once
 from app.readiness import is_ready
 from app.routes import router
+from app.routes_billing import router as billing_router
 from app.routes_commands import router as commands_router
 from app.routes_crm import router as crm_router
 from app.routes_internal import router as internal_router
@@ -41,6 +43,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.instance_stale_after_seconds,
             settings.instance_dead_after_seconds,
         ),
+    )
+    # Генератор периодов (MFC-F3-3): на смене месяца заводит следующий период активным счетам.
+    scheduler.register(
+        "billing-period-generator",
+        interval_s=settings.billing_generator_interval_seconds,
+        fn=lambda: generate_periods_once(get_sessionmaker()),
     )
 
     @asynccontextmanager
@@ -78,6 +86,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(telemetry_router)  # приём телеметрии бота (шов S4, Контракт v0)
     app.include_router(commands_router)  # команды боту (шов S4←, ADR-0005)
     app.include_router(crm_router)  # CRM-API оператора (Ф3): clients/exchange_accounts/contracts
+    app.include_router(billing_router)  # биллинг-lifecycle счёта (Ф3): активация/терминация
 
     @app.get("/healthz")
     def healthz() -> dict[str, object]:
