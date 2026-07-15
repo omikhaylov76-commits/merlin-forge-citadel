@@ -21,7 +21,7 @@ const SUBS = [
 ]
 
 export function Settings() {
-  const [sel, setSel] = useState(5) // старт с Биллинг-дефолтов (как в макете)
+  const [sel, setSel] = useState(0) // старт с первого пункта «Безопасность» (#37 🟢)
   return (
     <div className="mx-auto max-w-[1216px]">
       <PageHead eyebrow="Система" title="Настройки" desc="конфигурация платформы · сохранение поблочно" />
