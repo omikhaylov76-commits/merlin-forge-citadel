@@ -90,9 +90,11 @@ sources: [handoffs/HANDOFF_2026-07-10_session_1.md]
 - [x] CRM-API оператора (MFC-F3-2, main 7520463): CRUD clients/exchange_accounts/contracts + RBAC + аудит
       + v1-гейт договора (единый billing.v1_unsupported_reason для API и движка). Независимое ревью ×2
       (поймало critical C1 billing_period=quarter в обход гейта → закрыто). CI зелёный.
-- [ ] Генератор периодов (политика паузы #29: месяц-от-активации-до-терминации, bit-в-бит, no backdating,
-      валюта договора) — деньги, независимое ревью — todo (MFC-F3-next)
-- [ ] Алерты Оператору в Telegram (событие commission_calculated уже пишется) — todo
+- [x] Генератор периодов (MFC-F3-3, main b026853, #31): миграция 0008 (billing_activated_at/terminated_at)
+      + app/periods.py (активация с baseline MON3 + гарды / генератор-свёртка часового: месяц-от-активации-до-
+      терминации, bit-в-bit, no backdating, валюта договора, пауза не пропускает, pending без фабрикации) +
+      операторский API activate/terminate. Независимое ревью ×2 (латентный 🔴 двойного счёта депозитов закрыт).
+- [ ] Алерты Оператору в Telegram (событие commission_calculated уже пишется) — todo (последнее в Ф3)
 
 ## Ф4 — Клиентский портал (todo)
 Цель: read-only портал + ровно две команды (ADR-0005).
