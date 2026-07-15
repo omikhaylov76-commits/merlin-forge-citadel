@@ -50,3 +50,16 @@ export type StuckAccount = {
 // Readout застрявшего биллинга (#32, уже в ядре) — питает «Требует внимания» на Обзоре.
 export const getStuckAccounts = () =>
   api<{ as_of: string; stuck: StuckAccount[] }>('/v1/billing/stuck-accounts')
+
+// Агрегаты флота (#36) — живой источник Обзора (заменит фикстуры после экрана логина).
+export type FleetOverview = {
+  as_of: string
+  bots: { running: number; paused: number; total: number }
+  clients: number
+  aum: string
+  pnl_net_closed: string
+  commission_accrued: string
+  open_periods: number
+  currency: string
+}
+export const getFleetOverview = () => api<FleetOverview>('/v1/fleet/overview')
