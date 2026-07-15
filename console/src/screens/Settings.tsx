@@ -23,7 +23,7 @@ const SUBS = [
 export function Settings() {
   const [sel, setSel] = useState(0) // старт с первого пункта «Безопасность» (#37 🟢)
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead eyebrow="Система" title="Настройки" desc="конфигурация платформы · сохранение поблочно" />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[224px_1fr]">
         <nav className="h-max rounded-card border border-line bg-card p-2">

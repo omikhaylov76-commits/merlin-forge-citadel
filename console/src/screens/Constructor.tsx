@@ -61,7 +61,7 @@ export function Constructor() {
 
   const catProps = { expert, values, set }
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead
         eyebrow="Кузница"
         title="Конструктор профиля"

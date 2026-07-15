@@ -16,7 +16,7 @@ const statusBadge = {
 // Экран Флот (по макету): таблица ботов. Демо-данные — живой источник = список инстансов ядра.
 export function Fleet() {
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead
         eyebrow="Флот"
         title="Флот"

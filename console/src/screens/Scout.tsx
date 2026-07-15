@@ -6,7 +6,7 @@ import { scoutFixture as cols } from '@/lib/fixtures'
 // источник = scout-сервис. Ready-колонка золочёная. Committed-кандидаты приглушены (уже взяты ботом).
 export function Scout() {
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead
         eyebrow="Кузница"
         title="Разведка"

@@ -9,7 +9,7 @@ const statusTone = (s: string) =>
 // в карточке клиента; числа (комиссия/net) — из ядра (HWM). Здесь — список отправленного (демо).
 export function Reports() {
   return (
-    <div className="mx-auto max-w-[1216px]">
+    <div className="mx-auto max-w-[1880px]">
       <PageHead
         eyebrow="Журналы"
         title="Отчёты"
