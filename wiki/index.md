@@ -36,6 +36,7 @@ updated: 2026-07-10
 - [0012](decisions/0012-healthz-scheduler-deadman.md) — dead-man часового в /healthz (вариант A: показывать, не гейтить).
 - [0013](decisions/0013-instances-deferred-fk.md) — отложенные FK у instances (материализуем без родителей, YAGNI).
 - [0014](decisions/0014-malysh-merlin-reference.md) — «Малыш Мерлин»: архив @b75bd17 + тег + залоченный профиль-эталон + инвариант «клонируй-не-редактируй».
+- [0015](decisions/0015-cartridge-deploy-registry-model.md) — модель деплоя картриджей: публичный образ на демо (hobby) → приватный+registry-cred на go-live (Pro/Docker); C отклонён.
 
 ## reference
 - [reference/README](../reference/README.md) — «Малыш Мерлин»: профиль-эталон v8.3 (в дереве) + архив @b75bd17 (release-ассет, SHA256) + инвариант.
