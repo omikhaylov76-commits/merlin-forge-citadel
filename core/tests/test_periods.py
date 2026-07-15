@@ -12,7 +12,7 @@ from sqlalchemy import select, text
 from app.billing import close_period
 from app.db import get_sessionmaker
 from app.main import create_app
-from app.models import AuditLog, Contract, ExchangeAccount
+from app.models import AuditLog, BillingPeriod, Cashflow, Contract, ExchangeAccount
 from app.periods import (
     _month_start,
     _next_month,
@@ -211,6 +211,83 @@ def test_terminate_guards(clean) -> None:
         s.commit()
         with pytest.raises(ValueError):                # повторная терминация
             terminate_billing(s, aid, "op", now)
+
+
+def test_first_period_deposit_window_clamped_to_activation(clean) -> None:
+    # 🔴-фикс: baseline введён при активации (уже с до-активационными потоками) → окно net_deposits
+    # первого периода зажато до billing_activated_at; до-активационный депозит НЕ задваивается.
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        s.add(Cashflow(account_id=aid, kind="deposit", amount=Decimal("1000"),
+                       ts=datetime(2026, 7, 5, tzinfo=UTC), actor="op"))    # ДО активации
+        s.add(Cashflow(account_id=aid, kind="deposit", amount=Decimal("500"),
+                       ts=datetime(2026, 7, 20, tzinfo=UTC), actor="op"))   # ПОСЛЕ активации
+        s.flush()
+        pid = activate_billing(s, aid, kid, Decimal("10000"), "op",
+                               datetime(2026, 7, 15, 12, tzinfo=UTC)).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, pid, end_equity=Decimal("10500"), actor="op")  # baseline+пост-депозит, торговли 0
+        s.commit()
+    with get_sessionmaker()() as s:
+        bp = s.get(BillingPeriod, pid)
+        assert bp.net_deposits == Decimal("500.00")        # только пост-активационный
+        assert bp.period_net_trading == Decimal("0.00")    # 10500−10000−500 (не −1000)
+        assert bp.commission == Decimal("0.00")
+
+
+def test_generate_skips_when_no_signed_contract(clean) -> None:
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        p1 = _activate(s, aid, kid, "10000", 7).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.execute(text("UPDATE contracts SET status='suspended' WHERE id=:i"), {"i": kid})
+        s.commit()
+    with get_sessionmaker()() as s:  # нет signed-договора → pending
+        assert generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC)) == []
+
+
+def test_generate_skips_on_currency_change(clean) -> None:
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s, currency="USDT")
+        p1 = _activate(s, aid, kid, "10000", 7).id
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.execute(text("UPDATE contracts SET status='suspended' WHERE id=:i"), {"i": kid})
+        s.add(Contract(client_id=cid, status="signed", currency="USDC"))  # новый в др. валюте
+        s.commit()
+    with get_sessionmaker()() as s:  # смена валюты → не создаём, оставляем оператору
+        assert generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC)) == []
+
+
+def test_generate_across_year_boundary(clean) -> None:
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        p1 = _activate(s, aid, kid, "10000", 12).id  # декабрь
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")
+        s.commit()
+    with get_sessionmaker()() as s:
+        created = generate_due_periods(s, datetime(2027, 1, 5, tzinfo=UTC))
+        assert len(created) == 1
+        assert created[0].period_start == datetime(2027, 1, 1, tzinfo=UTC)  # Dec→Jan
+
+
+def test_terminate_with_open_final_then_no_next(clean) -> None:
+    with get_sessionmaker()() as s:
+        cid, aid, kid = _signed_setup(s)
+        p1 = _activate(s, aid, kid, "10000", 7).id
+        terminate_billing(s, aid, "op", datetime(2026, 7, 20, tzinfo=UTC))  # при открытом периоде
+        s.commit()
+    with get_sessionmaker()() as s:
+        close_period(s, p1, end_equity=Decimal("11000"), actor="op")  # закрыть финальный
+        s.commit()
+    with get_sessionmaker()() as s:  # терминирован → следующего нет
+        assert generate_due_periods(s, datetime(2026, 8, 5, tzinfo=UTC)) == []
 
 
 # ── API ───────────────────────────────────────────────────────────────────────

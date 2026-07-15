@@ -7,6 +7,7 @@
 Границы месяца UTC, бит-в-bit (start==prev.end), no backdating, валюта из договора. Деньги: ревью.
 """
 
+import logging
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -17,8 +18,12 @@ from app.audit import write_audit
 from app.billing import v1_unsupported_reason
 from app.models import BillingPeriod, Contract, ExchangeAccount
 
+logger = logging.getLogger("mfc.periods")
+
 
 def _month_start(dt: datetime) -> datetime:
+    if dt.tzinfo is None:  # naive → astimezone принял бы за локаль и сдвинул границу месяца
+        raise ValueError("datetime должен быть tz-aware (UTC)")
     return dt.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
@@ -116,24 +121,32 @@ def generate_due_periods(session: Session, now: datetime) -> list:
     created = []
     for account in accounts:
         prev = _last_period(session, account.id)
-        if prev is None or prev.status != "closed":
-            continue  # нет периода (аномалия) либо предыдущий ещё открыт → pending, не изобретаем
-        if prev.period_end > now:
-            continue  # месяц ещё не истёк
-        if prev.end_equity is None:
-            continue  # закрыт без equity (аномалия) — не тянем None в start
+        if prev is None or prev.status != "closed" or prev.period_end > now:
+            continue  # нет периода / предыдущий открыт / месяц не истёк → pending (норма, без шума)
+        if prev.end_equity is None:  # аномалия: закрыт без equity
+            logger.warning("счёт %s: закрытый период без end_equity — не создан", account.id)
+            continue
         contract = _signed_contract(session, account.client_id)
-        if contract is None or contract.currency != prev.currency:
-            continue  # нет терминов / смена валюты — не биллим молча, оставляем оператору
+        if contract is None:
+            logger.warning("счёт %s: нет signed-договора — биллинг застрял (pending)", account.id)
+            continue
+        if contract.currency != prev.currency:
+            logger.warning("счёт %s: смена валюты %s→%s — нужна терминация+новый счёт",
+                           account.id, prev.currency, contract.currency)
+            continue
         ps = prev.period_end  # bit-в-bit: старт нового == конец предыдущего
-        bp = BillingPeriod(
-            account_id=account.id, client_id=account.client_id, contract_id=contract.id,
-            period_start=ps, period_end=_next_month(ps), start_equity=prev.end_equity,
-            currency=contract.currency, status="open",
-        )
-        session.add(bp)
-        created.append(bp)
-    session.flush()
+        try:
+            with session.begin_nested():  # savepoint: сбой одного счёта не роняет весь батч
+                bp = BillingPeriod(
+                    account_id=account.id, client_id=account.client_id, contract_id=contract.id,
+                    period_start=ps, period_end=_next_month(ps), start_equity=prev.end_equity,
+                    currency=contract.currency, status="open",
+                )
+                session.add(bp)
+                session.flush()
+            created.append(bp)
+        except Exception:
+            logger.warning("счёт %s: создание периода не удалось", account.id, exc_info=True)
     return created
 
 
