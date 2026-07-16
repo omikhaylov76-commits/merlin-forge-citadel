@@ -3,6 +3,7 @@
 
 from app.bot import PifagorCartridge
 from app.config import CartridgeConfig
+from app.scout_reader import ScoutReader
 
 
 class FakeClient:
@@ -85,3 +86,37 @@ def test_scan_ms_zero_no_push():
     sc.ret = (0, [])                     # скаут ещё не сканировал (нет курсора)
     bot._push_scout(1.0)
     assert c.scouts == []
+
+
+# ── _scan_cursor: last_a_ms исключён (#54) — Этап A (без находок) не триггерит пуш ──
+
+class _FakeScoutDB:
+    def __init__(self, ctrl):
+        self._ctrl = ctrl
+
+    def scout_control_get(self):
+        return self._ctrl
+
+
+def _reader(ctrl):
+    r = object.__new__(ScoutReader)      # обходим тяжёлый __init__ (вендор/DB не нужны)
+    r.scout_db = _FakeScoutDB(ctrl)
+    return r
+
+
+def test_scan_cursor_stage_a_alone_no_advance():
+    # только Этап A (last_a_ms=сейчас), Этапа B ещё не было → курсор 0 (пуш НЕ триггерится)
+    r = _reader({"last_a_ms": 9_000, "last_b_boundary_ms": 0, "scan_now_ack_ms": 0})
+    assert r._scan_cursor() == 0
+
+
+def test_scan_cursor_stage_b_advances_below_last_a():
+    # Этап B на границе 8_000 при более позднем last_a_ms=9_000 → курсор 8_000 (двигает B, не A)
+    r = _reader({"last_a_ms": 9_000, "last_b_boundary_ms": 8_000, "scan_now_ack_ms": 0})
+    assert r._scan_cursor() == 8_000
+
+
+def test_scan_cursor_scan_now_button():
+    # кнопка «Сканировать сейчас» (scan_now_ack_ms) двигает курсор
+    r = _reader({"last_a_ms": 0, "last_b_boundary_ms": 0, "scan_now_ack_ms": 5_000})
+    assert r._scan_cursor() == 5_000

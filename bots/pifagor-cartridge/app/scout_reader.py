@@ -6,7 +6,7 @@
 берём из ВОРКЕРА (PifagorReader.db / .config_store) — они в БД движка, не скаута.
 
 klines/klines_tf ОПУСКАЕМ: у скаута нет 15m/5m в Фазе 1 (ADR-0016 д). Несём геометрию levels.
-Триггер пуша — новый scan_ts (build_scout.updated_ms), а не каждый цикл.
+Триггер пуша — новый курсор скана Этапа B/кнопки (см. _scan_cursor, #54), не каждый цикл.
 """
 
 from __future__ import annotations
@@ -45,13 +45,14 @@ class ScoutReader:
         self._producer = producer
 
     def _scan_cursor(self) -> int:
-        """Метка последнего СКАНА — бампается КАЖДЫЙ Этап A/B (в т.ч. когда все сетапы умерли), из
-        scout_control. НЕ scout_meta.updated_ms (build_scout): тот двигает лишь Этап A (~раз/сутки),
-        и умершие на Этапе B сетапы висели бы в ядре до утра (провальный критерий з.1)."""
+        """Курсор последнего СКАНА СЕТАПОВ (Этап B / кнопка) из scout_control. last_a_ms исключён
+        (#54): Этап A — калибровка вселенной без находок; его пуш пуст и «съедал» бы курсор
+        (last_a_ms=сейчас > округлённой last_b_boundary_ms), из-за чего находки первого Этапа B
+        ждали бы след. границы, а утренний Этап A обнулял бы доску. Мёртвые сетапы чистит Этап B."""
         try:
             c = self.scout_db.scout_control_get() or {}
             return max(
-                int(c.get("last_a_ms") or 0), int(c.get("last_b_boundary_ms") or 0),
+                int(c.get("last_b_boundary_ms") or 0),
                 int(c.get("scan_now_ack_ms") or 0),
             )
         except Exception:  # noqa: BLE001
