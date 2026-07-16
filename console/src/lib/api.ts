@@ -129,3 +129,46 @@ export type ScoutSnapshot = {
 }
 export const getInstanceScout = (instanceId: string) =>
   api<ScoutSnapshot[]>(`/v1/instances/${instanceId}/scout`)
+
+// ── скринер по параметрам (С7-2б, ядро routes_screener) — питает экран «Скринер» ────────────────
+export type ScreenerParams = {
+  min_age_days: number
+  min_turnover_usd: number
+  k: number
+  days: number
+  universe_max: number
+  tfs: string[]
+}
+export type ScreenerSetup = { tf: string; status: string; score?: number }
+export type ScreenerFinding = {
+  symbol: string
+  impulse_ratio: number | null
+  score: number
+  selected: boolean
+  reject_reason: string | null
+  setups: ScreenerSetup[]
+}
+export type ScreenerRun = {
+  run_id: string
+  instance_id: string
+  status: string // queued | running | done | error
+  params: ScreenerParams
+  summary: Record<string, unknown> | null
+  created_at: string | null
+  updated_at: string | null
+  findings?: ScreenerFinding[]
+}
+export const enqueueScreenerRun = (instanceId: string, params: Partial<ScreenerParams>) =>
+  api<{ run_id: string; status: string }>(`/v1/instances/${instanceId}/screener/runs`, {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+export const getScreenerRun = (runId: string) => api<ScreenerRun>(`/v1/screener/runs/${runId}`)
+export const listScreenerRuns = (instanceId: string) =>
+  api<ScreenerRun[]>(`/v1/instances/${instanceId}/screener/runs`)
+
+// Разведка/Скринер показывают только разведчика (Галахад) и боевого (Персиваль); тестовые
+// болванки флота скрыты (директива Куратора, С7 микро-пункт). Фильтр по имени клиента — v1.
+const _SCOUT_VISIBLE = /Галахад|Персиваль/
+export const visibleScoutInstances = (list: FleetInstance[]) =>
+  list.filter((i) => _SCOUT_VISIBLE.test(i.client))

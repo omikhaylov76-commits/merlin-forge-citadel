@@ -141,9 +141,57 @@ class PifagorCartridge:
                 status="stopping", uptime_s=uptime, contract_version=CONTRACT_VERSION), "heartbeat")
             self._ack(cmd_id, "ok")
             return True  # встаём: цикл завершится, процесс выйдет (restartPolicy=never)
+        if cmd == "screener_run":
+            # скринер ОТДЕЛЬНЫМ процессом (движок/heartbeat не блокируем, как скаут); он сам
+            # пушит статус/результат в ядро по run_id. ack ok = «запущено» (не «досчитано»).
+            self._launch_screener(resp.get("payload") or {})
+            self._ack(cmd_id, "ok")
+            return False
         # неизвестная команда — ack error (это не stop_close, липкость ядра тут не держит)
         self._ack(cmd_id, "error", {"reason": f"unknown:{cmd}"})
         return False
+
+    def _launch_screener(self, payload: dict) -> None:
+        """Запустить app/screener.py отдельным процессом (fire-and-forget). Процесс наследует env
+        (MF_CORE_URL/MF_INSTANCE_TOKEN) и сам пушит результат в ядро. RPS=1 (суммарно со скаутом 2 —
+        безопасно). Изолированная screener_run.db (не scout.db Галахада)."""
+        import os
+        import subprocess
+        import sys
+
+        run_id = payload.get("run_id")
+        p = payload.get("params") or {}
+        if not run_id:
+            log.warning("screener_run без run_id — пропуск")
+            return
+        # Ген: скринер = умение у всех, тумблер по умолчанию ВЫКЛ (паттерн SCOUT_ENABLED). Взводим
+        # ролью только боту-разведчику (Галахад). Не взведён → сообщаем ядру, консоль не виснет.
+        if os.environ.get("SCREENER_ENABLED") != "1":
+            log.info("screener_run: SCREENER_ENABLED не взведён — скринер на этом боте выключен")
+            self._screener_disabled(run_id)
+            return
+        args = [
+            sys.executable, "-m", "app.screener", "--push", "--run-id", str(run_id), "--rps", "1",
+            "--k", str(p.get("k", 1.5)), "--days", str(p.get("days", 14)),
+            "--universe-max", str(p.get("universe_max", 150)),
+            "--min-age-days", str(p.get("min_age_days", 180)),
+            "--min-turnover", str(p.get("min_turnover_usd", 5_000_000)),
+        ]
+        try:
+            subprocess.Popen(args)
+            log.info("screener_run запущен отдельным процессом: run_id=%s", run_id)
+        except Exception as exc:
+            log.error("screener_run не запустился (%s)", exc)
+
+    def _screener_disabled(self, run_id: str) -> None:
+        """Скринер выключен (геном: дефолт ВЫКЛ) — отмечаем в ядре error, чтобы консоль не висла."""
+        from app.screener import push_results
+
+        try:
+            push_results(self._cfg.core_url, self._cfg.instance_token, run_id, "error",
+                         summary={"error": "скринер выключен на этом боте (SCREENER_ENABLED=0)"})
+        except Exception as exc:
+            log.warning("не смог отметить выключенный скринер в ядре (%s)", exc)
 
     # ── доставка с классификацией 4xx ─────────────────────────────────────────
 

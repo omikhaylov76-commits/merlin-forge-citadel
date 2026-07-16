@@ -218,3 +218,57 @@ def test_scroll_gap_warns_on_big_cursor_jump(caplog):
     with caplog.at_level("WARNING", logger="mfc.pifagor-cartridge"):
         _bot(c, r).tick_once(NOW, 0.0)
     assert any("ВОЗМОЖЕН ПРОПУСК" in rec.message for rec in caplog.records)
+
+
+# ── команда screener_run (С7-2б): отдельный процесс + ack ─────────────────────
+
+def test_screener_run_launches_process_and_acks(monkeypatch):
+    import subprocess
+    monkeypatch.setenv("SCREENER_ENABLED", "1")  # взведён (роль разведчика)
+    c, r = FakeClient(), FakeReader()
+    launched = {}
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda args, *a, **k: launched.setdefault("args", args))
+    c.cmds = [{"cmd": "screener_run", "cmd_id": "sc1",
+               "payload": {"run_id": "RID", "params": {"k": 2.0, "universe_max": 80}}}]
+    assert _bot(c, r).tick_once(NOW, 0.0) is False
+    assert c.acks == [{"cmd_id": "sc1", "result": "ok", "detail": None}]
+    a = launched["args"]
+    assert "--push" in a and "app.screener" in a
+    assert a[a.index("--run-id") + 1] == "RID"
+    assert a[a.index("--k") + 1] == "2.0"
+    assert a[a.index("--universe-max") + 1] == "80"
+
+
+def test_screener_run_no_run_id_acks_without_spawn(monkeypatch):
+    import subprocess
+    c, r = FakeClient(), FakeReader()
+    calls = {"n": 0}
+    monkeypatch.setattr(subprocess, "Popen",
+                        lambda *a, **k: calls.__setitem__("n", calls["n"] + 1))
+    c.cmds = [{"cmd": "screener_run", "cmd_id": "sc2", "payload": {}}]
+    _bot(c, r).tick_once(NOW, 0.0)
+    assert c.acks == [{"cmd_id": "sc2", "result": "ok", "detail": None}]
+    assert calls["n"] == 0
+
+
+def test_screener_run_disabled_by_default_no_spawn(monkeypatch):
+    # SCREENER_ENABLED не взведён → скринер выключен: не спавним, отмечаем в ядре error, ack ok
+    import subprocess
+
+    import app.screener as screener_mod
+    monkeypatch.delenv("SCREENER_ENABLED", raising=False)
+    c, r = FakeClient(), FakeReader()
+    spawned = {"n": 0}
+    pushed = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: spawned.__setitem__("n", 1))
+
+    def _fake_push(core, token, run_id, status, **k):
+        pushed["status"] = status
+
+    monkeypatch.setattr(screener_mod, "push_results", _fake_push)
+    c.cmds = [{"cmd": "screener_run", "cmd_id": "sc3", "payload": {"run_id": "RID", "params": {}}}]
+    _bot(c, r).tick_once(NOW, 0.0)
+    assert spawned["n"] == 0                      # не запускали
+    assert pushed.get("status") == "error"        # отметили выключенным в ядре
+    assert c.acks == [{"cmd_id": "sc3", "result": "ok", "detail": None}]

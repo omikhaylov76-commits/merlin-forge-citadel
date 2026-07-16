@@ -316,11 +316,13 @@ class Command(Base):
 
     __tablename__ = "commands"
     __table_args__ = (
-        CheckConstraint("kind IN ('pause','resume','stop_close')", name="ck_commands_kind"),
+        CheckConstraint(
+            "kind IN ('pause','resume','stop_close','screener_run')", name="ck_commands_kind"
+        ),
         CheckConstraint(
             "status IN ('queued','delivered','acked','failed')", name="ck_commands_status"
         ),
-        {"comment": "Очередь команд боту (S4←, ADR-0005); канон pause/resume/stop_close."},
+        {"comment": "Очередь команд боту (S4←, ADR-0005); pause/resume/stop_close/screener_run."},
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     instance_id: Mapped[uuid.UUID] = mapped_column(
@@ -329,9 +331,51 @@ class Command(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="queued")
     result: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # detail от бота на ack
+    # вход команды (для screener_run: {run_id, params}); pause/resume/stop_close — payload не нужен
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     acked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ScreenerRun(Base):
+    """Прогон скринера по параметрам (С7-2б). run_id=id. Оператор запускает командой screener_run;
+    картридж исполняет ОТДЕЛЬНЫМ процессом и пушит findings. Статус queued→running→done|error.
+    params/summary — недоверенный JSON (экранируется на выводе)."""
+
+    __tablename__ = "screener_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued','running','done','error')", name="ck_screener_runs_status"
+        ),
+        {"comment": "Прогоны скринера по параметрам (С7-2б); queued→running→done|error."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False
+    )
+    params: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="queued")
+    summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)  # воронка/счётчики
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScreenerFinding(Base):
+    """Строка результата прогона скринера. data — весь finding (импульс/скор/selected/setup/
+    reject_reason) недоверенным JSON (display-only). Удаляется каскадом с прогоном."""
+
+    __tablename__ = "screener_findings"
+    __table_args__ = (
+        {"comment": "Результаты прогона скринера (С7-2б); data — недоверенный JSON."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("screener_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Contract(Base):
