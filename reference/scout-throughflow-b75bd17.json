@@ -1,0 +1,261 @@
+{
+  "_note": "Сквозняк #52 scout-канала: снимок адаптера (fake-scout, dry-run) + ответ readout ядра. Демонстрирует config_mismatch/levels/klines(скан-ТФ 4h)/все required.",
+  "readout_response": [
+    {
+      "bars_since_anchor": 3,
+      "config_fingerprint": "sha256:f6412a7832508d95",
+      "config_mismatch": {
+        "details": {
+          "REANCHOR_AFTER_SCALP": {
+            "scout": true,
+            "worker": false
+          }
+        },
+        "flag": true
+      },
+      "data_upto": "2024-07-11T16:00:00Z",
+      "detector_version": "v81-b75bd17",
+      "klines": [
+        {
+          "c": 70800.0,
+          "h": 71000.0,
+          "l": 70300.0,
+          "o": 70500.0,
+          "time": 1720684800000,
+          "v": 100.0
+        },
+        {
+          "c": 71000.0,
+          "h": 72100.0,
+          "l": 70700.0,
+          "o": 70800.0,
+          "time": 1720699200000,
+          "v": 130.0
+        },
+        {
+          "c": 70200.0,
+          "h": 71400.0,
+          "l": 69900.0,
+          "o": 71000.0,
+          "time": 1720713600000,
+          "v": 95.0
+        }
+      ],
+      "klines_tf": "4h",
+      "levels": [
+        {
+          "price": 72000.0,
+          "role": "B"
+        },
+        {
+          "price": 68000.0,
+          "role": "A"
+        },
+        {
+          "price": 70472.0,
+          "role": "entry_0382"
+        },
+        {
+          "price": 70000.0,
+          "role": "entry_05"
+        },
+        {
+          "price": 69528.0,
+          "role": "entry_0618"
+        },
+        {
+          "price": 68000.0,
+          "role": "stop"
+        }
+      ],
+      "orders": null,
+      "orders_ts": "2026-07-16T06:15:49.809244Z",
+      "position": null,
+      "producer": "pifagor-scout",
+      "received_at": "2026-07-16T09:15:49.855304+03:00",
+      "scan_ts": "2026-07-16T06:15:49.759000Z",
+      "score": 78.0,
+      "state": "ready",
+      "symbol": "BTCUSDT",
+      "tf": "4h"
+    },
+    {
+      "bars_since_anchor": null,
+      "config_fingerprint": "sha256:f6412a7832508d95",
+      "config_mismatch": {
+        "details": {
+          "REANCHOR_AFTER_SCALP": {
+            "scout": true,
+            "worker": false
+          }
+        },
+        "flag": true
+      },
+      "data_upto": "2024-07-11T16:00:00Z",
+      "detector_version": "v81-b75bd17",
+      "klines": [
+        {
+          "c": 70800.0,
+          "h": 71000.0,
+          "l": 70300.0,
+          "o": 70500.0,
+          "time": 1720684800000,
+          "v": 100.0
+        },
+        {
+          "c": 71000.0,
+          "h": 72100.0,
+          "l": 70700.0,
+          "o": 70800.0,
+          "time": 1720699200000,
+          "v": 130.0
+        },
+        {
+          "c": 70200.0,
+          "h": 71400.0,
+          "l": 69900.0,
+          "o": 71000.0,
+          "time": 1720713600000,
+          "v": 95.0
+        }
+      ],
+      "klines_tf": "4h",
+      "levels": null,
+      "orders": null,
+      "orders_ts": "2026-07-16T06:15:49.809244Z",
+      "position": null,
+      "producer": "pifagor-scout",
+      "received_at": "2026-07-16T09:15:49.855304+03:00",
+      "scan_ts": "2026-07-16T06:15:49.759000Z",
+      "score": 41.0,
+      "state": "forming",
+      "symbol": "WIFUSDT",
+      "tf": "4h"
+    }
+  ],
+  "snapshot_pushed": [
+    {
+      "bars_since_anchor": 3,
+      "config_fingerprint": "sha256:f6412a7832508d95",
+      "config_mismatch": {
+        "details": {
+          "REANCHOR_AFTER_SCALP": {
+            "scout": true,
+            "worker": false
+          }
+        },
+        "flag": true
+      },
+      "data_upto": "2024-07-11T16:00:00+00:00",
+      "detector_version": "v81-b75bd17",
+      "klines": [
+        {
+          "c": 70800.0,
+          "h": 71000.0,
+          "l": 70300.0,
+          "o": 70500.0,
+          "time": 1720684800000,
+          "v": 100.0
+        },
+        {
+          "c": 71000.0,
+          "h": 72100.0,
+          "l": 70700.0,
+          "o": 70800.0,
+          "time": 1720699200000,
+          "v": 130.0
+        },
+        {
+          "c": 70200.0,
+          "h": 71400.0,
+          "l": 69900.0,
+          "o": 71000.0,
+          "time": 1720713600000,
+          "v": 95.0
+        }
+      ],
+      "klines_tf": "4h",
+      "levels": [
+        {
+          "price": 72000.0,
+          "role": "B"
+        },
+        {
+          "price": 68000.0,
+          "role": "A"
+        },
+        {
+          "price": 70472.0,
+          "role": "entry_0382"
+        },
+        {
+          "price": 70000.0,
+          "role": "entry_05"
+        },
+        {
+          "price": 69528.0,
+          "role": "entry_0618"
+        },
+        {
+          "price": 68000.0,
+          "role": "stop"
+        }
+      ],
+      "orders_ts": "2026-07-16T06:15:49.809244+00:00",
+      "producer": "pifagor-scout",
+      "scan_ts": "2026-07-16T06:15:49.759000+00:00",
+      "score": 78.0,
+      "state": "ready",
+      "symbol": "BTCUSDT",
+      "tf": "4h"
+    },
+    {
+      "config_fingerprint": "sha256:f6412a7832508d95",
+      "config_mismatch": {
+        "details": {
+          "REANCHOR_AFTER_SCALP": {
+            "scout": true,
+            "worker": false
+          }
+        },
+        "flag": true
+      },
+      "data_upto": "2024-07-11T16:00:00+00:00",
+      "detector_version": "v81-b75bd17",
+      "klines": [
+        {
+          "c": 70800.0,
+          "h": 71000.0,
+          "l": 70300.0,
+          "o": 70500.0,
+          "time": 1720684800000,
+          "v": 100.0
+        },
+        {
+          "c": 71000.0,
+          "h": 72100.0,
+          "l": 70700.0,
+          "o": 70800.0,
+          "time": 1720699200000,
+          "v": 130.0
+        },
+        {
+          "c": 70200.0,
+          "h": 71400.0,
+          "l": 69900.0,
+          "o": 71000.0,
+          "time": 1720713600000,
+          "v": 95.0
+        }
+      ],
+      "klines_tf": "4h",
+      "orders_ts": "2026-07-16T06:15:49.809244+00:00",
+      "producer": "pifagor-scout",
+      "scan_ts": "2026-07-16T06:15:49.759000+00:00",
+      "score": 41.0,
+      "state": "forming",
+      "symbol": "WIFUSDT",
+      "tf": "4h"
+    }
+  ]
+}

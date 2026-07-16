@@ -74,7 +74,7 @@ def test_scout_schema_field_structure():
     }
     assert props["tf"]["enum"] == ["4h", "1h"]
     assert props["state"]["enum"] == ["forming", "tracking", "ready"]
-    assert props["klines_tf"]["enum"] == ["15m", "5m"]
+    assert props["klines_tf"]["enum"] == ["4h", "1h", "15m", "5m"]
     assert set(props["levels"]["items"]["properties"]["role"]["enum"]) == {
         "A", "B", "entry_0382", "entry_05", "entry_0618", "stop",
     }

@@ -33,10 +33,11 @@ class ScoutReader:
     ) -> None:
         _ensure_vendor_on_path()
         import config.execution as _exec  # scout использует STOP_FIB отсюда (scan.py:72)
-        from dashboard.viewmodel import build_scout  # ленивый импорт: вендор на пути
+        from dashboard.viewmodel import build_scout, build_scout_chart  # ленивый импорт
         from storage.db import DB
 
         self._build_scout = build_scout
+        self._build_scout_chart = build_scout_chart
         self.scout_db = DB(db_path=scout_db_path, owner=False)  # scout.db, singleton-lock НЕ берём
         self._worker = worker_reader
         self._scout_stop_fib = float(getattr(_exec, "STOP_FIB", 1.0))
@@ -75,7 +76,8 @@ class ScoutReader:
         out = []
         for f in findings:
             sym, tf = f.get("symbol"), f.get("tf") or "4h"
-            raw = self.scout_db.scout_finding_get(sym, tf) or {}  # A/B/entries/stop из payload
+            chart = self._chart(sym, tf)                          # свечи скан-ТФ + сырая находка
+            raw = chart.get("finding") or {}                     # A/B/entries/stop из payload
             merged = {**f, **raw}                                 # плоский вид + сырые уровни
             data_ms = self._data_upto_ms(sym, tf) or scan_ms
             out.append(mapper.scout_snapshot(
@@ -83,8 +85,16 @@ class ScoutReader:
                 orders_raw=orders_by.get(sym), position=pos_by.get(sym),
                 detector_version=self._detector, producer=self._producer,
                 scan_ts_iso=scan_iso, orders_ts_iso=orders_iso, data_upto_iso=_iso_ms(data_ms),
+                candles=chart.get("candles"), klines_tf=tf,       # klines_tf = tf сетапа
             ))
         return scan_ms, out
+
+    def _chart(self, symbol, tf) -> dict:
+        """Свечи скан-ТФ (≤300 баров окна скана) из кэша скаута + сырая находка (read-only)."""
+        try:
+            return self._build_scout_chart(self.scout_db, symbol, tf=tf, n=300) or {}
+        except Exception:  # noqa: BLE001 — нет свечей/находки → снимок без klines (валиден)
+            return {}
 
     # ── чтение воркера (БД движка) — best-effort, телеметрию не роняем ──────────
 

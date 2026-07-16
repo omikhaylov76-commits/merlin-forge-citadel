@@ -224,6 +224,21 @@ def scout_orders(orders_raw: list | None) -> list[dict]:
     return out
 
 
+def scout_klines(candles: list | None) -> list[dict]:
+    """Свечи скан-ТФ из кэша скаута {time,open,high,low,close,volume} → контракт {time,o,h,l,c,v}.
+    Кап ≤500 (окно скана скаута ≤300); битые бары пропускаем."""
+    out = []
+    for c in (candles or [])[-500:]:
+        t = c.get("time")
+        if t is None:
+            continue
+        out.append({
+            "time": int(t), "o": _num(c.get("open")), "h": _num(c.get("high")),
+            "l": _num(c.get("low")), "c": _num(c.get("close")), "v": _num(c.get("volume")),
+        })
+    return out
+
+
 def scout_position(pos: dict | None) -> dict | None:
     """Позиция по символу (account.positions {side,size,avgPrice,unrealisedPnl}) → контракт."""
     if not pos:
@@ -240,8 +255,10 @@ def scout_snapshot(
     finding: dict, *, worker_eff: dict, scout_stop_fib: float, orders_raw: list | None,
     position: dict | None, detector_version: str, producer: str,
     scan_ts_iso: str, orders_ts_iso: str, data_upto_iso: str,
+    candles: list | None = None, klines_tf: str | None = None,
 ) -> dict:
-    """Одна находка скаута → контрактный снимок. Несёт ВСЕ required схемы (вкл. data_upto)."""
+    """Одна находка скаута → контрактный снимок. Несёт ВСЕ required схемы (вкл. data_upto).
+    Свечи скан-ТФ (klines_tf = tf сетапа) — из кэша; младший ТФ прорисовки — задел (ADR-0016 д)."""
     snap = {
         "symbol": str(finding.get("symbol") or "")[:40],
         "tf": finding.get("tf") or "4h",
@@ -264,4 +281,8 @@ def scout_snapshot(
     pos = scout_position(position)
     if pos is not None:
         snap["position"] = pos
+    klines = scout_klines(candles)
+    if klines:
+        snap["klines"] = klines
+        snap["klines_tf"] = klines_tf or snap["tf"]  # = tf сетапа (свечи скан-ТФ)
     return snap

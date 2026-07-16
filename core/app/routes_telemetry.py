@@ -131,7 +131,7 @@ class ScoutSnapshotIn(BaseModel):
     score: float
     bars_since_anchor: int | None = Field(default=None, ge=0)
     levels: list[ScoutLevelIn] | None = None
-    klines_tf: Literal["15m", "5m"] | None = None
+    klines_tf: Literal["4h", "1h", "15m", "5m"] | None = None
     klines: list[ScoutKlineIn] | None = None        # кап ≤500 — в ручке (413), не в модели
     orders: list[ScoutOrderIn] | None = None
     position: ScoutPositionIn | None = None

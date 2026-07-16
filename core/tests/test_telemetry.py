@@ -293,6 +293,24 @@ def test_scout_replace_isolation_between_instances(sm):
     assert _count(sm, "scout_snapshots", iid_b) == 1            # B НЕ тронут (изоляция инстансов)
 
 
+def test_scout_with_candles_stored_and_readout(sm):
+    # хвост #52: klines_tf=4h (расширенный enum) + свечи принимаются, хранятся, отдаются readout
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    kl = [{"time": 1720699200000, "o": 71000, "h": 71500, "l": 70800, "c": 71200, "v": 123.4}]
+    snap = _snap("BTCUSDT", klines_tf="4h", klines=kl)
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[snap]).status_code == 202
+    with sm() as s:
+        op = User(email=f"op-{uuid.uuid4()}@mfc.local", role="operator", password_hash="x")
+        s.add(op)
+        s.flush()
+        op_tok = issue_token(s, principal="user", subject_id=str(op.id), scope="role:operator")
+        s.commit()
+    data = c.get(f"/v1/instances/{iid}/scout", headers=_hdr(op_tok)).json()
+    assert data[0]["klines_tf"] == "4h"
+    assert data[0]["klines"][0]["l"] == 70800  # 'l'-ключ (не low) в хранимом payload
+
+
 def test_scout_pydantic_covers_all_schema_required():
     # required-parity: required схемы обязаны быть required в ScoutSnapshotIn (в т.ч. data_upto)
     schema = json.loads((_CONTRACTS / "telemetry-scout.schema.json").read_text(encoding="utf-8"))

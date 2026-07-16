@@ -28,7 +28,7 @@
           }
         }
       },
-      "klines_tf": {"enum": ["15m", "5m"], "description": "ТФ ПРОРИСОВКИ графика (младше сетапного: 15m для 4h, 5m для 1h) — только для детализации рисунка"},
+      "klines_tf": {"enum": ["4h", "1h", "15m", "5m"], "description": "ТФ свечей снимка; пока апстрим не даёт младший ТФ прорисовки — равен tf сетапа (15m/5m — задел для детализации, ADR-0016 д)"},
       "klines": {
         "type": "array",
         "maxItems": 500,
@@ -106,7 +106,7 @@
           {"role": "entry_0618", "price": 69528.0},
           {"role": "stop", "price": 68000.0}
         ],
-        "klines_tf": "15m",
+        "klines_tf": "4h",
         "klines": [
           {"time": 1720699200000, "o": 71000.0, "h": 71500.0, "l": 70800.0, "c": 71200.0, "v": 123.4}
         ],
@@ -120,7 +120,7 @@
       },
       {
         "symbol": "WIFUSDT", "tf": "4h", "state": "forming", "score": 41,
-        "levels": [], "klines_tf": "15m", "klines": [], "orders": [], "position": null,
+        "levels": [], "klines_tf": "4h", "klines": [], "orders": [], "position": null,
         "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
         "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:abcd1234",
         "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout"
@@ -137,7 +137,7 @@
           {"role": "entry_0618", "price": 3876.4},
           {"role": "stop", "price": 3800.0}
         ],
-        "klines_tf": "5m", "klines": [],
+        "klines_tf": "1h", "klines": [{"time": 1720699200000, "o": 3990.0, "h": 4010.0, "l": 3980.0, "c": 4000.0, "v": 55.5}],
         "orders": [],
         "position": {"side": "long", "avg_px": 3905.0, "size": 0.5, "live_pnl": -12.5},
         "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",

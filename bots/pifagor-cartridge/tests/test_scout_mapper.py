@@ -100,3 +100,19 @@ def test_orders_and_position_mapping():
 def test_dry_run_no_orders_no_position():
     s = _snap(_READY)  # dry-run: ордеров/позиции нет
     assert "orders" not in s and "position" not in s
+
+
+def test_snapshot_with_candles():
+    # хвост #52: свечи скан-ТФ из кэша → klines + klines_tf=tf сетапа; проходит схему
+    candles = [{"time": 1720699200000, "open": 71000.0, "high": 71500.0, "low": 70800.0,
+                "close": 71200.0, "volume": 123.4}]
+    s = _snap(_READY, candles=candles, klines_tf="4h")
+    jsonschema.validate(s, _ITEM, format_checker=_FMT)
+    assert s["klines_tf"] == "4h"
+    assert s["klines"][0] == {"time": 1720699200000, "o": 71000.0, "h": 71500.0, "l": 70800.0,
+                              "c": 71200.0, "v": 123.4}
+
+
+def test_snapshot_no_candles_omits_klines():
+    s = _snap(_READY)  # candles=None → klines/klines_tf опущены (валидно)
+    assert "klines" not in s and "klines_tf" not in s
