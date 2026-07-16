@@ -28,6 +28,7 @@
   --color-gild: #ae9357;
   --color-ok: #7d9b6f;
   --color-danger: #c56b62;
+  --color-lilac: #9a86b0; /* сиреневый приглушённый — вход 0.618 графика Разведки (#56) */
 
   /* шрифты: Playfair (серифный дисплей — цифры/заголовки) + Inter (текст) */
   --font-serif: 'Playfair Display', Georgia, 'Times New Roman', serif;

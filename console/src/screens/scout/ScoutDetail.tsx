@@ -15,6 +15,17 @@ const LEVEL_TITLE: Record<string, string> = {
   stop: 'стоп',
 }
 
+// #56: стиль линии уровня по роли (var-имя цвета + LineStyle). Рамка импульса A/B — белый пунктир;
+// стоп — красный пунктир; три входа — приглушённые жёлт/зел/сирень точками. Факт-слой (orders/pos) — отдельно.
+const LEVEL_STYLE: Record<string, { color: string; style: LineStyle }> = {
+  A: { color: '--color-bone', style: LineStyle.Dashed },
+  B: { color: '--color-bone', style: LineStyle.Dashed },
+  stop: { color: '--color-danger', style: LineStyle.Dashed },
+  entry_0382: { color: '--color-gold', style: LineStyle.Dotted },
+  entry_05: { color: '--color-ok', style: LineStyle.Dotted },
+  entry_0618: { color: '--color-lilac', style: LineStyle.Dotted },
+}
+
 // Деталь-вью сетапа: график Lightweight Charts (свечи снимка + слой «теория» разведки vs «факт» бота).
 export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -23,7 +34,6 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
   useEffect(() => {
     const el = ref.current
     if (!el || !snap.klines?.length) return
-    const theory = css('--color-copper')
     const fact = css('--color-silver')
     const danger = css('--color-danger')
     const chart = createChart(el, {
@@ -54,11 +64,12 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
       })),
     )
     for (const lv of snap.levels ?? []) {
+      const st = LEVEL_STYLE[lv.role] ?? { color: '--color-copper', style: LineStyle.Solid }
       candles.createPriceLine({
         price: lv.price,
-        color: lv.role === 'stop' ? danger : theory,
+        color: css(st.color),
         lineWidth: 1,
-        lineStyle: lv.role === 'stop' ? LineStyle.Dashed : LineStyle.Solid,
+        lineStyle: st.style,
         axisLabelVisible: true,
         title: LEVEL_TITLE[lv.role] ?? lv.role,
       })
@@ -83,10 +94,12 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
         title: `поз ${snap.position.side}`,
       })
     }
-    chart.timeScale().fitContent()
-    // защита от растяжения нужна ТОЛЬКО для БЕДНОГО снимка (<15 баров): fitContent раздувает
-    // считанные бары во весь экран. На плотном ряде (~90/300) НЕ капим — fitContent сам даёт норму
-    // (иначе кап 14 зря сжимал бы плотный ряд). Порог баров — не зума.
+    // #56: показываем последние ~80 баров (окно), остальное за кадром — Оператор сам зумит/листает.
+    const N = 80
+    const n = rows.length
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - N), to: n - 1 })
+    // защита от растяжения ТОЛЬКО для БЕДНОГО снимка (<15 баров): при нём окно = весь ряд, бары
+    // раздулись бы во весь экран. На плотном ряде НЕ капим (кап 14 зря сжимал бы). Порог баров — не зума.
     const scale = chart.timeScale()
     if (rows.length < 15 && scale.options().barSpacing > 14) {
       scale.applyOptions({ barSpacing: 14 })
