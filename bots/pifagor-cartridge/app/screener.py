@@ -78,3 +78,131 @@ def select_candidates(rows, *, k=1.5, days=14, tf="4h", klines_of=None):
             "selected": stage_a_ok and imp_ok,
         })
     return out
+
+
+# ── ЖИВОЙ прогон (тянет Bybit; за гейтом Куратора) ───────────────────────────
+def run_screener(*, k=1.5, days=14, universe_max=150, rps=1, db_path=None, log=print):
+    """Разовый прогон по параметрам: Этап A вендора (возраст/оборот) → импульс из кэша 4h →
+    Этап B скан (оба ТФ) → структурированный отчёт. Изолированная SQLite (db_path), троттл rps.
+
+    Тянет публичный Bybit. Запуск — по прямому слову Оператора, отчёт-only (на доску НЕ льём).
+    Vendor импортируется лениво — чистые функции выше сети/vendor не касаются (юнит-тест офлайн)."""
+    import json as _json
+    import os
+    import tempfile
+
+    # scout.config читает env на импорте → задаём ДО импорта vendor; DATABASE_URL убираем
+    os.environ.setdefault("SCOUT_UNIVERSE_MAX", str(universe_max))
+    os.environ.setdefault("SCOUT_RPS", str(rps))
+    os.environ.pop("DATABASE_URL", None)
+
+    from app.reader import _ensure_vendor_on_path
+    _ensure_vendor_on_path()
+    import scout.config as scfg
+    from scout import main as smain
+    from scout.public_api import PublicMarket
+    from storage.db import DB
+
+    if db_path is None:
+        db_path = os.path.join(tempfile.gettempdir(), "mfc_screener_run.db")
+    db = DB(owner=True, db_path=db_path)
+    market = PublicMarket(rps=rps)
+    try:
+        funnel = smain.run_stage_a(db, market=market, log=log)
+        findings = smain.run_stage_b(db, market=market, log=log)
+
+        lb = bars_for_days(days, "4h")
+        setups_by_symbol = {}
+        for f in findings:
+            setups_by_symbol.setdefault(f["symbol"], []).append(
+                {"tf": f.get("tf"), "status": f.get("status"), "score": f.get("score")})
+
+        rows = []
+        for r in db.scout_universe_all():
+            payload = r["payload"]
+            if isinstance(payload, str):
+                payload = _json.loads(payload)
+            if payload.get("rejects"):
+                continue  # не прошёл Этап A (возраст/оборот/…) — не кандидат
+            sym = r["symbol"]
+            win = db.scout_klines_read_window(sym, "4h", lb + 1)
+            ratio = impulse_ratio(volumes_of(win), lookback_bars=lb)
+            imp_ok = ratio is not None and ratio >= k
+            rows.append({
+                "symbol": sym,
+                "score": round(float(r.get("score") or 0.0), 1),
+                "impulse_ratio": round(ratio, 3) if ratio is not None else None,
+                "impulse_ok": imp_ok,
+                "selected": imp_ok,  # прошёл Этап A (rejects пуст) + импульс
+                "setups": setups_by_symbol.get(sym, []),
+            })
+    finally:
+        db.close()
+
+    rows.sort(key=lambda x: (x["impulse_ratio"] or 0.0), reverse=True)
+    selected = [x for x in rows if x["selected"]]
+    setups_sel = [s for x in selected for s in x["setups"]]
+    return {
+        "params": {"k": k, "days": days, "universe_max": universe_max, "rps": rps,
+                   "min_age_days": scfg.SCOUT_MIN_AGE_DAYS,
+                   "min_turnover_usd": scfg.SCOUT_MIN_TURNOVER_USD, "tfs": scfg.scanned_tfs()},
+        "funnel": funnel,
+        "passed_stage_a": len(rows),
+        "selected_count": len(selected),
+        "setups_selected_count": len(setups_sel),
+        "selected": selected,
+        "rejected_by_impulse": [x for x in rows if not x["selected"]],
+    }
+
+
+def print_report(rep, log=print):
+    """Человекочитаемый отчёт скринера в stdout (для Оператора)."""
+    p, f = rep["params"], rep["funnel"]
+    log("\n===== ОТЧЁТ СКРИНЕРА (импульс) =====")
+    log(f"параметры: возраст>{p['min_age_days']}д · оборот24h>=${p['min_turnover_usd']:,} · "
+        f"импульс>=x{p['k']} (окно {p['days']}д) · ТФ {p['tfs']} · "
+        f"вселенная top-{p['universe_max']}")
+    log(f"воронка: вселенная {f.get('universe_total')} -> klines {f.get('klines_fetched')} -> "
+        f"Этап A прошли {f.get('passed')}")
+    rej = f.get("rejects_by_reason") or {}
+    if rej:
+        parts = ", ".join(f"{a}={b}" for a, b in sorted(rej.items(), key=lambda x: -x[1]))
+        log("  отсев Этапа A: " + parts)
+    log(f"импульс>=x{p['k']}: ВЗЯТО {rep['selected_count']} из {rep['passed_stage_a']} "
+        f"прошедших Этап A; сетапов у взятых: {rep['setups_selected_count']}")
+    log("\nВЗЯТЫЕ (по убыванию импульса):")
+    for x in rep["selected"][:30]:
+        su = ", ".join(f"{s['tf']}:{s['status']}({s['score']})" for s in x["setups"]) or "—"
+        log(f"  {x['symbol']:12} x{x['impulse_ratio']:<5} скор {x['score']:<5} сетапы: {su}")
+    if not rep["selected"]:
+        log("  (никто не прошёл импульс-порог)")
+
+
+def main(argv=None):
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Скринер монет по параметрам (импульс)")
+    ap.add_argument("--k", type=float, default=1.5, help="порог импульса (x среднего)")
+    ap.add_argument("--days", type=int, default=14, help="окно среднего объёма, дней")
+    ap.add_argument("--universe-max", type=int, default=150, help="сколько топ-по-обороту тянуть")
+    ap.add_argument("--rps", type=int, default=1, help="троттл запросов к Bybit")
+    ap.add_argument("--db-path", default=None, help="изолированная SQLite (по умолчанию tmp)")
+    ap.add_argument("--json-out", default=None, help="сохранить отчёт JSON")
+    args = ap.parse_args(argv)
+
+    rep = run_screener(k=args.k, days=args.days, universe_max=args.universe_max,
+                       rps=args.rps, db_path=args.db_path)
+    print_report(rep)
+    if args.json_out:
+        import json
+
+        with open(args.json_out, "w") as fp:
+            json.dump(rep, fp, ensure_ascii=False, indent=2)
+        print(f"\nJSON отчёт: {args.json_out}")
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(main())
