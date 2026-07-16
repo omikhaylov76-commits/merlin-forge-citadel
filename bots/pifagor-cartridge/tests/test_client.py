@@ -46,11 +46,11 @@ def _client(rec: _Rec) -> CoreClient:
 
 def test_heartbeat_posts_expected():
     rec = _Rec()
-    _client(rec).heartbeat(status="running", uptime_s=12.0, contract_version="v0")
+    _client(rec).heartbeat(status="running", uptime_s=12.0, contract_version="v1")
     (r,) = rec.reqs
     assert r["method"] == "POST" and r["path"] == "/v1/telemetry/heartbeat"
     assert r["auth"] == "Bearer tok"
-    assert r["body"] == {"status": "running", "uptime_s": 12.0, "contract_version": "v0"}
+    assert r["body"] == {"status": "running", "uptime_s": 12.0, "contract_version": "v1"}
 
 
 def test_empty_batches_not_sent():
@@ -101,7 +101,7 @@ def test_network_error_is_transient():
     c = CoreClient(base_url="http://core", token="t",
                    client=httpx.Client(transport=httpx.MockTransport(boom)))
     with pytest.raises(TransientError):
-        c.heartbeat(status="running", uptime_s=1.0, contract_version="v0")
+        c.heartbeat(status="running", uptime_s=1.0, contract_version="v1")
 
 
 def test_permanent_error_carries_status_but_not_body():

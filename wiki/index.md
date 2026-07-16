@@ -17,7 +17,7 @@ updated: 2026-07-10
 - [core-api](concepts/core-api.md) — API ядра на MFC-001: ручки, auth, миграции, запуск.
 - [domain-model](concepts/domain-model.md) — таблицы домена (единый источник; миграция 0001 отсюда).
 - [bot-contract](concepts/bot-contract.md) — Контракт Бота v0: вход/телеметрия/команды/гарантии.
-- [telemetry-schemas](concepts/telemetry-schemas.md) — заглушка: JSON-схемы появятся с paper-bot (schema-first).
+- [telemetry-schemas](concepts/telemetry-schemas.md) — JSON-схемы Контракта (v1): 5 каналов телеметрии (+scout) + команды; schema-first, sync-гвозди.
 - [threat-model](concepts/threat-model.md) — 9 угроз и ответы платформы.
 - [keys-policy](concepts/keys-policy.md) — жизненный цикл ключей клиента.
 
@@ -37,6 +37,7 @@ updated: 2026-07-10
 - [0013](decisions/0013-instances-deferred-fk.md) — отложенные FK у instances (материализуем без родителей, YAGNI).
 - [0014](decisions/0014-malysh-merlin-reference.md) — «Малыш Мерлин»: архив @b75bd17 + тег + залоченный профиль-эталон + инвариант «клонируй-не-редактируй».
 - [0015](decisions/0015-cartridge-deploy-registry-model.md) — модель деплоя картриджей: публичный образ на демо (hobby) → приватный+registry-cred на go-live (Pro/Docker); C отклонён.
+- [0016](decisions/0016-scout-channel-onboard-scout.md) — scout-канал Контракта v1 (5-й, replace-снимок сетапов) + онбординг штатного скаута из обёртки; закон №6 уточнён; 6 условий включения (fail-closed); go-live гейт.
 
 ## reference
 - [reference/README](../reference/README.md) — «Малыш Мерлин»: профиль-эталон v8.3 (в дереве) + архив @b75bd17 (release-ассет, SHA256) + инвариант.

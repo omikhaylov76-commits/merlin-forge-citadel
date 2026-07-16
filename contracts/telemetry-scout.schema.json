@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://merlinforge.local/contracts/v1/telemetry-scout.schema.json",
+  "title": "Bot Contract v1 — scout setups snapshot",
+  "description": "POST /v1/telemetry/scout (ручка/таблица/readout — #52) — движко-нейтральный СНИМОК сетапов скаута. Массив per (instance, symbol, tf). REPLACE-семантика (upsert по ключу, полный текущий набор заменяет прежний), НЕ append — ровно почему events не подошёл: канбан требует замену состояния, а не журнал событий. Свободные поля (symbol, *_version, producer) — недоверенный ввод (экранируются на выводе). Кап свечей ≤500 (413 при превышении — в ядре, #52). Пятый телеметрический канал Контракта (ADR-0016, расширяет ADR-0002).",
+  "type": "array",
+  "maxItems": 500,
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["symbol", "tf", "state", "score", "scan_ts", "orders_ts", "data_upto", "detector_version", "config_fingerprint", "config_mismatch", "producer"],
+    "properties": {
+      "symbol": {"type": "string", "maxLength": 40, "description": "инструмент (недоверенный ввод)"},
+      "tf": {"enum": ["4h", "1h"], "description": "сигнальный ТФ сетапа (SCOUT_TF)"},
+      "state": {"enum": ["forming", "tracking", "ready"], "description": "стадия находки скаута (движковые статусы; committed/dead — не снимок, а история)"},
+      "score": {"type": "number", "description": "оценка качества монеты 0–100 (scout/universe; НЕ 'gild')"},
+      "bars_since_anchor": {"type": "integer", "minimum": 0, "description": "свежесть в барах от вершины B (у forming может отсутствовать)"},
+      "levels": {
+        "type": "array",
+        "description": "разметка сетапа (у forming пусто — уровней ещё нет). role∈A|B|entry_0382|entry_05|entry_0618|stop",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["role", "price"],
+          "properties": {
+            "role": {"enum": ["A", "B", "entry_0382", "entry_05", "entry_0618", "stop"]},
+            "price": {"type": "number", "exclusiveMinimum": 0}
+          }
+        }
+      },
+      "klines_tf": {"enum": ["15m", "5m"], "description": "ТФ ПРОРИСОВКИ графика (младше сетапного: 15m для 4h, 5m для 1h) — только для детализации рисунка"},
+      "klines": {
+        "type": "array",
+        "maxItems": 500,
+        "description": "свечи для графика сетапа (кап ≤500). time — epoch ms.",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["time", "o", "h", "l", "c", "v"],
+          "properties": {
+            "time": {"type": "integer", "description": "open-time бара, epoch ms"},
+            "o": {"type": "number"},
+            "h": {"type": "number"},
+            "l": {"type": "number"},
+            "c": {"type": "number"},
+            "v": {"type": "number", "minimum": 0}
+          }
+        }
+      },
+      "orders": {
+        "type": "array",
+        "description": "РЕАЛЬНЫЕ выставленные ордера из книги движка (build_monitor/orders_open_all), не гипотеза",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["order_id", "side", "type", "px", "qty", "status"],
+          "properties": {
+            "order_id": {"type": "string", "maxLength": 80},
+            "side": {"type": "string", "maxLength": 8, "description": "сторона ордера (недоверенный; нормализацию casing выберет продюсер, #52)"},
+            "type": {"type": "string", "maxLength": 16, "description": "тип ордера (limit/market/…)"},
+            "px": {"type": "number", "description": "цена ордера"},
+            "qty": {"type": "number", "exclusiveMinimum": 0},
+            "status": {"type": "string", "maxLength": 24}
+          }
+        }
+      },
+      "position": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["side", "avg_px", "size", "live_pnl"],
+        "description": "текущая позиция по инструменту, либо null (нет позиции). required применяется только к object-ветви (null проходит)",
+        "properties": {
+          "side": {"type": "string", "maxLength": 8},
+          "avg_px": {"type": "number"},
+          "size": {"type": "number"},
+          "live_pnl": {"type": "number", "description": "нереализованный PnL"}
+        }
+      },
+      "scan_ts": {"type": "string", "format": "date-time", "description": "когда скаут произвёл находки"},
+      "orders_ts": {"type": "string", "format": "date-time", "description": "когда прочитаны ордера/позиция из книги движка"},
+      "data_upto": {"type": "string", "format": "date-time", "description": "время последнего покрытого бара (актуальность данных)"},
+      "detector_version": {"type": "string", "maxLength": 40, "description": "версия детектора движка (напр. снимок b75bd17)"},
+      "config_fingerprint": {"type": "string", "maxLength": 80, "description": "отпечаток эффективных крутилок скаута"},
+      "config_mismatch": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["flag"],
+        "description": "расхождение конфига скаута vs эффективного конфига воркера (литералы scan.py vs runtime ConfigStore, ADR-0016 д). flag=true → консоль ОБЯЗАНА показать плашку.",
+        "properties": {
+          "flag": {"type": "boolean"},
+          "details": {"type": "object", "description": "структурированный список разошедшихся крутилок (ema/shorts/reanchor/stop_fib/…); намеренно открыт (произвольные ключи-крутилки)"}
+        }
+      },
+      "producer": {"type": "string", "maxLength": 40, "description": "кто произвёл снимок (напр. pifagor-scout); в режиме представителя — чей это скаут"}
+    }
+  },
+  "examples": [
+    [
+      {
+        "symbol": "BTCUSDT", "tf": "4h", "state": "ready", "score": 78, "bars_since_anchor": 3,
+        "levels": [
+          {"role": "B", "price": 72000.0},
+          {"role": "A", "price": 68000.0},
+          {"role": "entry_0382", "price": 70472.0},
+          {"role": "entry_05", "price": 70000.0},
+          {"role": "entry_0618", "price": 69528.0},
+          {"role": "stop", "price": 68000.0}
+        ],
+        "klines_tf": "15m",
+        "klines": [
+          {"time": 1720699200000, "o": 71000.0, "h": 71500.0, "l": 70800.0, "c": 71200.0, "v": 123.4}
+        ],
+        "orders": [
+          {"order_id": "o-1", "side": "buy", "type": "limit", "px": 70472.0, "qty": 0.01, "status": "new"}
+        ],
+        "position": null,
+        "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
+        "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:abcd1234",
+        "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout"
+      },
+      {
+        "symbol": "WIFUSDT", "tf": "4h", "state": "forming", "score": 41,
+        "levels": [], "klines_tf": "15m", "klines": [], "orders": [], "position": null,
+        "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
+        "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:abcd1234",
+        "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout"
+      }
+    ],
+    [
+      {
+        "symbol": "ETHUSDT", "tf": "1h", "state": "tracking", "score": 63, "bars_since_anchor": 7,
+        "levels": [
+          {"role": "B", "price": 4000.0},
+          {"role": "A", "price": 3800.0},
+          {"role": "entry_0382", "price": 3923.6},
+          {"role": "entry_05", "price": 3900.0},
+          {"role": "entry_0618", "price": 3876.4},
+          {"role": "stop", "price": 3800.0}
+        ],
+        "klines_tf": "5m", "klines": [],
+        "orders": [],
+        "position": {"side": "long", "avg_px": 3905.0, "size": 0.5, "live_pnl": -12.5},
+        "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
+        "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:deadbeef",
+        "config_mismatch": {"flag": true, "details": {"reanchor_after_scalp": {"scout": true, "worker": false}}},
+        "producer": "pifagor-scout-perceval"
+      }
+    ]
+  ]
+}

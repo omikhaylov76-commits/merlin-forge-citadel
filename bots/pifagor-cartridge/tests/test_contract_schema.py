@@ -33,7 +33,7 @@ def _monitor() -> dict:
 
 def test_heartbeat_payload_valid():
     for status in ("running", "paused", "stopping", "error"):
-        payload = {"status": status, "uptime_s": 1.0, "contract_version": "v0"}
+        payload = {"status": status, "uptime_s": 1.0, "contract_version": "v1"}
         jsonschema.validate(payload, _schema("telemetry-heartbeat.schema.json"),
                             format_checker=_FMT)
 

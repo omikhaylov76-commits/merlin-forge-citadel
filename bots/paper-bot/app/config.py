@@ -1,4 +1,4 @@
-"""Конфиг картриджа — вход по Контракту Бота v0 (env при старте контейнера, bot-contract.md).
+"""Конфиг картриджа — вход по Контракту Бота v1 (env при старте контейнера, bot-contract.md).
 
 Секретов биржи в paper-режиме нет (EXCHANGE_* игнорируем). Минимум зависимостей: os.environ +
 dataclass, без pydantic. MF_INSTANCE_ID/MF_INSTANCE_TOKEN обязательны — иначе картридж не стартует.
@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-CONTRACT_VERSION = "v0"  # декларируется в heartbeat (ядро в v1 только записывает)
+CONTRACT_VERSION = "v1"  # декларируется в heartbeat (ядро в v1 только записывает; scout-канал ADR-0016)
 
 
 @dataclass(frozen=True)

@@ -33,11 +33,11 @@ def _client(rec: _Rec) -> CoreClient:
 
 def test_heartbeat_posts_expected():
     rec = _Rec()
-    _client(rec).heartbeat(status="running", uptime_s=12.0, contract_version="v0")
+    _client(rec).heartbeat(status="running", uptime_s=12.0, contract_version="v1")
     (r,) = rec.reqs
     assert r["method"] == "POST" and r["path"] == "/v1/telemetry/heartbeat"
     assert r["auth"] == "Bearer tok"
-    assert r["body"] == {"status": "running", "uptime_s": 12.0, "contract_version": "v0"}
+    assert r["body"] == {"status": "running", "uptime_s": 12.0, "contract_version": "v1"}
 
 
 def test_push_equity_and_trades():

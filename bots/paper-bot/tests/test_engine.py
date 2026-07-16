@@ -109,5 +109,5 @@ def test_never_reports_when_stopped():
     assert e.state == "stopped"
     with pytest.raises(ValidationError):
         _validator("telemetry-heartbeat").validate(
-            {"status": "stopped", "uptime_s": 1, "contract_version": "v0"}
+            {"status": "stopped", "uptime_s": 1, "contract_version": "v1"}
         )

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlinforge.local/contracts/v0/command.schema.json",
-  "title": "Bot Contract v0 — command response",
+  "$id": "https://merlinforge.local/contracts/v1/command.schema.json",
+  "title": "Bot Contract v1 — command response",
   "description": "Ответ GET /v1/commands/next. Канон команд: pause · resume · stop_close (start не существует — бот стартует env'ом). cmd=none → cmd_id null (за окно ничего).",
   "type": "object",
   "additionalProperties": false,

@@ -37,7 +37,7 @@ sources: [_curator/DIRECTIVES.md#11]
 - [x] 6. Коммит локальных артефактов (dd4b3db) — reference/ + ADR-0014 + index + progress
 - [x] 7. **F2 (внешние записи, #22):** (a) тег `malysh-merlin/v8.3-b75bd17` в pifagor-v81 + release ✓;
       (b) release Цитадели + ассет tar.gz ✓; SHA256 загруженного == README (04f81c61…) ✓
-- [~] 8. roadmap (#11 done) + log ✓ → merge ветки в main (--no-ff) → QUEUE «#11 готово к разбору»
+- [x] 8. roadmap (#11 done) + log ✓ → merge ветки в main --no-ff (01cff77) → QUEUE «#11 готово к разбору» ✓
 
 ## Границы
 pifagor-v81 не править (только тег-указатель + чтение клона); архив/профиль — read-only; реальные

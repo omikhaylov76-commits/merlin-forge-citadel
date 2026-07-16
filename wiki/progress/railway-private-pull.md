@@ -21,8 +21,8 @@ sources: [_curator/DIRECTIVES.md#46, wiki/handoffs/HANDOFF_2026-07-12_session_5.
 - [x] 2. `config.py` + `main.py` (39db511): ghcr_pull_username/ghcr_pull_token/railway_environment_id → драйвер.
 - [x] 3. `test_railway_driver.py` (39db511): +5 тестов (креды есть/нет, образ запущен после create и adopt,
         env из конфига без лишнего запроса). ruff clean, **28 passed**.
-- [~] 4. Код доказан на unit (MockTransport). ЖИВАЯ проверка формы (Railway примет registryCredentials +
-        serviceInstanceDeploy) — на з.2 (реальный деплой Персиваля с PAT). Затем code-reviewer + merge в main.
+- [x] 4. Код доказан на unit (MockTransport). ЖИВАЯ проверка формы (Railway принял registryCredentials +
+        serviceInstanceDeploy) подтверждена на з.2 (деплой Персиваля). Влит в main (d9a0531).
 
 ## Статус
 Ветка готова, ждёт PAT Оператора (orchestrator/.env `GHCR_PULL_TOKEN=`). Как впишет → з.2: DRIVER=railway,

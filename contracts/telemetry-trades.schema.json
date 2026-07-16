@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlinforge.local/contracts/v0/telemetry-trades.schema.json",
-  "title": "Bot Contract v0 — trades batch",
+  "$id": "https://merlinforge.local/contracts/v1/telemetry-trades.schema.json",
+  "title": "Bot Contract v1 — trades batch",
   "description": "POST /v1/telemetry/trades — батч сделок. Dedup по (instance, exec_id биржи) — НЕ по ts (со-секундные сделки, COH4). Батч ограничен (413 → бот дробит).",
   "type": "array",
   "maxItems": 500,

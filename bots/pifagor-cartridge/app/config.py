@@ -1,4 +1,4 @@
-"""Конфиг картриджа Пифагора — вход по Контракту Бота v0 (env при старте контейнера).
+"""Конфиг картриджа Пифагора — вход по Контракту Бота v1 (env при старте контейнера).
 
 Две группы env:
 1. MF_* — сторона Контракта (адрес ядра, токен инстанса, каденции). Как у эталона `bots/paper-bot`.
@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-CONTRACT_VERSION = "v0"  # декларируется в heartbeat (ядро в v1 только записывает)
+CONTRACT_VERSION = "v1"  # декларируется в heartbeat (ядро в v1 только записывает; scout-канал ADR-0016)
 
 
 @dataclass(frozen=True)

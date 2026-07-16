@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://merlinforge.local/contracts/v0/telemetry-events.schema.json",
-  "title": "Bot Contract v0 — events batch",
+  "$id": "https://merlinforge.local/contracts/v1/telemetry-events.schema.json",
+  "title": "Bot Contract v1 — events batch",
   "description": "POST /v1/telemetry/events — батч событий. Dedup по (instance, ts, kind). kind=key_perms {withdraw_enabled} — раз в сутки; включённый вывод → алерт+автопауза (SEC3).",
   "type": "array",
   "maxItems": 500,
