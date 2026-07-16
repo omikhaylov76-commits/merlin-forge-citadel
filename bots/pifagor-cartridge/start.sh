@@ -79,8 +79,10 @@ start_scout_if_enabled() {
   # супервизор
   SCOUT_RSS_CAP_MB="${SCOUT_RSS_CAP_MB:-300}"
   SCOUT_CHECK_SEC="${SCOUT_CHECK_SEC:-30}"
-  SCOUT_MAX_SILENCE_SEC="${SCOUT_MAX_SILENCE_SEC:-180}"
-  SCOUT_GRACE_SEC="${SCOUT_GRACE_SEC:-180}"
+  # #55/П2: дефолты с 180 подняты — холодный Этап A (300 монет @ RPS=1 ≈356с) > 180 → рестарт-цикл.
+  # max_silence ВЫШЕ SCOUT_BAN_SLEEP_SEC(600), иначе штатный 403-backoff убил бы скаут. Проверено env Галахада.
+  SCOUT_MAX_SILENCE_SEC="${SCOUT_MAX_SILENCE_SEC:-1200}"
+  SCOUT_GRACE_SEC="${SCOUT_GRACE_SEC:-1800}"
   # разведение бёрстов (ADR-0016 в.5): дефолты обёртки; per-instance крутилки прокидываются из env.
   SCOUT_RPS="${SCOUT_RPS:-1}"
   SCOUT_LIST_MAX="${SCOUT_LIST_MAX:-50}"
