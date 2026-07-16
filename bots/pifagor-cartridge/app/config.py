@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-CONTRACT_VERSION = "v1"  # декларируется в heartbeat (ядро в v1 только записывает; scout-канал ADR-0016)
+CONTRACT_VERSION = "v1"  # декларируется в heartbeat; scout-канал ADR-0016 (ядро только пишет)
 
 
 @dataclass(frozen=True)
