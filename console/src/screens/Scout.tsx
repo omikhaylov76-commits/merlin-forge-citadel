@@ -17,6 +17,7 @@ export function Scout() {
   const [onlyReady, setOnlyReady] = useState(false)
   const [minScore, setMinScore] = useState(false)
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null)
+  const [tf, setTf] = useState<'4h' | '1h'>('4h') // С7-1: активный ТФ доски
 
   // дефолт селектора = инстанс с самыми свежими снимками (режим представителя, ADR-0016 в.6);
   // сброс, если выбранный инстанс исчез из обновлённого флота (иначе показ пустого не того бота).
@@ -31,21 +32,34 @@ export function Scout() {
   const instances = board.data?.instances ?? []
   const byInstance = board.data?.byInstance ?? {}
   const hasAnyData = Object.values(byInstance).some((s) => s.length > 0)
-  const snaps = selected ? (byInstance[selected] ?? []) : []
-  const producer = snaps[0]?.producer ?? '—'
-  const freshest = snaps.reduce<ScoutSnapshot | null>(
+  const snaps = selected ? (byInstance[selected] ?? []) : [] // ВСЕ ТФ выбранного инстанса
+  // С7-1: доска tf-aware — колонки/пустые/свежесть считаем по активному ТФ; счётчики чипов — от полного snaps.
+  const count4h = snaps.filter((s) => s.tf === '4h').length
+  const count1h = snaps.filter((s) => s.tf === '1h').length
+  const tfSnaps = snaps.filter((s) => s.tf === tf)
+  const producer = tfSnaps[0]?.producer ?? snaps[0]?.producer ?? '—'
+  const freshest = tfSnaps.reduce<ScoutSnapshot | null>(
     (a, s) => (!a || Date.parse(s.scan_ts) > Date.parse(a.scan_ts) ? s : a),
     null,
   )
 
+  // С7-1: дефолт ТФ = ТФ самого свежего снимка инстанса; пере-выводим при смене инстанса/данных
+  // (ручной клик по чипу живёт до следующей смены инстанса — эффект не зависит от tf).
+  useEffect(() => {
+    const list = selected ? (byInstance[selected] ?? []) : []
+    if (!list.length) return
+    const fresh = list.reduce((a, s) => (Date.parse(s.scan_ts) > Date.parse(a.scan_ts) ? s : a))
+    setTf(fresh.tf)
+  }, [selected, byInstance])
+
   const byCol = useMemo(() => {
-    let list = snaps
+    let list = snaps.filter((s) => s.tf === tf) // С7-1: только активный ТФ
     if (onlyReady) list = list.filter((s) => boardColumn(s) === 'ready')
     if (minScore) list = list.filter((s) => s.score >= 35)
     const m: Record<string, ScoutSnapshot[]> = { forming: [], tracking: [], ready: [], committed: [] }
     for (const s of sortSnaps(list)) m[boardColumn(s)].push(s)
     return m
-  }, [snaps, onlyReady, minScore])
+  }, [snaps, tf, onlyReady, minScore])
 
   return (
     <div className="mx-auto max-w-[1880px]">
@@ -79,6 +93,25 @@ export function Scout() {
         }
       />
       <Toolbar>
+        <Chip
+          active={tf === '4h'}
+          onClick={() => {
+            setTf('4h')
+            setDetail(null)
+          }}
+        >
+          4h · {count4h}
+        </Chip>
+        <Chip
+          active={tf === '1h'}
+          onClick={() => {
+            setTf('1h')
+            setDetail(null)
+          }}
+        >
+          1h · {count1h}
+        </Chip>
+        <span className="mx-1 self-center text-ash">·</span>
         <Chip active={onlyReady} onClick={() => setOnlyReady((v) => !v)}>
           Только готовые
         </Chip>
@@ -95,10 +128,16 @@ export function Scout() {
         <SkeletonBoard />
       ) : board.error ? (
         <EmptyState kind="error" msg={board.error.message} onRetry={board.reload} />
-      ) : !hasAnyData && snaps.length === 0 ? (
+      ) : !hasAnyData ? (
         <EmptyState kind="silent" />
       ) : snaps.length === 0 ? (
         <EmptyState kind="quiet" />
+      ) : tfSnaps.length === 0 ? (
+        <EmptyState
+          kind="tf-empty"
+          tf={tf}
+          otherHint={tf === '4h' ? `1h · ${count1h}` : `4h · ${count4h}`}
+        />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {COLUMNS.map((col) => (
@@ -153,10 +192,14 @@ function EmptyState({
   kind,
   msg,
   onRetry,
+  tf,
+  otherHint,
 }: {
-  kind: 'error' | 'silent' | 'quiet'
+  kind: 'error' | 'silent' | 'quiet' | 'tf-empty'
   msg?: string
   onRetry?: () => void
+  tf?: string
+  otherHint?: string
 }) {
   if (kind === 'error') {
     return (
@@ -178,12 +221,23 @@ function EmptyState({
       </Card>
     )
   }
+  if (kind === 'tf-empty') {
+    return (
+      <Card className="flex flex-col items-center gap-2 py-12 text-center">
+        <div className="text-[15px] text-mist">На ТФ {tf} снимков нет</div>
+        <div className="max-w-md text-[12px] text-ash">
+          У этого бота сейчас нет сетапов на выбранном таймфрейме. Переключись на другой ТФ
+          {otherHint ? ` (${otherHint})` : ''}.
+        </div>
+      </Card>
+    )
+  }
   return (
     <Card className="flex flex-col items-center gap-2 py-12 text-center">
       <div className="text-[15px] text-mist">Рынок тихий — сетапов нет</div>
       <div className="max-w-md text-[12px] text-ash">
-        Скаут этого бота на связи, но сейчас подходящих сетапов не нашёл. Это норма — сетапы на 4h
-        бывают не каждый час.
+        Скаут этого бота на связи, но сейчас подходящих сетапов не нашёл. Это норма — сетапы
+        бывают не каждый бар.
       </div>
     </Card>
   )

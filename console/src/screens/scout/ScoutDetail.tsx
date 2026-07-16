@@ -40,7 +40,9 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
       autoSize: true,
       layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: css('--color-ash') },
       grid: { vertLines: { color: css('--color-line') }, horzLines: { color: css('--color-line') } },
-      timeScale: { timeVisible: true, secondsVisible: false, borderColor: css('--color-line') },
+      // С7-1: rightOffset — воздух справа (директива). Держится при авто-скролле/fitContent;
+      // сам по себе НЕ перебивает явный setVisibleLogicalRange ниже — потому AIR продублирован в правую границу.
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: css('--color-line'), rightOffset: 13 },
       rightPriceScale: { borderColor: css('--color-line') },
     })
     const candles = chart.addCandlestickSeries({
@@ -95,9 +97,12 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
       })
     }
     // #56: показываем последние ~80 баров (окно), остальное за кадром — Оператор сам зумит/листает.
+    // С7-1: AIR пустых баров справа (воздух между последним баром и шкалой) — правую границу тянем ЗА
+    // последний индекс, LWC рисует whitespace. Явный диапазон перекрыл бы опцию rightOffset, потому AIR тут.
     const N = 80
+    const AIR = 13
     const n = rows.length
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - N), to: n - 1 })
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - N), to: n - 1 + AIR })
     // защита от растяжения ТОЛЬКО для БЕДНОГО снимка (<15 баров): при нём окно = весь ряд, бары
     // раздулись бы во весь экран. На плотном ряде НЕ капим (кап 14 зря сжимал бы). Порог баров — не зума.
     const scale = chart.timeScale()

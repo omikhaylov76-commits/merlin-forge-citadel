@@ -25,6 +25,9 @@ export function ScoutCard({ snap, onOpen }: { snap: ScoutSnapshot; onOpen: () =>
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <b className="text-[13px] text-bone">{snap.symbol}</b>
+          <span className="rounded-pill border border-copper/30 px-1.5 text-[10px] text-copper">
+            {snap.tf}
+          </span>
           <span className="rounded-pill border border-line px-1.5 text-[10px] text-ash">long</span>
           {snap.config_mismatch?.flag && (
             <span className="text-danger" title="конфиг разведки разошёлся с движком">
