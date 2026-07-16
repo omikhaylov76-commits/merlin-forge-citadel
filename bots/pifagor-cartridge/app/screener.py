@@ -81,19 +81,21 @@ def select_candidates(rows, *, k=1.5, days=14, tf="4h", klines_of=None):
 
 
 # ── ЖИВОЙ прогон (тянет Bybit; за гейтом Куратора) ───────────────────────────
-def run_screener(*, k=1.5, days=14, universe_max=150, rps=1, db_path=None, log=print):
+def run_screener(*, k=1.5, days=14, universe_max=150, rps=1, min_age_days=180,
+                 min_turnover_usd=5_000_000, db_path=None, log=print):
     """Разовый прогон по параметрам: Этап A вендора (возраст/оборот) → импульс из кэша 4h →
     Этап B скан (оба ТФ) → структурированный отчёт. Изолированная SQLite (db_path), троттл rps.
 
-    Тянет публичный Bybit. Запуск — по прямому слову Оператора, отчёт-only (на доску НЕ льём).
-    Vendor импортируется лениво — чистые функции выше сети/vendor не касаются (юнит-тест офлайн)."""
+    Тянет публичный Bybit. Vendor импортируется лениво — чистые функции сети/vendor не касаются."""
     import json as _json
     import os
     import tempfile
 
     # scout.config читает env на импорте → задаём ДО импорта vendor; DATABASE_URL убираем
-    os.environ.setdefault("SCOUT_UNIVERSE_MAX", str(universe_max))
-    os.environ.setdefault("SCOUT_RPS", str(rps))
+    os.environ["SCOUT_UNIVERSE_MAX"] = str(universe_max)
+    os.environ["SCOUT_RPS"] = str(rps)
+    os.environ["SCOUT_MIN_AGE_DAYS"] = str(min_age_days)
+    os.environ["SCOUT_MIN_TURNOVER_USD"] = str(min_turnover_usd)
     os.environ.pop("DATABASE_URL", None)
 
     from app.reader import _ensure_vendor_on_path
@@ -117,29 +119,36 @@ def run_screener(*, k=1.5, days=14, universe_max=150, rps=1, db_path=None, log=p
             setups_by_symbol.setdefault(f["symbol"], []).append(
                 {"tf": f.get("tf"), "status": f.get("status"), "score": f.get("score")})
 
+        struct = {"beyond_universe_cap", "stablecoin"}  # klines не тянули → не в таблицу
         rows = []
         for r in db.scout_universe_all():
             payload = r["payload"]
             if isinstance(payload, str):
                 payload = _json.loads(payload)
-            if payload.get("rejects"):
-                continue  # не прошёл Этап A (возраст/оборот/…) — не кандидат
+            rejects = payload.get("rejects") or []
+            if struct & set(rejects):
+                continue
             sym = r["symbol"]
+            score = round(float(r.get("score") or 0.0), 1)
+            if rejects:  # отсеян Этапом A — в таблицу с причиной, импульс не мерим
+                rows.append({"symbol": sym, "score": score, "impulse_ratio": None,
+                             "selected": False, "reject_reason": rejects[0], "setups": []})
+                continue
             win = db.scout_klines_read_window(sym, "4h", lb + 1)
             ratio = impulse_ratio(volumes_of(win), lookback_bars=lb)
             imp_ok = ratio is not None and ratio >= k
             rows.append({
-                "symbol": sym,
-                "score": round(float(r.get("score") or 0.0), 1),
+                "symbol": sym, "score": score,
                 "impulse_ratio": round(ratio, 3) if ratio is not None else None,
-                "impulse_ok": imp_ok,
                 "selected": imp_ok,  # прошёл Этап A (rejects пуст) + импульс
+                "reject_reason": None if imp_ok else "low_impulse",
                 "setups": setups_by_symbol.get(sym, []),
             })
     finally:
         db.close()
 
-    rows.sort(key=lambda x: (x["impulse_ratio"] or 0.0), reverse=True)
+    # взятые — вверх по импульсу; затем прочие
+    rows.sort(key=lambda x: (x["selected"], x["impulse_ratio"] or 0.0), reverse=True)
     selected = [x for x in rows if x["selected"]]
     setups_sel = [s for x in selected for s in x["setups"]]
     return {
@@ -147,11 +156,11 @@ def run_screener(*, k=1.5, days=14, universe_max=150, rps=1, db_path=None, log=p
                    "min_age_days": scfg.SCOUT_MIN_AGE_DAYS,
                    "min_turnover_usd": scfg.SCOUT_MIN_TURNOVER_USD, "tfs": scfg.scanned_tfs()},
         "funnel": funnel,
-        "passed_stage_a": len(rows),
+        "passed_stage_a": sum(1 for x in rows if x["reject_reason"] in (None, "low_impulse")),
         "selected_count": len(selected),
         "setups_selected_count": len(setups_sel),
+        "findings": rows,
         "selected": selected,
-        "rejected_by_impulse": [x for x in rows if not x["selected"]],
     }
 
 
@@ -178,20 +187,74 @@ def print_report(rep, log=print):
         log("  (никто не прошёл импульс-порог)")
 
 
+def push_results(core_url, token, run_id, status, *, summary=None, findings=None):
+    """Пуш статуса/результата прогона в ядро (POST /v1/screener/runs/{run_id}/results)."""
+    import json
+    import urllib.request
+
+    body = {"status": status}
+    if summary is not None:
+        body["summary"] = summary
+    if findings is not None:
+        body["findings"] = findings
+    req = urllib.request.Request(
+        f"{core_url.rstrip('/')}/v1/screener/runs/{run_id}/results",
+        data=json.dumps(body).encode(), method="POST",
+        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return r.status
+
+
+def _summary_of(rep):
+    return {k: rep[k] for k in ("params", "funnel", "passed_stage_a", "selected_count",
+                                "setups_selected_count")}
+
+
 def main(argv=None):
     import argparse
+    import os
 
     ap = argparse.ArgumentParser(description="Скринер монет по параметрам (импульс)")
     ap.add_argument("--k", type=float, default=1.5, help="порог импульса (x среднего)")
     ap.add_argument("--days", type=int, default=14, help="окно среднего объёма, дней")
     ap.add_argument("--universe-max", type=int, default=150, help="сколько топ-по-обороту тянуть")
     ap.add_argument("--rps", type=int, default=1, help="троттл запросов к Bybit")
+    ap.add_argument("--min-age-days", type=int, default=180, help="мин. возраст монеты, дней")
+    ap.add_argument("--min-turnover", type=int, default=5_000_000, help="мин. оборот 24ч, USD")
     ap.add_argument("--db-path", default=None, help="изолированная SQLite (по умолчанию tmp)")
     ap.add_argument("--json-out", default=None, help="сохранить отчёт JSON")
+    ap.add_argument("--push", action="store_true", help="пушить результат в ядро (нужен --run-id)")
+    ap.add_argument("--run-id", default=None, help="run_id прогона (для --push)")
     args = ap.parse_args(argv)
 
-    rep = run_screener(k=args.k, days=args.days, universe_max=args.universe_max,
-                       rps=args.rps, db_path=args.db_path)
+    core_url = os.environ.get("MF_CORE_URL", "http://127.0.0.1:8000")
+    token = os.environ.get("MF_INSTANCE_TOKEN", "")
+
+    def _run():
+        return run_screener(k=args.k, days=args.days, universe_max=args.universe_max,
+                            rps=args.rps, min_age_days=args.min_age_days,
+                            min_turnover_usd=args.min_turnover, db_path=args.db_path)
+
+    if args.push:
+        if not args.run_id:
+            ap.error("--push требует --run-id")
+        try:
+            push_results(core_url, token, args.run_id, "running")
+            rep = _run()
+            push_results(core_url, token, args.run_id, "done",
+                         summary=_summary_of(rep), findings=rep["findings"])
+            print(f"пуш done: run_id={args.run_id} findings={len(rep['findings'])}")
+        except Exception as exc:  # прогон/пуш упал → фиксируем error в ядре, чтобы консоль не висла
+            try:
+                push_results(core_url, token, args.run_id, "error",
+                             summary={"error": str(exc)[:300]})
+            except Exception:
+                pass
+            print(f"скринер FAIL: {exc}")
+            return 1
+        return 0
+
+    rep = _run()
     print_report(rep)
     if args.json_out:
         import json

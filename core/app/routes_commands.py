@@ -45,7 +45,12 @@ def _deliver_and_serialize(instance_id: uuid.UUID) -> dict | None:
     sm = get_sessionmaker()
     with sm() as s:
         cmd = deliver_next(s, instance_id, actor=f"instance:{instance_id}")
-        payload = {"cmd": cmd.kind, "cmd_id": str(cmd.id)} if cmd is not None else None
+        if cmd is None:
+            payload = None
+        else:
+            payload = {"cmd": cmd.kind, "cmd_id": str(cmd.id)}
+            if cmd.payload is not None:  # screener_run: {run_id, params} → боту в теле команды
+                payload["payload"] = cmd.payload
         s.commit()
     return payload
 
