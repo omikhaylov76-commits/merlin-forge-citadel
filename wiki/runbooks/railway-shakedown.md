@@ -67,3 +67,14 @@ sources: [decisions/0003-railway-first.md, entities/railway.md, orchestrator/app
 ## Итог
 Допущение №3 подтверждено полностью (deployability + GraphQL-драйвер). **Ф1 технически закрыта.**
 Дальше — **гейт Ф2**: снимок Пифагора (Оператор подтверждает коммит).
+
+## Деплой облачной консоли (#F4, обновлено 2026-07-16)
+Консоль НЕ катится оркестратором (тот деплоит только картриджи `mfc-inst-*`). Сборка `console/Dockerfile`
+идёт **в облаке Railway**, не локально (закон #12; машина Оператора не тянет docker).
+Процесс: `cd console && railway up --service console --environment production --detach` → сборка на
+Railway → URL `console-production-f533.up.railway.app`.
+⚠️ **Обязательно** у сервиса `console` выставлен `rootDirectory=console` (Railway-конфиг, вне git): CLI
+заливает git-КОРЕНЬ репо, и без rootDirectory Railway берёт Railpack на монорепо → билд падает. С
+rootDirectory=console Railway строит из `console/` (там Dockerfile наверху). Выставляется мутацией
+`serviceInstanceUpdate(input:{rootDirectory:"console"})` (см. RailwayDriver._gql). При фейле билда старый
+деплой продолжает раздаваться (Railway не роняет рабочий до успеха нового). Вход — Login.tsx + гейт (#36).
