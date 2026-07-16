@@ -11,7 +11,7 @@ from sqlalchemy import text
 from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
-from app.models import Command, Instance, ScreenerFinding, ScreenerRun
+from app.models import Command, Instance, ScreenerRun
 from tests.crm_helpers import ensure_parents
 
 
@@ -57,7 +57,8 @@ def test_screener_full_flow(clean, users):
     iid = _mk_instance()
 
     # 1) оператор ставит прогон с параметрами (частично дефолтными)
-    r = c.post(f"/v1/instances/{iid}/screener/runs", headers=op, json={"k": 2.0, "universe_max": 80})
+    r = c.post(f"/v1/instances/{iid}/screener/runs", headers=op,
+               json={"k": 2.0, "universe_max": 80})
     assert r.status_code == 201, r.text
     run_id = r.json()["run_id"]
     assert r.json()["status"] == "queued"
@@ -89,7 +90,8 @@ def test_screener_full_flow(clean, users):
         {"symbol": "CROUSDT", "impulse_ratio": 1.55, "score": 72, "selected": True, "setups": []},
     ]
     r = c.post(f"/v1/screener/runs/{run_id}/results", headers=itok,
-               json={"status": "done", "summary": {"passed": 76, "selected": 2}, "findings": findings})
+               json={"status": "done", "summary": {"passed": 76, "selected": 2},
+                     "findings": findings})
     assert r.status_code == 200 and r.json()["status"] == "done"
 
     # 4) оператор читает прогон — статус done + строки
