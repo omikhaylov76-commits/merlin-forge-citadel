@@ -27,13 +27,16 @@ log = logging.getLogger("mfc.pifagor-cartridge")
 
 class PifagorCartridge:
     def __init__(self, client, reader, config: CartridgeConfig,
-                 *, sleep: Callable[[float], None] = time.sleep) -> None:
+                 *, sleep: Callable[[float], None] = time.sleep, scout_reader=None) -> None:
         self._client = client
         self._reader = reader
         self._cfg = config
         self._sleep = sleep
+        self._scout = scout_reader          # None → scout-канал выключен (scout.db нет; флот)
         self._start_mono: float | None = None
         self._last_hb_mono: float | None = None
+        self._last_scout_mono: float | None = None
+        self._last_scan_ms = 0
         self._trade_cursor = 0
         self._event_cursor = 0
 
@@ -55,7 +58,29 @@ class PifagorCartridge:
                 self._last_hb_mono = mono
 
         self._push_telemetry(monitor, now)
+        self._push_scout(mono)
         return self._handle_command(now, mono)
+
+    def _push_scout(self, mono: float) -> None:
+        """Пуш scout-снимка при НОВОМ scan_ts (не каждый цикл; сканы редки). Отдельная scout.db.
+        Пустой набор → пушим (replace: сетапы исчезли → ядро чистит). scout выключен → no-op."""
+        if self._scout is None:
+            return
+        iv = self._cfg.scout_interval_s
+        if self._last_scout_mono is not None and mono - self._last_scout_mono < iv:
+            return
+        self._last_scout_mono = mono
+        try:
+            scan_ms, snaps = self._scout.build_snapshots()
+        except Exception:  # noqa: BLE001 — scout.db недоступна/битая → пропуск, цикл не роняем
+            log.exception("scout: сбор снимков упал — пропуск")
+            return
+        if scan_ms == 0:
+            return                                          # скаут ещё не сканировал — нечего слать
+        if scan_ms <= self._last_scan_ms and self._last_scan_ms != 0:
+            return                                          # не новый скан — не долбим ядро
+        if self._send(lambda: self._client.push_scout(snaps), "scout"):
+            self._last_scan_ms = scan_ms
 
     def _push_telemetry(self, monitor: dict, now: datetime) -> None:
         # equity — точка за ts=now; дедуп ядром по (instance, ts). Сбой → новая точка на след. тике.

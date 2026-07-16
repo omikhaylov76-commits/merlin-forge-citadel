@@ -80,7 +80,7 @@
       "orders_ts": {"type": "string", "format": "date-time", "description": "когда прочитаны ордера/позиция из книги движка"},
       "data_upto": {"type": "string", "format": "date-time", "description": "время последнего покрытого бара (актуальность данных)"},
       "detector_version": {"type": "string", "maxLength": 40, "description": "версия детектора движка (напр. снимок b75bd17)"},
-      "config_fingerprint": {"type": "string", "maxLength": 80, "description": "отпечаток эффективных крутилок скаута"},
+      "config_fingerprint": {"type": "string", "maxLength": 80, "description": "отпечаток эффективного конфига движка по крутилкам сетапа (SHORTS/EMA/REANCHOR/STOP_FIB); меняется при смене конфига"},
       "config_mismatch": {
         "type": "object",
         "additionalProperties": false,
@@ -88,7 +88,7 @@
         "description": "расхождение конфига скаута vs эффективного конфига воркера (литералы scan.py vs runtime ConfigStore, ADR-0016 д). flag=true → консоль ОБЯЗАНА показать плашку.",
         "properties": {
           "flag": {"type": "boolean"},
-          "details": {"type": "object", "description": "структурированный список разошедшихся крутилок (ema/shorts/reanchor/stop_fib/…); намеренно открыт (произвольные ключи-крутилки)"}
+          "details": {"type": "object", "description": "разошедшиеся крутилки, ключи = имена движка as-is UPPERCASE (SHORTS_ENABLED/EMA_FILTER_ENABLED/REANCHOR_AFTER_SCALP/STOP_FIB); открыт"}
         }
       },
       "producer": {"type": "string", "maxLength": 40, "description": "кто произвёл снимок (напр. pifagor-scout); в режиме представителя — чей это скаут"}
@@ -142,7 +142,7 @@
         "position": {"side": "long", "avg_px": 3905.0, "size": 0.5, "live_pnl": -12.5},
         "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
         "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:deadbeef",
-        "config_mismatch": {"flag": true, "details": {"reanchor_after_scalp": {"scout": true, "worker": false}}},
+        "config_mismatch": {"flag": true, "details": {"REANCHOR_AFTER_SCALP": {"scout": true, "worker": false}}},
         "producer": "pifagor-scout-perceval"
       }
     ]

@@ -40,10 +40,19 @@ updated: 2026-07-16
 
 **#51 ЗАКРЫТ (2026-07-16).** Стоп — жду директиву #52 (труба целиком: ручка ядра + таблица/миграция 0009 + readout + адаптер scout_reader/mapper/push + сквозняк локально). Сам не начинаю. В облако не катим.
 
-## #52 — Ядро + readout (ещё НЕ начат)
-- [ ] приёмная ручка `POST /v1/telemetry/scout` + таблица (upsert-снимок) + миграция
-- [ ] Pydantic-зеркало scout-снимка (полное schema↔модель) + fleet/readout-эндпоинт
-- [ ] config_mismatch — доводится до консоли (плашка)
+## #52 — Труба целиком (В РАБОТЕ)
+Последний коммит: f9d3a94 · ядро+readout+адаптер+сквозняк локально. 0 vendor, консоль #53, SCOUT_ENABLED не выставлять, в облако не катить.
+- [~] Ядро: ручка `POST /v1/telemetry/scout` (principal instance, SEC7) + Pydantic-зеркало `ScoutSnapshotIn` (полное, все required вкл. data_upto) + replace-семантика (upsert (instance,symbol,tf) + удаление выпавших) + капы 413
+- [~] Миграция 0009 `scout_snapshots` (down_revision 0008_billing_lifecycle)
+- [~] Readout `GET /v1/instances/{id}/scout` (require_role operator)
+- [~] Адаптер: `scout_reader.py` (DB owner=False db_path=scout.db, триггер по scan_ts) + `mapper.py` (снимок+orders/position+config_mismatch 4 крутилки+detector_version/fingerprint/producer) + push в bot.py
+- [~] Хвост #51: зачистка DATABASE_URL дочернему скауту + правка ADR-0016 в.2
+- [x] Core sync-тест: ScoutSnapshotIn == схема (extra=forbid ловит дрейф, вкл. data_upto) + required-parity
+- [x] сквозняк локально: fake-scout→scout_reader→mapper→push→ядро→readout; replace (WIFUSDT исчез)/идемпотентность доказаны; 413/зеркало в core-тестах. Локальный Postgres (homebrew, не docker).
+- [x] само-ревью (workflow 3 линзы): 1 RED (триггер по scout_meta вместо scout_control — умершие сетапы висели бы до утра) ИСПРАВЛЕН + yellow-дельта. Тесты: core 32, cartridge 102, paper-bot 23.
+- [ ] коммит → CI зелёный = финал #52; приёмка Куратора построчно (отчёт в QUEUE)
+
+**Форвард-риск #53 (зафиксировать при приёмке #53):** адаптер Фазы 1 НЕ шлёт klines (у скаута нет 15m/5m; ADR-0016 д). #53-график = **levels-only** (A→B + Fib + стоп линиями, без свечного фона) пока апстрим pifagor-v81 не отдаст младший ТФ. Живая верность orders/position — гейт go-live (в dry-run пусто).
 
 ## #53 — Консоль-график сетапа (ещё НЕ начат)
 - [ ] живой экран Разведки: свечи (klines_tf) + A→B + Fib-ноги 0.382/0.5/0.618 + стоп, вместо фикстур

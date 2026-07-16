@@ -281,6 +281,32 @@ class Event(Base):
     detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
+class ScoutSnapshot(Base):
+    """Снимок сетапа скаута (телеметрия S4→, ADR-0016 scout-канал). REPLACE-семантика per
+    (instance, symbol, tf): новый пуш upsert'ит присланные пары и УДАЛЯЕТ выпавшие (сетап умер →
+    строки нет; иначе канбан копит трупы). payload — весь контрактный снимок (недоверенный JSON,
+    экранируется на ВЫВОДЕ, #53). Аудита нет (телеметрия, не действие оператора — закон №4)."""
+
+    __tablename__ = "scout_snapshots"
+    __table_args__ = (
+        UniqueConstraint("instance_id", "symbol", "tf", name="uq_scout_instance_symbol_tf"),
+        {"comment": "Снимки сетапов скаута (S4, ADR-0016); replace per (instance,symbol,tf); "
+                    "payload — недоверенный JSON, экранируется на выводе."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False, index=True
+    )
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)   # недоверенный ввод
+    tf: Mapped[str] = mapped_column(String(4), nullable=False)        # 4h|1h
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)      # весь контрактный снимок
+    scan_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    orders_ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Command(Base):
     """Команда боту (S4←, ADR-0002/0005). cmd_id = id. Канон: pause/resume/stop_close (start нет).
 

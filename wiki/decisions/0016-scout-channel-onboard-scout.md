@@ -43,8 +43,11 @@ enforcement версии по-прежнему отложен).
 ### (в) Обязательные условия включения (fail-closed; без ЛЮБОГО — скаут НЕ включаем)
 1. **Fail-closed гейт.** `start.sh` поднимает скаут ТОЛЬКО при явном `SCOUT_ENABLED=1` из env. Vendor-дефолт
    `True` (`scout/config.py:12`) НИКОГДА не решает за нас — обёртка передаёт значение явно.
-2. **Отдельная `scout.db` (env `DB_PATH`).** SQLite `acquire_singleton` (`storage/db.py:365`) — flock на ОДИН
-   файл, ключ игнорируется; общий файл с движком = лок-коллизия и смерть скаута через ~90с. Скаут пишет в свою БД.
+2. **Отдельная `scout.db` (SQLite) независимо от `DATABASE_URL` движка.** SQLite `acquire_singleton`
+   (`storage/db.py:365`) — flock на ОДИН файл, ключ игнорируется; общий файл с движком = лок-коллизия и
+   смерть скаута через ~90с. Обёртка задаёт скауту `DB_PATH=scout.db` И **зачищает `DATABASE_URL`**
+   (`env -u`, start.sh) — иначе `config.ops` взял бы Postgres движка и скаут делил бы его БД. Скаут ВСЕГДА
+   на своей SQLite, даже если движок на Postgres (решение #51-приёмки; реализация+тест #52).
 3. **config_mismatch-детект.** `scan.py` зовёт детектор **литералами** (`ema=False, shorts=False` — `scan.py:79`;
    `reanchor=True` — `scan.py:28`; `STOP_FIB` из env — `scan.py:72`), а движок торгует по runtime-effective
    `ConfigStore`. Адаптер сравнивает эти 4 крутилки; снимок несёт `config_mismatch{flag,details}`; консоль

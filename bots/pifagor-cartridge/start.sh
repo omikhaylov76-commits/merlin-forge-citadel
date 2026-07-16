@@ -32,7 +32,9 @@ scout_supervise() {
   _restarts=0
   while true; do
     _started=$(date +%s)
-    env DB_PATH="$SCOUT_DB" SCOUT_ENABLED=1 \
+    # -u DATABASE_URL: скаут ВСЕГДА на своей SQLite (DB_PATH), даже если движок на Postgres —
+    # иначе config.ops берёт DATABASE_URL и скаут делит БД движка (ADR-0016 в.2, решение #51-приёмки).
+    env -u DATABASE_URL DB_PATH="$SCOUT_DB" SCOUT_ENABLED=1 \
         SCOUT_RPS="$SCOUT_RPS" SCOUT_LIST_MAX="$SCOUT_LIST_MAX" \
         SCOUT_CAL_UTC_HOUR="$SCOUT_CAL_UTC_HOUR" SCOUT_TFS="$SCOUT_TFS" \
         $SCOUT_CMD &
@@ -86,6 +88,9 @@ start_scout_if_enabled() {
   SCOUT_TFS="${SCOUT_TFS:-4h,1h}"
   # команда запуска скаута (тест-шов SCOUT_CMD; в проде — vendored scout/main.py снимка).
   SCOUT_CMD="${SCOUT_CMD:-python $PIFAGOR_HOME/scout/main.py}"
+  # адаптеру (foreground, ниже) явно разрешаем читать scout.db и пушить снимки в ядро (#52) —
+  # двойной гейт с существованием файла; на флоте (scout off) флаг не выставлен → пуша нет.
+  export MF_SCOUT_PUSH=1
   echo "[cartridge] скаут ВКЛ (SCOUT_ENABLED=1) → супервизор; db=$SCOUT_DB rps=$SCOUT_RPS list_max=$SCOUT_LIST_MAX"
   scout_supervise &
 }

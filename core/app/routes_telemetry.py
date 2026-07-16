@@ -15,13 +15,14 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
+from sqlalchemy import tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.auth import current_instance
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.models import EquityPoint, Event, Instance, Trade
+from app.models import EquityPoint, Event, Instance, ScoutSnapshot, Trade
 
 router = APIRouter(prefix="/v1/telemetry")
 
@@ -75,6 +76,72 @@ class EventIn(BaseModel):
     ts: datetime
     kind: str = Field(max_length=40)
     detail: dict[str, Any] | None = None
+
+
+# ── scout-снимок (5-й канал, ADR-0016): ПОЛНОЕ Pydantic-зеркало scout-схемы.
+# extra="forbid" — sync-гвоздь: поле в схеме, но не в модели (напр. data_upto), уронит sync-тест. ──
+
+class ScoutLevelIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    role: Literal["A", "B", "entry_0382", "entry_05", "entry_0618", "stop"]
+    price: float = Field(gt=0)
+
+
+class ScoutKlineIn(BaseModel):
+    model_config = {"extra": "forbid", "populate_by_name": True}
+    time: int
+    o: float
+    h: float
+    low: float = Field(alias="l")  # 'l' в схеме; alias — ruff E741 (неоднозначное имя)
+    c: float
+    v: float = Field(ge=0)
+
+
+class ScoutOrderIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    order_id: str = Field(max_length=80)
+    side: str = Field(max_length=8)     # недоверенный; casing нормализует продюсер
+    type: str = Field(max_length=16)
+    px: float
+    qty: float = Field(gt=0)
+    status: str = Field(max_length=24)
+
+
+class ScoutPositionIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    side: str = Field(max_length=8)
+    avg_px: float
+    size: float
+    live_pnl: float
+
+
+class ScoutConfigMismatchIn(BaseModel):
+    model_config = {"extra": "forbid"}
+    flag: bool
+    details: dict[str, Any] | None = None
+
+
+class ScoutSnapshotIn(BaseModel):
+    """Один снимок сетапа per (symbol, tf). Инстанс — из токена (SEC7), в теле его НЕТ."""
+
+    model_config = {"extra": "forbid"}
+    symbol: str = Field(max_length=40)              # недоверенный ввод
+    tf: Literal["4h", "1h"]
+    state: Literal["forming", "tracking", "ready"]
+    score: float
+    bars_since_anchor: int | None = Field(default=None, ge=0)
+    levels: list[ScoutLevelIn] | None = None
+    klines_tf: Literal["15m", "5m"] | None = None
+    klines: list[ScoutKlineIn] | None = None        # кап ≤500 — в ручке (413), не в модели
+    orders: list[ScoutOrderIn] | None = None
+    position: ScoutPositionIn | None = None
+    scan_ts: datetime
+    orders_ts: datetime
+    data_upto: datetime
+    detector_version: str = Field(max_length=40)
+    config_fingerprint: str = Field(max_length=80)
+    config_mismatch: ScoutConfigMismatchIn
+    producer: str = Field(max_length=40)
 
 
 @router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)
@@ -157,3 +224,44 @@ def events(
             )
         )
     return {"received": len(rows)}
+
+
+@router.post("/scout", status_code=status.HTTP_202_ACCEPTED)
+def scout(
+    body: list[ScoutSnapshotIn],
+    inst: Instance = Depends(current_instance),
+    session: Session = Depends(get_session),
+) -> dict:
+    # Капы: ≤500 снимков/запрос и ≤500 свечей/снимок → 413 (бот дробит). ts-skew к scan_ts НЕ
+    # применяем: сетап мог сформироваться часами раньше (scan_ts законно «старый»).
+    _guard_batch(len(body))
+    for s in body:
+        if s.klines is not None and len(s.klines) > _MAX_BATCH:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"свечей в снимке > {_MAX_BATCH}"
+            )
+    now = datetime.now(UTC)
+    keys = {(s.symbol, s.tf) for s in body}
+    for s in body:
+        payload = s.model_dump(mode="json", by_alias=True)  # весь снимок как есть (l вместо low)
+        session.execute(
+            pg_insert(ScoutSnapshot)
+            .values(
+                instance_id=inst.id, symbol=s.symbol, tf=s.tf, payload=payload,
+                scan_ts=_norm(s.scan_ts), orders_ts=_norm(s.orders_ts),
+            )
+            .on_conflict_do_update(                          # upsert по (instance, symbol, tf)
+                constraint="uq_scout_instance_symbol_tf",
+                set_={
+                    "payload": payload, "scan_ts": _norm(s.scan_ts),
+                    "orders_ts": _norm(s.orders_ts), "received_at": now,
+                },
+            )
+        )
+    # REPLACE: удалить пары инстанса, выпавшие из присланного набора (сетап умер → строки нет).
+    # Пустой набор (все сетапы исчезли) → удаляем все снимки инстанса. Иначе канбан копит трупы.
+    q = session.query(ScoutSnapshot).filter(ScoutSnapshot.instance_id == inst.id)
+    if keys:
+        q = q.filter(tuple_(ScoutSnapshot.symbol, ScoutSnapshot.tf).notin_(list(keys)))
+    q.delete(synchronize_session=False)
+    return {"received": len(body)}

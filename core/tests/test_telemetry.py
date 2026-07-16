@@ -14,8 +14,8 @@ from sqlalchemy import text
 from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
-from app.models import Instance
-from app.routes_telemetry import EquityIn, EventIn, HeartbeatIn, TradeIn
+from app.models import Instance, User
+from app.routes_telemetry import EquityIn, EventIn, HeartbeatIn, ScoutSnapshotIn, TradeIn
 from tests.crm_helpers import ensure_parents
 
 _CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
@@ -25,7 +25,7 @@ _CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
 def sm(_migrated: None):
     m = get_sessionmaker()
     with m() as s:
-        for t in ("equity_points", "trades", "events", "commands", "jobs"):
+        for t in ("equity_points", "trades", "events", "commands", "jobs", "scout_snapshots"):
             s.execute(text(f"DELETE FROM {t}"))
         s.execute(text("DELETE FROM instances"))
         s.execute(text("DELETE FROM exchange_accounts"))
@@ -180,6 +180,7 @@ def test_unknown_instance_404(sm):
         ("telemetry-equity", EquityIn, False),
         ("telemetry-trades", TradeIn, True),
         ("telemetry-events", EventIn, True),
+        ("telemetry-scout", ScoutSnapshotIn, True),  # #52: зеркало (extra=forbid ловит дрейф)
     ],
 )
 def test_schema_examples_accepted_by_pydantic(schema_name, model, is_array):
@@ -188,3 +189,113 @@ def test_schema_examples_accepted_by_pydantic(schema_name, model, is_array):
         items = ex if is_array else [ex]
         for item in items:
             model.model_validate(item)  # пример из схемы принимается моделью ядра
+
+
+# ── scout-снимок: приём (replace / идемпотентность / капы) + readout ──────────
+
+def _snap(symbol="BTCUSDT", tf="4h", **over) -> dict:
+    s = {
+        "symbol": symbol, "tf": tf, "state": "ready", "score": 70,
+        "scan_ts": _iso(), "orders_ts": _iso(), "data_upto": _iso(),
+        "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:abc",
+        "config_mismatch": {"flag": False}, "producer": "pifagor-scout",
+    }
+    s.update(over)
+    return s
+
+
+def test_scout_replace_deletes_fallen_out(sm):
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    r = c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[_snap("BTCUSDT"), _snap("ETHUSDT")])
+    assert r.status_code == 202
+    assert _count(sm, "scout_snapshots", iid) == 2
+    # второй пуш без ETHUSDT → его сетап «умер» → строка ИСЧЕЗЛА (replace, критерий п.1)
+    c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[_snap("BTCUSDT")])
+    assert _count(sm, "scout_snapshots", iid) == 1
+
+
+def test_scout_empty_push_clears_all(sm):
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[_snap("BTCUSDT")])
+    c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[])  # все сетапы исчезли
+    assert _count(sm, "scout_snapshots", iid) == 0
+
+
+def test_scout_upsert_idempotent(sm):
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    snap = _snap("BTCUSDT")
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[snap]).status_code == 202
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[snap]).status_code == 202  # 2-й
+    assert _count(sm, "scout_snapshots", iid) == 1  # upsert по ключу, не дубль
+
+
+def test_scout_tf_pair_coexist(sm):
+    # 4h и 1h одной монеты — разные ключи (instance,symbol,tf), сосуществуют
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    c.post("/v1/telemetry/scout", headers=_hdr(tok),
+           json=[_snap("BTCUSDT", "4h"), _snap("BTCUSDT", "1h")])
+    assert _count(sm, "scout_snapshots", iid) == 2
+
+
+def test_scout_batch_over_limit_413(sm):
+    _, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    big = [_snap(f"C{i}USDT") for i in range(501)]
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=big).status_code == 413
+
+
+def test_scout_candles_over_limit_413(sm):
+    _, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    kl = [{"time": i, "o": 1, "h": 1, "l": 1, "c": 1, "v": 1} for i in range(501)]
+    snap = _snap("BTCUSDT", klines_tf="15m", klines=kl)
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[snap]).status_code == 413
+
+
+def test_scout_readout_operator(sm):
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[_snap("BTCUSDT")])
+    with sm() as s:  # оператор читает readout (require_role operator, как fleet)
+        op = User(email=f"op-{uuid.uuid4()}@mfc.local", role="operator", password_hash="x")
+        s.add(op)
+        s.flush()
+        op_tok = issue_token(s, principal="user", subject_id=str(op.id), scope="role:operator")
+        s.commit()
+    r = c.get(f"/v1/instances/{iid}/scout", headers=_hdr(op_tok))
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["symbol"] == "BTCUSDT" and "received_at" in data[0]
+
+
+def test_scout_readout_requires_operator(sm):
+    iid, tok = _mk_instance_token(sm)  # instance-токен не оператор
+    c = TestClient(create_app())
+    assert c.get(f"/v1/instances/{iid}/scout", headers=_hdr(tok)).status_code == 403
+
+
+def test_scout_replace_isolation_between_instances(sm):
+    # провальный критерий з.1 наизнанку: replace одного инстанса НЕ трогает снимки другого
+    iid_a, tok_a = _mk_instance_token(sm)
+    iid_b, tok_b = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    c.post("/v1/telemetry/scout", headers=_hdr(tok_a), json=[_snap("BTCUSDT")])
+    c.post("/v1/telemetry/scout", headers=_hdr(tok_b), json=[_snap("ETHUSDT")])
+    assert _count(sm, "scout_snapshots", iid_a) == 1
+    assert _count(sm, "scout_snapshots", iid_b) == 1
+    c.post("/v1/telemetry/scout", headers=_hdr(tok_a), json=[])  # все сетапы A умерли
+    assert _count(sm, "scout_snapshots", iid_a) == 0            # A очищен
+    assert _count(sm, "scout_snapshots", iid_b) == 1            # B НЕ тронут (изоляция инстансов)
+
+
+def test_scout_pydantic_covers_all_schema_required():
+    # required-parity: required схемы обязаны быть required в ScoutSnapshotIn (в т.ч. data_upto)
+    schema = json.loads((_CONTRACTS / "telemetry-scout.schema.json").read_text(encoding="utf-8"))
+    required = set(schema["items"]["required"])
+    model_required = {n for n, f in ScoutSnapshotIn.model_fields.items() if f.is_required()}
+    assert required <= model_required, f"схема требует, модель нет: {required - model_required}"

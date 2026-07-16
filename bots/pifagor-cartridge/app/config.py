@@ -29,6 +29,12 @@ class CartridgeConfig:
     telemetry_retries: int       # попыток на транзиентный сбой пуша (backoff), потом best-effort
     backoff_base_s: float        # база экспоненты backoff
     backoff_cap_s: float         # потолок паузы backoff
+    # scout-канал (ADR-0016 #52): читается ТОЛЬКО если scout.db существует (скаут включён #51).
+    # Дефолты — чтобы старые конструкторы (тесты/эталон) не ломались; from_env заполняет из env.
+    scout_db_path: str = ""      # путь к ОТДЕЛЬНОЙ scout.db (пусто/нет файла → scout-пуша нет)
+    scout_interval_s: float = 60.0   # каденция проверки нового scan_ts (сканы редки)
+    detector_version: str = "pifagor-v81-b75bd17"  # версия детектора движка (снимок b75bd17)
+    scout_producer: str = "pifagor-scout"          # producer снимка (в режиме представителя)
 
 
 def from_env() -> CartridgeConfig:
@@ -43,4 +49,11 @@ def from_env() -> CartridgeConfig:
         telemetry_retries=int(os.environ.get("MF_TELEMETRY_RETRIES", "3")),
         backoff_base_s=float(os.environ.get("MF_BACKOFF_BASE_S", "0.5")),
         backoff_cap_s=float(os.environ.get("MF_BACKOFF_CAP_S", "8")),
+        scout_db_path=os.environ.get(
+            "MF_SCOUT_DB_PATH",
+            f"{os.environ['PIFAGOR_HOME']}/scout.db" if os.environ.get("PIFAGOR_HOME") else "",
+        ),
+        scout_interval_s=float(os.environ.get("MF_SCOUT_S", "60")),
+        detector_version=os.environ.get("MF_DETECTOR_VERSION", "pifagor-v81-b75bd17"),
+        scout_producer=os.environ.get("MF_SCOUT_PRODUCER", "pifagor-scout"),
     )

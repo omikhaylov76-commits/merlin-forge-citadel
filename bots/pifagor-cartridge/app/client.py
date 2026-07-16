@@ -105,6 +105,10 @@ class CoreClient:
         if events:
             self._post("/v1/telemetry/events", events)
 
+    def push_scout(self, snapshots: list[dict]) -> None:
+        # Шлём ВСЕГДА (в т.ч. []): пустой набор = сетапы исчезли → ядро очистит (replace).
+        self._post("/v1/telemetry/scout", snapshots)
+
     # ── команды (S4←) ─────────────────────────────────────────────────────────
 
     def next_command(self, *, wait: int = 25) -> dict:
