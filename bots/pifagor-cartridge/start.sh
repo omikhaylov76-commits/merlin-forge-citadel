@@ -106,6 +106,12 @@ risk_rebaseline_if_requested() {
 }
 
 main() {
+  # engine-БД на durable-МОНТИРУЕМОМ пути (#57, ЗАКОН ЭТАЛОНА): том Railway на /data → состояние
+  # (HWM/сетапы/компаунд) переживает передеплой. Без тома — эфемерно тут же (как раньше, иной путь).
+  # НЕ /pifagor/* (там вендор-код образа — том перекрыл бы его). Скаут задаёт свой DB_PATH сам (scout.db).
+  export DB_PATH="${DB_PATH:-/data/pifagor.db}"
+  mkdir -p "$(dirname "$DB_PATH")" 2>/dev/null || true
+  echo "[cartridge] engine-БД: DB_PATH=$DB_PATH (durable при томе на $(dirname "$DB_PATH"))"
   risk_rebaseline_if_requested   # ДО движка: иначе singleton-lock займёт БД (#Персиваль-ks)
   start_engine
   start_scout_if_enabled
