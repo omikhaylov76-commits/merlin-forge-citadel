@@ -95,7 +95,18 @@ start_scout_if_enabled() {
   scout_supervise &
 }
 
+# ── одноразовая ре-база риск-состояния (kill-switch) после РУЧНОЙ смены баланса (#Персиваль-ks) ──
+# Гейт MF_RISK_REBASELINE_ONCE=1 (Персиваль-only; убрать после применения). Правит capital_state ДО
+# старта движка (иначе singleton-lock движка занимает БД). Всё в лог. Прочие боты без флага — no-op.
+risk_rebaseline_if_requested() {
+  if [ "$MF_RISK_REBASELINE_ONCE" = "1" ]; then
+    echo "[cartridge] MF_RISK_REBASELINE_ONCE=1 → ре-база риск-состояния движка (сброс ложной защёлки kill-switch)"
+    python -m app.risk_rebaseline || echo "[cartridge] ре-база: ошибка (старт НЕ валю)"
+  fi
+}
+
 main() {
+  risk_rebaseline_if_requested   # ДО движка: иначе singleton-lock займёт БД (#Персиваль-ks)
   start_engine
   start_scout_if_enabled
   # Адаптер — foreground (PID 1-логика). stop_close встаёт → процесс выходит (restartPolicy=never).
