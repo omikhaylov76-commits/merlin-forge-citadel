@@ -224,6 +224,7 @@ def test_scroll_gap_warns_on_big_cursor_jump(caplog):
 
 def test_screener_run_launches_process_and_acks(monkeypatch):
     import subprocess
+    monkeypatch.setenv("SCREENER_ENABLED", "1")  # взведён (роль разведчика)
     c, r = FakeClient(), FakeReader()
     launched = {}
     monkeypatch.setattr(subprocess, "Popen",
@@ -249,3 +250,25 @@ def test_screener_run_no_run_id_acks_without_spawn(monkeypatch):
     _bot(c, r).tick_once(NOW, 0.0)
     assert c.acks == [{"cmd_id": "sc2", "result": "ok", "detail": None}]
     assert calls["n"] == 0
+
+
+def test_screener_run_disabled_by_default_no_spawn(monkeypatch):
+    # SCREENER_ENABLED не взведён → скринер выключен: не спавним, отмечаем в ядре error, ack ok
+    import subprocess
+
+    import app.screener as screener_mod
+    monkeypatch.delenv("SCREENER_ENABLED", raising=False)
+    c, r = FakeClient(), FakeReader()
+    spawned = {"n": 0}
+    pushed = {}
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: spawned.__setitem__("n", 1))
+
+    def _fake_push(core, token, run_id, status, **k):
+        pushed["status"] = status
+
+    monkeypatch.setattr(screener_mod, "push_results", _fake_push)
+    c.cmds = [{"cmd": "screener_run", "cmd_id": "sc3", "payload": {"run_id": "RID", "params": {}}}]
+    _bot(c, r).tick_once(NOW, 0.0)
+    assert spawned["n"] == 0                      # не запускали
+    assert pushed.get("status") == "error"        # отметили выключенным в ядре
+    assert c.acks == [{"cmd_id": "sc3", "result": "ok", "detail": None}]

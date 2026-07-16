@@ -166,3 +166,9 @@ export const enqueueScreenerRun = (instanceId: string, params: Partial<ScreenerP
 export const getScreenerRun = (runId: string) => api<ScreenerRun>(`/v1/screener/runs/${runId}`)
 export const listScreenerRuns = (instanceId: string) =>
   api<ScreenerRun[]>(`/v1/instances/${instanceId}/screener/runs`)
+
+// Разведка/Скринер показывают только разведчика (Галахад) и боевого (Персиваль); тестовые
+// болванки флота скрыты (директива Куратора, С7 микро-пункт). Фильтр по имени клиента — v1.
+const _SCOUT_VISIBLE = /Галахад|Персиваль/
+export const visibleScoutInstances = (list: FleetInstance[]) =>
+  list.filter((i) => _SCOUT_VISIBLE.test(i.client))

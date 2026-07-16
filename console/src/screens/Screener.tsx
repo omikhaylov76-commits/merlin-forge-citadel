@@ -7,6 +7,7 @@ import {
   enqueueScreenerRun,
   getFleetInstances,
   getScreenerRun,
+  visibleScoutInstances,
   type ScreenerFinding,
   type ScreenerRun,
 } from '@/lib/api'
@@ -50,12 +51,14 @@ export function Screener() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // дефолт инстанса-представителя = Галахад (у него включён скаут), иначе первый
+  const insts = useMemo(() => (fleet.data ? visibleScoutInstances(fleet.data) : []), [fleet.data])
+
+  // дефолт инстанса-представителя = Галахад (у него включён скринер), иначе первый видимый
   useEffect(() => {
-    if (!fleet.data || selected) return
-    const gal = fleet.data.find((i) => i.client.includes('Галахад'))
-    setSelected(gal?.id ?? fleet.data[0]?.id ?? null)
-  }, [fleet.data, selected])
+    if (insts.length === 0 || selected) return
+    const gal = insts.find((i) => i.client.includes('Галахад'))
+    setSelected(gal?.id ?? insts[0]?.id ?? null)
+  }, [insts, selected])
 
   // опрос статуса прогона до done|error (каждые 3с)
   useEffect(() => {
@@ -124,13 +127,13 @@ export function Screener() {
         title="Скринер"
         desc="Подбор монет по параметрам: возраст · оборот · импульс объёма → скан на 4h и 1h"
         action={
-          fleet.data && fleet.data.length > 0 ? (
+          insts.length > 0 ? (
             <select
               value={selected ?? ''}
               onChange={(e) => setSelected(e.target.value)}
               className="rounded-pill border border-line bg-card px-3 py-1.5 text-[12px] text-fog"
             >
-              {fleet.data.map((i) => (
+              {insts.map((i) => (
                 <option key={i.id} value={i.id}>
                   {i.client} · {i.id.slice(0, 8)}…
                 </option>

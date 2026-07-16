@@ -155,6 +155,7 @@ class PifagorCartridge:
         """Запустить app/screener.py отдельным процессом (fire-and-forget). Процесс наследует env
         (MF_CORE_URL/MF_INSTANCE_TOKEN) и сам пушит результат в ядро. RPS=1 (суммарно со скаутом 2 —
         безопасно). Изолированная screener_run.db (не scout.db Галахада)."""
+        import os
         import subprocess
         import sys
 
@@ -162,6 +163,12 @@ class PifagorCartridge:
         p = payload.get("params") or {}
         if not run_id:
             log.warning("screener_run без run_id — пропуск")
+            return
+        # Ген: скринер = умение у всех, тумблер по умолчанию ВЫКЛ (паттерн SCOUT_ENABLED). Взводим
+        # ролью только боту-разведчику (Галахад). Не взведён → сообщаем ядру, консоль не виснет.
+        if os.environ.get("SCREENER_ENABLED") != "1":
+            log.info("screener_run: SCREENER_ENABLED не взведён — скринер на этом боте выключен")
+            self._screener_disabled(run_id)
             return
         args = [
             sys.executable, "-m", "app.screener", "--push", "--run-id", str(run_id), "--rps", "1",
@@ -175,6 +182,16 @@ class PifagorCartridge:
             log.info("screener_run запущен отдельным процессом: run_id=%s", run_id)
         except Exception as exc:
             log.error("screener_run не запустился (%s)", exc)
+
+    def _screener_disabled(self, run_id: str) -> None:
+        """Скринер выключен (геном: дефолт ВЫКЛ) — отмечаем в ядре error, чтобы консоль не висла."""
+        from app.screener import push_results
+
+        try:
+            push_results(self._cfg.core_url, self._cfg.instance_token, run_id, "error",
+                         summary={"error": "скринер выключен на этом боте (SCREENER_ENABLED=0)"})
+        except Exception as exc:
+            log.warning("не смог отметить выключенный скринер в ядре (%s)", exc)
 
     # ── доставка с классификацией 4xx ─────────────────────────────────────────
 

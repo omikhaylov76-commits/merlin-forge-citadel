@@ -3,7 +3,7 @@ import { Chip, PageHead, Toolbar } from '@/components/ui/page'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAsync } from '@/lib/useAsync'
-import { type ScoutSnapshot } from '@/lib/api'
+import { type ScoutSnapshot, visibleScoutInstances } from '@/lib/api'
 import { boardColumn, COLUMNS, loadScoutBoard, sortSnaps } from '@/lib/scout'
 import { ScoutCard } from './scout/ScoutCard'
 import { ScoutDetail } from './scout/ScoutDetail'
@@ -23,13 +23,16 @@ export function Scout() {
   // сброс, если выбранный инстанс исчез из обновлённого флота (иначе показ пустого не того бота).
   useEffect(() => {
     if (!board.data) return
-    const ids = board.data.instances.map((i) => i.id)
+    const vis = visibleScoutInstances(board.data.instances)
+    const ids = vis.map((i) => i.id)
     if (selected == null || !ids.includes(selected)) {
-      setSelected(board.data.freshest ?? board.data.instances[0]?.id ?? null)
+      // дефолт = свежайший ИЗ ВИДИМЫХ (Галахад/Персиваль), иначе первый видимый
+      const fresh = vis.some((i) => i.id === board.data!.freshest) ? board.data!.freshest : null
+      setSelected(fresh ?? vis[0]?.id ?? null)
     }
   }, [board.data, selected])
 
-  const instances = board.data?.instances ?? []
+  const instances = board.data ? visibleScoutInstances(board.data.instances) : []
   const byInstance = board.data?.byInstance ?? {}
   const hasAnyData = Object.values(byInstance).some((s) => s.length > 0)
   const snaps = selected ? (byInstance[selected] ?? []) : [] // ВСЕ ТФ выбранного инстанса
