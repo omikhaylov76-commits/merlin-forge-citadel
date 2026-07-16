@@ -95,3 +95,37 @@ export type FleetInstance = {
   equity: string | null
 }
 export const getFleetInstances = () => api<FleetInstance[]>('/v1/fleet/instances')
+
+// ── scout-снимки инстанса (ADR-0016, #52 readout) — питает живой экран Разведки (#53) ──────────
+// TS-типы = зеркало contracts/telemetry-scout.schema.json. Консоль показывает СНИМОК (не живой тик):
+// %-до-входа/свежесть считаем на фронте от полей снимка, честно подписывая scan_ts/data_upto (ADR-0001).
+export type ScoutLevelRole = 'A' | 'B' | 'entry_0382' | 'entry_05' | 'entry_0618' | 'stop'
+export type ScoutLevel = { role: ScoutLevelRole; price: number }
+export type ScoutKline = { time: number; o: number; h: number; l: number; c: number; v: number }
+export type ScoutOrder = {
+  order_id: string; side: string; type: string; px: number; qty: number; status: string
+}
+export type ScoutPosition = { side: string; avg_px: number; size: number; live_pnl: number }
+export type ScoutConfigMismatch = { flag: boolean; details?: Record<string, unknown> }
+export type ScoutSnapshot = {
+  symbol: string
+  tf: '4h' | '1h'
+  state: 'forming' | 'tracking' | 'ready'
+  score: number
+  bars_since_anchor?: number
+  levels?: ScoutLevel[]
+  klines_tf?: '4h' | '1h' | '15m' | '5m'
+  klines?: ScoutKline[]
+  orders?: ScoutOrder[]
+  position?: ScoutPosition | null
+  scan_ts: string
+  orders_ts: string
+  data_upto: string
+  detector_version: string
+  config_fingerprint: string
+  config_mismatch: ScoutConfigMismatch
+  producer: string
+  received_at: string // добавляет readout ядра
+}
+export const getInstanceScout = (instanceId: string) =>
+  api<ScoutSnapshot[]>(`/v1/instances/${instanceId}/scout`)
