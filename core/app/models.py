@@ -421,6 +421,27 @@ class BasketItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ScoutSettings(Base):
+    """Настройки дозора (скаута) на инстанс — ИСТОЧНИК ИСТИНЫ (Разведка-стол, S7, Q4 Куратора).
+    Оператор крутит в панели → ядро хранит desired + журнал (audit_log) → картридж применяет
+    env-оверрайдами и рестартит ТОЛЬКО скаут. desired — валидированный JSON порогов (age/turnover/
+    spread/history/score/universe/list/tfs/primary_tf/fresh/scan/cal/rps). Один ряд на инстанс
+    (upsert). Расхождение desired↔применённое видно по статусу команды dozor_apply."""
+
+    __tablename__ = "scout_settings"
+    __table_args__ = (
+        {"comment": "Настройки дозора на инстанс (Разведка-стол, S7); ядро=истина, картридж "
+                    "применяет; desired — валидированный JSON порогов скаута."},
+    )
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), primary_key=True
+    )
+    desired: Mapped[dict] = mapped_column(JSONB, nullable=False)   # валидированный набор порогов
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # кто менял — свободная ссылка (как audit_log.actor), без жёсткого FK на users
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
 class Contract(Base):
     __tablename__ = "contracts"
     __table_args__ = (
