@@ -17,6 +17,7 @@ export const NAV: NavGroup[] = [
     items: [
       { path: '/scout', label: 'Разведка', icon: '◎' },
       { path: '/screener', label: 'Скринер', icon: '⌕' },
+      { path: '/basket', label: 'Набор', icon: '★' },
       { path: '/profiles', label: 'Профили', icon: '▤' },
       { path: '/constructor', label: 'Конструктор', icon: '✦' },
     ],

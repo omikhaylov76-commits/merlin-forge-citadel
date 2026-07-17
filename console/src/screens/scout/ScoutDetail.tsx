@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { ColorType, createChart, LineStyle, type UTCTimestamp } from 'lightweight-charts'
-import { type ScoutSnapshot } from '@/lib/api'
+import { addToBasket, getBasket, removeBasketItem, type ScoutSnapshot } from '@/lib/api'
 import { Disclaimer, MismatchBadge, StaleBadge } from './Badges'
+
+// стадии скаута → человеческий ярлык (как на доске Разведки), кладём в context элемента Набора
+const STAGE_RU: Record<string, string> = {
+  forming: 'Формируется',
+  tracking: 'Отслеживаем',
+  ready: 'Готов',
+}
 
 const fmtP = (n?: number) => (n == null ? '—' : n.toLocaleString('ru-RU', { maximumFractionDigits: 6 }))
 const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#888'
@@ -30,6 +37,9 @@ const LEVEL_STYLE: Record<string, { color: string; style: LineStyle }> = {
 export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false) // локально (без localStorage — запрещён в консоли)
+  // НАБОР-1: звёздочка «в набор». basketId != null → этот сетап (symbol,tf) уже в Наборе.
+  const [basketId, setBasketId] = useState<string | null>(null)
+  const [starBusy, setStarBusy] = useState(false)
 
   useEffect(() => {
     const el = ref.current
@@ -115,6 +125,54 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
   }, [snap, expanded])
 
   const lv = (r: string) => snap.levels?.find((l) => l.role === r)?.price
+
+  // при открытии узнаём, есть ли этот сетап (symbol,tf) в Наборе — для состояния звёздочки
+  useEffect(() => {
+    let alive = true
+    getBasket()
+      .then((items) => {
+        if (alive) {
+          const hit = items.find((b) => b.symbol === snap.symbol && b.tf === snap.tf)
+          setBasketId(hit?.id ?? null)
+        }
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [snap.symbol, snap.tf])
+
+  // звёздочка: нет в Наборе → добавить (монета + контекст сетапа); есть → убрать. НИЧЕГО не торгует.
+  async function toggleStar() {
+    setStarBusy(true)
+    try {
+      if (basketId) {
+        await removeBasketItem(basketId)
+        setBasketId(null)
+      } else {
+        const item = await addToBasket({
+          symbol: snap.symbol,
+          tf: snap.tf,
+          source: 'scout',
+          context: {
+            score: snap.score,
+            stage: STAGE_RU[snap.state] ?? snap.state,
+            detector: snap.detector_version,
+            A: lv('A'),
+            B: lv('B'),
+            entry_0382: lv('entry_0382'),
+            entry_05: lv('entry_05'),
+            entry_0618: lv('entry_0618'),
+            stop: lv('stop'),
+          },
+        })
+        setBasketId(item.id)
+      }
+    } finally {
+      setStarBusy(false)
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-void/70 p-4"
@@ -140,6 +198,18 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              onClick={toggleStar}
+              disabled={starBusy}
+              title={basketId ? 'Убрать из Набора' : 'Добавить в Набор'}
+              className={`rounded-pill border px-3 py-1 text-[13px] transition-colors disabled:opacity-50 ${
+                basketId
+                  ? 'border-gold/50 bg-gold/10 text-gold'
+                  : 'border-line text-fog hover:text-mist'
+              }`}
+            >
+              {starBusy ? '…' : basketId ? '★ в наборе' : '☆ в набор'}
+            </button>
             <button
               onClick={() => setExpanded((v) => !v)}
               className="rounded-pill border border-line px-3 py-1 text-[13px] text-fog hover:text-mist"

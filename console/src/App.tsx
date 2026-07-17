@@ -11,6 +11,7 @@ import { ClientCard } from '@/screens/ClientCard'
 import { Constructor } from '@/screens/Constructor'
 import { Scout } from '@/screens/Scout'
 import { Screener } from '@/screens/Screener'
+import { Basket } from '@/screens/Basket'
 import { Profiles } from '@/screens/Profiles'
 import { Reports } from '@/screens/Reports'
 import { Alerts } from '@/screens/Alerts'
@@ -40,6 +41,7 @@ export const router = createBrowserRouter([
       { path: 'clients/:id', element: <ClientCard /> },
       { path: 'scout', element: <Scout /> },
       { path: 'screener', element: <Screener /> },
+      { path: 'basket', element: <Basket /> },
       { path: 'profiles', element: <Profiles /> },
       { path: 'constructor', element: <Constructor /> },
       { path: 'reports', element: <Reports /> },

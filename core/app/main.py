@@ -17,6 +17,7 @@ from app.logging import setup_logging
 from app.periods import generate_periods_once
 from app.readiness import is_ready
 from app.routes import router
+from app.routes_basket import router as basket_router
 from app.routes_billing import router as billing_router
 from app.routes_commands import router as commands_router
 from app.routes_crm import router as crm_router
@@ -91,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(billing_router)  # биллинг-lifecycle счёта (Ф3): активация/терминация
     app.include_router(fleet_router)  # агрегаты флота (Ф4): Обзор консоли (readout)
     app.include_router(screener_router)  # скринер по параметрам (С7-2б): запуск/приём/readout
+    app.include_router(basket_router)  # Набор Оператора (НАБОР-1): витрина+хранение сетапов
 
     @app.get("/healthz")
     def healthz() -> dict[str, object]:

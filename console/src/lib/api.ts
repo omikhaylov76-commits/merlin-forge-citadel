@@ -214,3 +214,30 @@ export type EngineStateResp = {
 }
 export const getEngineState = (instanceId: string) =>
   api<EngineStateResp>(`/v1/instances/${instanceId}/engine-state`)
+
+// ── Набор Оператора (НАБОР-1, витрина+хранение) — отмеченные звёздочкой сетапы ───────────────────
+// Глобальная корзина Оператора; ядро аддитивно, НИЧЕГО не торгует. context — снимок контекста сетапа
+// (недоверен, показываем как есть). Ключ дедупа — (symbol, tf): повторная звёздочка upsert'ит контекст.
+export type BasketItem = {
+  id: string
+  symbol: string
+  tf: string
+  source: 'scout' | 'screener'
+  context: Record<string, unknown>
+  note: string | null
+  created_at: string | null
+}
+export type BasketAdd = {
+  symbol: string
+  tf: string
+  source: 'scout' | 'screener'
+  context?: Record<string, unknown>
+  note?: string | null
+}
+export const getBasket = () => api<BasketItem[]>('/v1/basket/items')
+export const addToBasket = (body: BasketAdd) =>
+  api<BasketItem>('/v1/basket/items', { method: 'POST', body: JSON.stringify(body) })
+export const removeBasketItem = (id: string) =>
+  api<void>(`/v1/basket/items/${id}`, { method: 'DELETE' })
+// ключ звёздочки «в наборе?» — совпадает с uniq (symbol, tf) ядра
+export const basketKey = (symbol: string, tf: string) => `${symbol}|${tf}`
