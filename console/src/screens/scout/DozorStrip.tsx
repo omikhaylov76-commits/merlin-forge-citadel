@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { Button } from '@/components/ui/button'
 import { scanNow, type DozorApply, type DozorSettings } from '@/lib/api'
 import { fmtAgo, stripParts } from '@/lib/dozor'
 
-// Плашка дозора (макет razvedka-page-layout): всегда видна, одна строка — сводка порогов + ⚙ настроить
-// (тумблер рояля) + 🔎 сканировать сейчас (команда scan_now) + свежесть скана + счётчик Набора.
+// Строка дозора (макет razvedka-page-layout, посадка «в дизайн»): НЕ отдельная карточка (не конкурирует
+// с доской), а лёгкая безбордюрная строка-метаданные под шапкой — «что ищем». Слева сводка порогов,
+// справа управление: ⚙ рояль + 🔎 scan_now + свежесть + Набор. Чипы ниже — «что смотрим» (фильтр показа).
 export function DozorStrip({
   instanceId,
   settings,
@@ -26,7 +28,6 @@ export function DozorStrip({
   const [scanning, setScanning] = useState(false)
   const parts = stripParts(settings)
 
-  // статус применения последней команды: применяется…/расхождение (макет части 1)
   const applyMsg =
     apply.status === 'queued' || apply.status === 'delivered'
       ? 'применяется…'
@@ -39,7 +40,6 @@ export function DozorStrip({
     setScanning(true)
     try {
       await scanNow(instanceId)
-      // скаут заберёт команду (~25с) + Этап B (~60–100с) → освежаем доску несколько раз
       window.setTimeout(() => setScanning(false), 2500)
       window.setTimeout(onScanned, 30000)
       window.setTimeout(onScanned, 90000)
@@ -49,49 +49,54 @@ export function DozorStrip({
   }
 
   return (
-    <div className="mb-2.5 flex flex-wrap items-center gap-x-2.5 gap-y-1 rounded-card border border-line bg-card px-3 py-2">
-      <span className="mr-0.5 text-[11px] uppercase tracking-wide text-ash">Дозор</span>
-      {parts.map((p, i) => (
-        <span key={i} className="flex items-center gap-2.5">
-          <span className="whitespace-nowrap text-[12.5px] text-fog">
-            {p.pre}
-            <b className="font-semibold text-silver">{p.b}</b>
-            {p.post}
+    <div
+      className={`mb-3 flex flex-wrap items-center gap-x-2.5 gap-y-2 pb-3 ${
+        open ? '' : 'border-b border-line/60'
+      }`}
+    >
+      <span className="text-[11px] uppercase tracking-wider text-ash">Дозор</span>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-[12.5px] text-fog">
+        {parts.map((p, i) => (
+          <span key={i} className="flex items-center gap-2.5">
+            <span className="whitespace-nowrap">
+              {p.pre}
+              <b className="font-semibold text-silver">{p.b}</b>
+              {p.post}
+            </span>
+            {i < parts.length - 1 && <span className="text-line">·</span>}
           </span>
-          {i < parts.length - 1 && <span className="text-[#2a2c33]">·</span>}
-        </span>
-      ))}
+        ))}
+      </div>
       {applyMsg && (
-        <span
-          className={`text-[11px] ${applyMsg === 'расхождение' ? 'text-danger' : 'text-copper'}`}
-        >
+        <span className={applyMsg === 'расхождение' ? 'text-[11px] text-danger' : 'text-[11px] text-copper'}>
           {applyMsg}
         </span>
       )}
 
-      <button
-        onClick={onToggle}
-        className={`ml-auto rounded-card border px-3 py-1.5 text-[12.5px] transition-colors ${
-          open
-            ? 'border-copper/50 bg-panel text-copper'
-            : 'border-line bg-panel text-copper hover:border-copper/50'
-        }`}
-      >
-        ⚙ Настроить
-      </button>
-      <button
-        onClick={scan}
-        disabled={scanning}
-        className="rounded-card border border-[#3a3220] bg-gradient-to-b from-[#1d1712] to-[#171310] px-3.5 py-1.5 text-[12.5px] text-gold transition-opacity disabled:opacity-60"
-      >
-        {scanning ? '⟳ скан идёт…' : '🔎 Сканировать сейчас'}
-      </button>
-      <span className="text-[11.5px] text-ash">скан {fmtAgo(scanTs)}</span>
-      {naborCount > 0 && (
-        <span className="rounded-pill border border-line bg-panel px-2.5 py-1 text-[12px] text-gold">
-          ★ Набор: {naborCount}
-        </span>
-      )}
+      <div className="ml-auto flex items-center gap-2">
+        {scanTs && <span className="text-[11.5px] text-ash">скан {fmtAgo(scanTs)}</span>}
+        {naborCount > 0 && (
+          <span className="rounded-pill border border-line px-2.5 py-1 text-[11.5px] text-gold">
+            ★ Набор: {naborCount}
+          </span>
+        )}
+        <Button
+          variant={open ? 'primary' : 'ghost'}
+          size="sm"
+          onClick={onToggle}
+          aria-expanded={open}
+        >
+          ⚙ Настроить
+        </Button>
+        <Button
+          size="sm"
+          onClick={scan}
+          disabled={scanning}
+          className="border-gold/30 text-gold hover:border-gold/50"
+        >
+          {scanning ? '⟳ скан идёт…' : '🔎 Сканировать сейчас'}
+        </Button>
+      </div>
     </div>
   )
 }
