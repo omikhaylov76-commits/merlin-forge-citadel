@@ -1,15 +1,29 @@
 import { useEffect, useState } from 'react'
 import { getEngineState, type EngineStateResp, type FleetInstance } from '@/lib/api'
 
-// Карточка бота (S7): клик по строке Флота → факт-слой движка (статус/kill-switch/тревога · equity/
-// пик/просадка/PnL · ПОЗИЦИИ · АКТИВНЫЕ ОРДЕРА · последние сделки/события). Автообновление ~5с.
-// Данные — engine_state readout ядра (картридж пушит каденцией телеметрии). Живого тика нет (ADR-0001).
+// Карточка бота (S7): клик по строке Флота → факт-слой движка. Дизайн «midnight vault + gilded lines»:
+// приглушённая navy-подложка, золочёный герой-equity, плитки-KPI, .dt-таблицы (uppercase-заголовок,
+// hairline-строки, числа справа), лог событий. Смысловой цвет PnL. Автообновление ~5с (engine_state).
 
 const num = (n?: number) => (n == null ? '—' : n.toLocaleString('ru-RU', { maximumFractionDigits: 6 }))
 const money = (n?: number) =>
   n == null ? '—' : '$' + n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
-const pnlTone = (n: number) => (n > 0 ? 'text-ok' : n < 0 ? 'text-danger' : 'text-fog')
+const signed = (n?: number) =>
+  n == null ? '—' : (n > 0 ? '+' : '') + n.toLocaleString('ru-RU', { maximumFractionDigits: 2 })
+const pnlCls = (n?: number) => (n && n > 0 ? 'text-ok' : n && n < 0 ? 'text-danger' : 'text-mist')
 const ts = (s?: string) => (s ? s.slice(0, 19).replace('T', ' ') : '—')
+
+const STATE: Record<string, { label: string; cls: string }> = {
+  NORMAL: { label: '● в работе', cls: 'border-ok/40 bg-ok/10 text-ok' },
+  RUNNING: { label: '● в работе', cls: 'border-ok/40 bg-ok/10 text-ok' },
+  WARMING: { label: '◐ прогрев', cls: 'border-gold/40 bg-gold/10 text-gold' },
+  NO_DATA: { label: '○ нет биржевых данных', cls: 'border-line text-steel' },
+  STOPPING: { label: '■ остановка', cls: 'border-danger/40 bg-danger/10 text-danger' },
+  STOPPED: { label: '■ остановлен', cls: 'border-danger/40 bg-danger/10 text-danger' },
+  PAUSED: { label: '‖ пауза', cls: 'border-copper/40 bg-copper/10 text-copper' },
+}
+const chipOf = (s?: string) =>
+  STATE[(s ?? '').toUpperCase()] ?? { label: s || '—', cls: 'border-line text-fog' }
 
 export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () => void }) {
   const [resp, setResp] = useState<EngineStateResp | null>(null)
@@ -40,137 +54,167 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   const st = resp?.state
   const cap = st?.capital
   const status = st?.status
+  const chip = chipOf(status?.state)
+  const dd = cap?.dd_pct ?? 0
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-void/70 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 p-4 backdrop-blur-[2px]"
       onClick={onClose}
     >
       <div
-        className="max-h-[92vh] w-full max-w-[1080px] overflow-y-auto rounded-card border border-line bg-floating p-5"
+        className="relative max-h-[92vh] w-full max-w-[1120px] overflow-y-auto rounded-card border border-white/10 bg-[#141826] p-6 shadow-[0_28px_90px_-16px_rgba(0,0,0,0.9)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
+
+        {/* ── ГЕРОЙ ── */}
+        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-serif text-[22px] text-bone">{inst.client}</h2>
-              <span className="rounded-pill border border-line px-2 text-[11px] text-ash">
-                {inst.id.slice(0, 8)}…
+            <div className="mb-1.5 text-[10px] uppercase tracking-[0.2em] text-ash">
+              Факт движка · {inst.id.slice(0, 8)}…
+            </div>
+            <div className="flex items-center gap-3">
+              <h2 className="font-serif text-[27px] leading-none text-bone">{inst.client}</h2>
+              <span className={`rounded-pill border px-2.5 py-1 text-[11px] ${chip.cls}`}>
+                {chip.label}
               </span>
             </div>
-            <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px]">
-              <span className="rounded-pill border border-line px-2 text-fog">
-                {status?.state ?? inst.status}
-              </span>
-              {status?.kill_switch && (
-                <span className="rounded-pill border border-danger/40 px-2 text-danger">
-                  kill-switch
+            <div className="mt-4">
+              <div className="text-[10px] uppercase tracking-[0.2em] text-ash">Equity</div>
+              <div className="gild font-serif text-[clamp(36px,3.6vw,50px)] leading-none tnum">
+                {money(cap?.equity)}
+              </div>
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] text-fog">
+                <span>
+                  пик <span className="tnum text-mist">{money(cap?.peak)}</span>
                 </span>
-              )}
-              {status?.alarm && (
-                <span className="rounded-pill border border-gold/40 px-2 gild">тревога</span>
-              )}
-              {status?.stale && (
-                <span className="rounded-pill border border-line px-2 text-ash">
-                  данные устарели
+                <span className="flex items-center gap-2">
+                  просадка
+                  <span className="mini-dd">
+                    <i style={{ width: `${Math.min(100, Math.max(0, dd))}%` }} />
+                  </span>
+                  <span className={`tnum ${dd > 0 ? 'text-copper' : 'text-mist'}`}>
+                    {dd.toFixed(2)}%
+                  </span>
                 </span>
-              )}
+              </div>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded-pill border border-line px-3 py-1 text-[13px] text-fog hover:text-mist"
-          >
-            ✕ закрыть
-          </button>
+
+          <div className="flex flex-col items-end gap-2">
+            {status?.kill_switch && <Flag tone="danger">⚠ KILL-SWITCH</Flag>}
+            {status?.alarm && <Flag tone="gold">▲ ТРЕВОГА</Flag>}
+            {status?.stale && <Flag tone="muted">данные устарели</Flag>}
+            <button
+              onClick={onClose}
+              className="mt-1 rounded-pill border border-white/10 px-3 py-1.5 text-[13px] text-fog transition-colors hover:border-white/20 hover:text-mist"
+            >
+              ✕ закрыть
+            </button>
+          </div>
         </div>
 
-        {!st && err && (
-          <div className="py-12 text-center text-[13px] text-danger">Нет связи с ядром…</div>
-        )}
+        {!st && err && <Placeholder tone="danger">Нет связи с ядром…</Placeholder>}
         {!st && !err && (
-          <div className="py-12 text-center text-[13px] text-ash">
-            Ждём данные движка (бот ещё не прислал engine_state)…
-          </div>
+          <Placeholder>Ждём данные движка (бот ещё не прислал engine_state)…</Placeholder>
         )}
 
         {st && (
           <>
-            <div className="mb-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 text-[12px]">
-              <Metric label="Equity" value={money(cap?.equity)} />
-              <Metric label="Пик" value={money(cap?.peak)} />
-              <Metric label="Просадка" value={cap ? cap.dd_pct.toFixed(2) + '%' : '—'} />
-              <Metric label="Открыто" value={String(cap?.open_count ?? '—')} />
-              <Metric
+            {/* ── ПЛИТКИ-KPI ── */}
+            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Tile label="Открыто позиций" value={String(cap?.open_count ?? 0)} />
+              <Tile label="Активных ордеров" value={String(st.orders.length)} />
+              <Tile
                 label="Нереализ. P&L"
-                value={money(cap?.unrealised_pnl)}
-                tone={pnlTone(cap?.unrealised_pnl ?? 0)}
+                value={signed(cap?.unrealised_pnl)}
+                tone={pnlCls(cap?.unrealised_pnl)}
               />
-              <Metric
+              <Tile
                 label="Реализ. P&L"
-                value={money(cap?.realised_pnl)}
-                tone={pnlTone(cap?.realised_pnl ?? 0)}
+                value={signed(cap?.realised_pnl)}
+                tone={pnlCls(cap?.realised_pnl)}
               />
             </div>
 
             <Section title="Позиции" count={st.positions.length} empty="Открытых позиций нет">
-              <Table head={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']}>
+              <DataTable cols={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']} numFrom={2}>
                 {st.positions.map((p, i) => (
-                  <tr key={i} className="border-t border-line/60">
-                    <Td b>{p.symbol}</Td>
-                    <Td>{p.side}</Td>
-                    <Td>{num(p.avg_px)}</Td>
-                    <Td>{num(p.size)}</Td>
-                    <td className={`px-3 py-2 tnum ${pnlTone(p.live_pnl)}`}>{num(p.live_pnl)}</td>
+                  <tr key={i} className="hover:bg-white/[0.015]">
+                    <Td strong>{p.symbol}</Td>
+                    <Td>
+                      <SideBadge side={p.side} />
+                    </Td>
+                    <Td num>{num(p.avg_px)}</Td>
+                    <Td num>{num(p.size)}</Td>
+                    <Td num tone={pnlCls(p.live_pnl)}>
+                      {signed(p.live_pnl)}
+                    </Td>
                   </tr>
                 ))}
-              </Table>
+              </DataTable>
             </Section>
 
-            <Section
-              title="Активные ордера"
-              count={st.orders.length}
-              empty="Активных ордеров нет"
-            >
-              <Table head={['Монета', 'Сторона', 'Тип', 'Цена', 'Кол-во', 'Статус']}>
+            <Section title="Активные ордера" count={st.orders.length} empty="Активных ордеров нет">
+              <DataTable cols={['Монета', 'Сторона', 'Тип', 'Цена', 'Кол-во', 'Статус']} numFrom={3}>
                 {st.orders.map((o, i) => (
-                  <tr key={i} className="border-t border-line/60">
-                    <Td b>{o.symbol}</Td>
-                    <Td>{o.side}</Td>
+                  <tr key={i} className="hover:bg-white/[0.015]">
+                    <Td strong>{o.symbol}</Td>
+                    <Td>
+                      <SideBadge side={o.side} />
+                    </Td>
                     <Td>{o.type}</Td>
-                    <Td>{num(o.px)}</Td>
-                    <Td>{num(o.qty)}</Td>
-                    <Td>{o.status}</Td>
+                    <Td num>{num(o.px)}</Td>
+                    <Td num>{num(o.qty)}</Td>
+                    <Td num>
+                      <span className="rounded-pill border border-white/10 px-2 py-0.5 text-[10px] text-mist">
+                        {o.status}
+                      </span>
+                    </Td>
                   </tr>
                 ))}
-              </Table>
+              </DataTable>
             </Section>
 
             <Section title="Последние сделки" count={st.trades.length} empty="Сделок пока нет">
-              <Table head={['Монета', 'Сторона', 'Кол-во', 'P&L', 'Время']}>
+              <DataTable cols={['Монета', 'Сторона', 'Кол-во', 'P&L', 'Время']} numFrom={2}>
                 {st.trades.map((t, i) => (
-                  <tr key={i} className="border-t border-line/60">
-                    <Td b>{t.symbol}</Td>
-                    <Td>{t.side}</Td>
-                    <Td>{num(t.qty)}</Td>
-                    <td className={`px-3 py-2 tnum ${pnlTone(t.pnl)}`}>{num(t.pnl)}</td>
-                    <Td>{ts(t.ts)}</Td>
+                  <tr key={i} className="hover:bg-white/[0.015]">
+                    <Td strong>{t.symbol}</Td>
+                    <Td>
+                      <SideBadge side={t.side} />
+                    </Td>
+                    <Td num>{num(t.qty)}</Td>
+                    <Td num tone={pnlCls(t.pnl)}>
+                      {signed(t.pnl)}
+                    </Td>
+                    <Td num>{ts(t.ts)}</Td>
                   </tr>
                 ))}
-              </Table>
+              </DataTable>
             </Section>
 
+            {/* ── СОБЫТИЯ (лог-список) ── */}
             <Section title="События" count={st.events.length} empty="Событий нет">
-              <div className="space-y-1 px-3 py-2 text-[11px] text-ash">
+              <ul>
                 {st.events.map((e, i) => (
-                  <div key={i}>
-                    <span className="text-fog">{e.kind}</span> · {ts(e.ts)} · {e.detail}
-                  </div>
+                  <li
+                    key={i}
+                    className="flex items-baseline justify-between gap-4 border-t border-line px-4 py-2.5 text-[12px] first:border-t-0 hover:bg-white/[0.015]"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-mist">{e.kind}</span>
+                      {e.detail && <span className="text-fog"> · {e.detail}</span>}
+                    </span>
+                    <span className="shrink-0 tnum text-ash">{ts(e.ts)}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </Section>
 
-            <div className="mt-3 text-[11px] text-ash">
+            <div className="mt-4 flex items-center gap-2 text-[11px] text-ash">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ok" />
               обновляется ~5с · факт движка, не живой тик
               {resp?.received_at ? ` · получено ${ts(resp.received_at).slice(11)}` : ''}
             </div>
@@ -181,11 +225,39 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   )
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: string }) {
+function Flag({ tone, children }: { tone: 'danger' | 'gold' | 'muted'; children: React.ReactNode }) {
+  const cls =
+    tone === 'danger'
+      ? 'border-danger/50 bg-danger/15 text-danger'
+      : tone === 'gold'
+        ? 'border-gold/50 bg-gold/15 text-gold'
+        : 'border-line bg-white/[0.03] text-ash'
   return (
-    <div className="rounded-card border border-line bg-card p-2.5">
-      <div className="text-[10px] uppercase tracking-wide text-ash">{label}</div>
-      <div className={`mt-0.5 tnum ${tone ?? 'text-fog'}`}>{value}</div>
+    <span className={`rounded-pill border px-3 py-1 text-[11px] font-semibold tracking-wide ${cls}`}>
+      {children}
+    </span>
+  )
+}
+
+function Tile({ label, value, tone }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="rounded-card border border-white/[0.06] bg-[#0d1017] p-3.5">
+      <div className="mb-2 text-[10px] uppercase tracking-[0.15em] text-ash">{label}</div>
+      <div className={`font-serif text-[clamp(20px,1.7vw,26px)] leading-none tnum ${tone ?? 'text-bone'}`}>
+        {value}
+      </div>
+    </div>
+  )
+}
+
+function Placeholder({ tone, children }: { tone?: 'danger'; children: React.ReactNode }) {
+  return (
+    <div
+      className={`rounded-card border border-white/[0.06] bg-[#0d1017] py-14 text-center text-[13px] ${
+        tone === 'danger' ? 'text-danger' : 'text-ash'
+      }`}
+    >
+      {children}
     </div>
   )
 }
@@ -202,13 +274,19 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <div className="mb-3 rounded-card border border-line bg-card">
-      <div className="flex items-center justify-between border-b border-line px-3 py-2">
-        <span className="text-[12px] font-semibold uppercase tracking-wide text-mist">{title}</span>
-        <span className="text-[11px] text-ash">{count}</span>
+    <div className="mb-3 overflow-hidden rounded-card border border-white/[0.06] bg-[#0d1017]">
+      <div className="flex items-center justify-between px-4 py-2.5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
+          {title}
+        </span>
+        <span className="rounded-pill bg-white/[0.05] px-2 py-0.5 text-[11px] text-ash tnum">
+          {count}
+        </span>
       </div>
       {count === 0 ? (
-        <div className="px-3 py-4 text-center text-[12px] text-ash">{empty}</div>
+        <div className="border-t border-line px-4 py-6 text-center text-[12px] text-steel">
+          — {empty} —
+        </div>
       ) : (
         <div className="overflow-x-auto">{children}</div>
       )}
@@ -216,14 +294,28 @@ function Section({
   )
 }
 
-function Table({ head, children }: { head: string[]; children: React.ReactNode }) {
+// .dt-язык таблиц: uppercase-заголовок (ash), hairline-строки (--line), числа справа, hover.
+function DataTable({
+  cols,
+  numFrom,
+  children,
+}: {
+  cols: string[]
+  numFrom: number
+  children: React.ReactNode
+}) {
   return (
     <table className="w-full text-[12px]">
       <thead>
-        <tr className="text-left text-[11px] text-ash">
-          {head.map((h) => (
-            <th key={h} className="px-3 py-2 font-normal">
-              {h}
+        <tr>
+          {cols.map((c, i) => (
+            <th
+              key={c}
+              className={`border-t border-line px-4 py-2 text-[10px] font-medium uppercase tracking-[0.08em] text-ash ${
+                i >= numFrom ? 'text-right' : 'text-left'
+              }`}
+            >
+              {c}
             </th>
           ))}
         </tr>
@@ -233,6 +325,35 @@ function Table({ head, children }: { head: string[]; children: React.ReactNode }
   )
 }
 
-function Td({ children, b }: { children: React.ReactNode; b?: boolean }) {
-  return <td className={`px-3 py-2 tnum ${b ? 'font-semibold text-bone' : 'text-ash'}`}>{children}</td>
+function Td({
+  children,
+  strong,
+  num,
+  tone,
+}: {
+  children: React.ReactNode
+  strong?: boolean
+  num?: boolean
+  tone?: string
+}) {
+  return (
+    <td
+      className={`border-t border-line px-4 py-2.5 tnum ${num ? 'text-right' : 'text-left'} ${
+        tone ?? (strong ? 'font-semibold text-bone' : 'text-silver')
+      }`}
+    >
+      {children}
+    </td>
+  )
+}
+
+function SideBadge({ side }: { side: string }) {
+  const long = /buy|long/i.test(side)
+  const short = /sell|short/i.test(side)
+  const cls = long
+    ? 'border-ok/40 text-ok'
+    : short
+      ? 'border-danger/40 text-danger'
+      : 'border-line text-fog'
+  return <span className={`rounded-pill border px-2 py-0.5 text-[10px] ${cls}`}>{side || '—'}</span>
 }
