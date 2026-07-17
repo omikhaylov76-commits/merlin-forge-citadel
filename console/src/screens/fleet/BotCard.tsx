@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import { getEngineState, type EngineStateResp, type FleetInstance } from '@/lib/api'
 
 // Карточка бота (S7): клик по строке Флота → факт-слой движка. Дизайн «midnight vault + gilded lines»:
-// приглушённая navy-подложка, золочёный герой-equity, плитки-KPI, .dt-таблицы (uppercase-заголовок,
-// hairline-строки, числа справа), лог событий. Смысловой цвет PnL. Автообновление ~5с (engine_state).
+// ФИКСИРОВАННАЯ шапка-герой (статус/equity/пик/просадка/флаги) + скроллящееся тело (плитки + секции-
+// гармошки). .dt-таблицы, лог событий, смысловой цвет PnL. Автообновление ~5с (engine_state readout).
 
 const num = (n?: number) => (n == null ? '—' : n.toLocaleString('ru-RU', { maximumFractionDigits: 6 }))
 const money = (n?: number) =>
@@ -63,163 +63,169 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
       onClick={onClose}
     >
       <div
-        className="relative max-h-[92vh] w-full max-w-[1120px] overflow-y-auto rounded-card border border-white/10 bg-[#141826] p-6 shadow-[0_28px_90px_-16px_rgba(0,0,0,0.9)]"
+        className="relative flex max-h-[85vh] w-full max-w-[980px] flex-col overflow-hidden rounded-card border border-white/10 bg-[#141826] shadow-[0_28px_90px_-16px_rgba(0,0,0,0.9)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-px bg-gradient-to-r from-transparent via-gold/50 to-transparent" />
 
-        {/* ── ГЕРОЙ ── */}
-        <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="mb-1.5 text-[10px] uppercase tracking-[0.2em] text-ash">
-              Факт движка · {inst.id.slice(0, 8)}…
-            </div>
-            <div className="flex items-center gap-3">
-              <h2 className="font-serif text-[27px] leading-none text-bone">{inst.client}</h2>
-              <span className={`rounded-pill border px-2.5 py-1 text-[11px] ${chip.cls}`}>
-                {chip.label}
-              </span>
-            </div>
-            <div className="mt-4">
-              <div className="text-[10px] uppercase tracking-[0.2em] text-ash">Equity</div>
-              <div className="gild font-serif text-[clamp(36px,3.6vw,50px)] leading-none tnum">
-                {money(cap?.equity)}
+        {/* ── ФИКСИРОВАННАЯ ШАПКА-ГЕРОЙ ── */}
+        <div className="shrink-0 border-b border-white/[0.06] px-6 pb-5 pt-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="mb-1.5 text-[10px] uppercase tracking-[0.2em] text-ash">
+                Факт движка · {inst.id.slice(0, 8)}…
               </div>
-              <div className="mt-2.5 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] text-fog">
-                <span>
-                  пик <span className="tnum text-mist">{money(cap?.peak)}</span>
-                </span>
-                <span className="flex items-center gap-2">
-                  просадка
-                  <span className="mini-dd">
-                    <i style={{ width: `${Math.min(100, Math.max(0, dd))}%` }} />
-                  </span>
-                  <span className={`tnum ${dd > 0 ? 'text-copper' : 'text-mist'}`}>
-                    {dd.toFixed(2)}%
-                  </span>
+              <div className="flex items-center gap-3">
+                <h2 className="font-serif text-[24px] leading-none text-bone">{inst.client}</h2>
+                <span className={`rounded-pill border px-2.5 py-1 text-[11px] ${chip.cls}`}>
+                  {chip.label}
                 </span>
               </div>
+              <div className="mt-3.5">
+                <div className="text-[10px] uppercase tracking-[0.2em] text-ash">Equity</div>
+                <div className="gild font-serif text-[clamp(28px,2.6vw,36px)] leading-none tnum">
+                  {money(cap?.equity)}
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[12px] text-fog">
+                  <span>
+                    пик <span className="tnum text-mist">{money(cap?.peak)}</span>
+                  </span>
+                  <span className="flex items-center gap-2">
+                    просадка
+                    <span className="mini-dd">
+                      <i style={{ width: `${Math.min(100, Math.max(0, dd))}%` }} />
+                    </span>
+                    <span className={`tnum ${dd > 0 ? 'text-copper' : 'text-mist'}`}>
+                      {dd.toFixed(2)}%
+                    </span>
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col items-end gap-2">
-            {status?.kill_switch && <Flag tone="danger">⚠ KILL-SWITCH</Flag>}
-            {status?.alarm && <Flag tone="gold">▲ ТРЕВОГА</Flag>}
-            {status?.stale && <Flag tone="muted">данные устарели</Flag>}
-            <button
-              onClick={onClose}
-              className="mt-1 rounded-pill border border-white/10 px-3 py-1.5 text-[13px] text-fog transition-colors hover:border-white/20 hover:text-mist"
-            >
-              ✕ закрыть
-            </button>
+            <div className="flex flex-col items-end gap-2">
+              {status?.kill_switch && <Flag tone="danger">⚠ KILL-SWITCH</Flag>}
+              {status?.alarm && <Flag tone="gold">▲ ТРЕВОГА</Flag>}
+              {status?.stale && <Flag tone="muted">данные устарели</Flag>}
+              <button
+                onClick={onClose}
+                className="mt-1 rounded-pill border border-white/10 px-3 py-1.5 text-[13px] text-fog transition-colors hover:border-white/20 hover:text-mist"
+              >
+                ✕ закрыть
+              </button>
+            </div>
           </div>
         </div>
 
-        {!st && err && <Placeholder tone="danger">Нет связи с ядром…</Placeholder>}
-        {!st && !err && (
-          <Placeholder>Ждём данные движка (бот ещё не прислал engine_state)…</Placeholder>
-        )}
+        {/* ── СКРОЛЛЯЩЕЕСЯ ТЕЛО ── */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+          {!st && err && <Placeholder tone="danger">Нет связи с ядром…</Placeholder>}
+          {!st && !err && (
+            <Placeholder>Ждём данные движка (бот ещё не прислал engine_state)…</Placeholder>
+          )}
 
-        {st && (
-          <>
-            {/* ── ПЛИТКИ-KPI ── */}
-            <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Tile label="Открыто позиций" value={String(cap?.open_count ?? 0)} />
-              <Tile label="Активных ордеров" value={String(st.orders.length)} />
-              <Tile
-                label="Нереализ. P&L"
-                value={signed(cap?.unrealised_pnl)}
-                tone={pnlCls(cap?.unrealised_pnl)}
-              />
-              <Tile
-                label="Реализ. P&L"
-                value={signed(cap?.realised_pnl)}
-                tone={pnlCls(cap?.realised_pnl)}
-              />
-            </div>
+          {st && (
+            <>
+              <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Tile label="Открыто позиций" value={String(cap?.open_count ?? 0)} />
+                <Tile label="Активных ордеров" value={String(st.orders.length)} />
+                <Tile
+                  label="Нереализ. P&L"
+                  value={signed(cap?.unrealised_pnl)}
+                  tone={pnlCls(cap?.unrealised_pnl)}
+                />
+                <Tile
+                  label="Реализ. P&L"
+                  value={signed(cap?.realised_pnl)}
+                  tone={pnlCls(cap?.realised_pnl)}
+                />
+              </div>
 
-            <Section title="Позиции" count={st.positions.length} empty="Открытых позиций нет">
-              <DataTable cols={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']} numFrom={2}>
-                {st.positions.map((p, i) => (
-                  <tr key={i} className="hover:bg-white/[0.015]">
-                    <Td strong>{p.symbol}</Td>
-                    <Td>
-                      <SideBadge side={p.side} />
-                    </Td>
-                    <Td num>{num(p.avg_px)}</Td>
-                    <Td num>{num(p.size)}</Td>
-                    <Td num tone={pnlCls(p.live_pnl)}>
-                      {signed(p.live_pnl)}
-                    </Td>
-                  </tr>
-                ))}
-              </DataTable>
-            </Section>
+              <Section title="Позиции" count={st.positions.length} empty="Открытых позиций нет">
+                <DataTable cols={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']} numFrom={2}>
+                  {st.positions.map((p, i) => (
+                    <tr key={i} className="hover:bg-white/[0.015]">
+                      <Td strong>{p.symbol}</Td>
+                      <Td>
+                        <SideBadge side={p.side} />
+                      </Td>
+                      <Td num>{num(p.avg_px)}</Td>
+                      <Td num>{num(p.size)}</Td>
+                      <Td num tone={pnlCls(p.live_pnl)}>
+                        {signed(p.live_pnl)}
+                      </Td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </Section>
 
-            <Section title="Активные ордера" count={st.orders.length} empty="Активных ордеров нет">
-              <DataTable cols={['Монета', 'Сторона', 'Тип', 'Цена', 'Кол-во', 'Статус']} numFrom={3}>
-                {st.orders.map((o, i) => (
-                  <tr key={i} className="hover:bg-white/[0.015]">
-                    <Td strong>{o.symbol}</Td>
-                    <Td>
-                      <SideBadge side={o.side} />
-                    </Td>
-                    <Td>{o.type}</Td>
-                    <Td num>{num(o.px)}</Td>
-                    <Td num>{num(o.qty)}</Td>
-                    <Td num>
-                      <span className="rounded-pill border border-white/10 px-2 py-0.5 text-[10px] text-mist">
-                        {o.status}
+              <Section title="Активные ордера" count={st.orders.length} empty="Активных ордеров нет">
+                <DataTable
+                  cols={['Монета', 'Сторона', 'Тип', 'Цена', 'Кол-во', 'Статус']}
+                  numFrom={3}
+                >
+                  {st.orders.map((o, i) => (
+                    <tr key={i} className="hover:bg-white/[0.015]">
+                      <Td strong>{o.symbol}</Td>
+                      <Td>
+                        <SideBadge side={o.side} />
+                      </Td>
+                      <Td>{o.type}</Td>
+                      <Td num>{num(o.px)}</Td>
+                      <Td num>{num(o.qty)}</Td>
+                      <Td num>
+                        <span className="rounded-pill border border-white/10 px-2 py-0.5 text-[10px] text-mist">
+                          {o.status}
+                        </span>
+                      </Td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </Section>
+
+              <Section title="Последние сделки" count={st.trades.length} empty="Сделок пока нет">
+                <DataTable cols={['Монета', 'Сторона', 'Кол-во', 'P&L', 'Время']} numFrom={2}>
+                  {st.trades.map((t, i) => (
+                    <tr key={i} className="hover:bg-white/[0.015]">
+                      <Td strong>{t.symbol}</Td>
+                      <Td>
+                        <SideBadge side={t.side} />
+                      </Td>
+                      <Td num>{num(t.qty)}</Td>
+                      <Td num tone={pnlCls(t.pnl)}>
+                        {signed(t.pnl)}
+                      </Td>
+                      <Td num>{ts(t.ts)}</Td>
+                    </tr>
+                  ))}
+                </DataTable>
+              </Section>
+
+              <Section title="События" count={st.events.length} empty="Событий нет">
+                <ul>
+                  {st.events.map((e, i) => (
+                    <li
+                      key={i}
+                      className="flex items-baseline justify-between gap-4 border-t border-line px-4 py-2.5 text-[12px] first:border-t-0 hover:bg-white/[0.015]"
+                    >
+                      <span className="min-w-0">
+                        <span className="text-mist">{e.kind}</span>
+                        {e.detail && <span className="text-fog"> · {e.detail}</span>}
                       </span>
-                    </Td>
-                  </tr>
-                ))}
-              </DataTable>
-            </Section>
+                      <span className="shrink-0 tnum text-ash">{ts(e.ts)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Section>
 
-            <Section title="Последние сделки" count={st.trades.length} empty="Сделок пока нет">
-              <DataTable cols={['Монета', 'Сторона', 'Кол-во', 'P&L', 'Время']} numFrom={2}>
-                {st.trades.map((t, i) => (
-                  <tr key={i} className="hover:bg-white/[0.015]">
-                    <Td strong>{t.symbol}</Td>
-                    <Td>
-                      <SideBadge side={t.side} />
-                    </Td>
-                    <Td num>{num(t.qty)}</Td>
-                    <Td num tone={pnlCls(t.pnl)}>
-                      {signed(t.pnl)}
-                    </Td>
-                    <Td num>{ts(t.ts)}</Td>
-                  </tr>
-                ))}
-              </DataTable>
-            </Section>
-
-            {/* ── СОБЫТИЯ (лог-список) ── */}
-            <Section title="События" count={st.events.length} empty="Событий нет">
-              <ul>
-                {st.events.map((e, i) => (
-                  <li
-                    key={i}
-                    className="flex items-baseline justify-between gap-4 border-t border-line px-4 py-2.5 text-[12px] first:border-t-0 hover:bg-white/[0.015]"
-                  >
-                    <span className="min-w-0">
-                      <span className="text-mist">{e.kind}</span>
-                      {e.detail && <span className="text-fog"> · {e.detail}</span>}
-                    </span>
-                    <span className="shrink-0 tnum text-ash">{ts(e.ts)}</span>
-                  </li>
-                ))}
-              </ul>
-            </Section>
-
-            <div className="mt-4 flex items-center gap-2 text-[11px] text-ash">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ok" />
-              обновляется ~5с · факт движка, не живой тик
-              {resp?.received_at ? ` · получено ${ts(resp.received_at).slice(11)}` : ''}
-            </div>
-          </>
-        )}
+              <div className="mt-4 flex items-center gap-2 text-[11px] text-ash">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ok" />
+                обновляется ~5с · факт движка, не живой тик
+                {resp?.received_at ? ` · получено ${ts(resp.received_at).slice(11)}` : ''}
+              </div>
+            </>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -262,6 +268,7 @@ function Placeholder({ tone, children }: { tone?: 'danger'; children: React.Reac
   )
 }
 
+// Секция-гармошка: клик по шапке сворачивает/разворачивает тело.
 function Section({
   title,
   count,
@@ -273,28 +280,47 @@ function Section({
   empty: string
   children: React.ReactNode
 }) {
+  const [open, setOpen] = useState(true)
   return (
     <div className="mb-3 overflow-hidden rounded-card border border-white/[0.06] bg-[#0d1017]">
-      <div className="flex items-center justify-between px-4 py-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
-          {title}
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between px-4 py-2.5 text-left transition-colors hover:bg-white/[0.02]"
+      >
+        <span className="flex items-center gap-2">
+          <span
+            className={`text-[10px] text-ash transition-transform duration-300 ${open ? 'rotate-90' : ''}`}
+          >
+            ▸
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
+            {title}
+          </span>
         </span>
         <span className="rounded-pill bg-white/[0.05] px-2 py-0.5 text-[11px] text-ash tnum">
           {count}
         </span>
-      </div>
-      {count === 0 ? (
-        <div className="border-t border-line px-4 py-6 text-center text-[12px] text-steel">
-          — {empty} —
+      </button>
+      {/* плавная гармошка: анимируем grid-template-rows 0fr↔1fr (высота-auto не анимируется) */}
+      <div
+        className={`grid transition-[grid-template-rows] duration-[350ms] ease-out ${
+          open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">
+          {count === 0 ? (
+            <div className="border-t border-line px-4 py-6 text-center text-[12px] text-steel">
+              — {empty} —
+            </div>
+          ) : (
+            <div className="overflow-x-auto">{children}</div>
+          )}
         </div>
-      ) : (
-        <div className="overflow-x-auto">{children}</div>
-      )}
+      </div>
     </div>
   )
 }
 
-// .dt-язык таблиц: uppercase-заголовок (ash), hairline-строки (--line), числа справа, hover.
 function DataTable({
   cols,
   numFrom,
