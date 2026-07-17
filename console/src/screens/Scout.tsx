@@ -3,11 +3,13 @@ import { Chip, PageHead, Toolbar } from '@/components/ui/page'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAsync } from '@/lib/useAsync'
-import { type ScoutSnapshot, visibleScoutInstances } from '@/lib/api'
+import { getBasket, getDozorSettings, type ScoutSnapshot, visibleScoutInstances } from '@/lib/api'
 import { boardColumn, COLUMNS, loadScoutBoard, sortSnaps } from '@/lib/scout'
 import { ScoutCard } from './scout/ScoutCard'
 import { ScoutDetail } from './scout/ScoutDetail'
 import { ProducerLabel, StaleBadge } from './scout/Badges'
+import { DozorStrip } from './scout/DozorStrip'
+import { DozorPanel } from './scout/DozorPanel'
 
 // Экран Разведка (#53, макет kuznitsa-walkthrough Экран 1): ЖИВОЙ readout /v1/instances/{id}/scout.
 // Консоль = ДИСПЛЕЙ снимка скаута; производные (%-до-входа/свежесть) — на фронте, честно подписаны.
@@ -18,6 +20,13 @@ export function Scout() {
   const [minScore, setMinScore] = useState(false)
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null)
   const [tf, setTf] = useState<'4h' | '1h'>('4h') // С7-1: активный ТФ доски
+  const [panelOpen, setPanelOpen] = useState(false) // Разведка-стол: рояль настроек дозора
+  // настройки дозора выбранного инстанса (питают плашку+рояль); Набор — счётчик в плашке
+  const dozor = useAsync(
+    () => (selected ? getDozorSettings(selected) : Promise.resolve(null)),
+    [selected],
+  )
+  const basket = useAsync(getBasket, [])
 
   // дефолт селектора = инстанс с самыми свежими снимками (режим представителя, ADR-0016 в.6);
   // сброс, если выбранный инстанс исчез из обновлённого флота (иначе показ пустого не того бота).
@@ -44,6 +53,11 @@ export function Scout() {
   const freshest = tfSnaps.reduce<ScoutSnapshot | null>(
     (a, s) => (!a || Date.parse(s.scan_ts) > Date.parse(a.scan_ts) ? s : a),
     null,
+  )
+  // свежесть скана для плашки дозора — самый свежий снимок инстанса (по всем ТФ)
+  const scanTs = snaps.reduce<string | undefined>(
+    (a, s) => (!a || Date.parse(s.scan_ts) > Date.parse(a) ? s.scan_ts : a),
+    undefined,
   )
 
   // С7-1: дефолт ТФ = ТФ самого свежего снимка инстанса; пере-выводим при смене инстанса/данных
@@ -95,6 +109,29 @@ export function Scout() {
           ) : undefined
         }
       />
+
+      {/* Разведка-стол (S7): плашка дозора + рояль настроек — всегда над чипами/доской (по макету) */}
+      {selected && dozor.data && (
+        <>
+          <DozorStrip
+            instanceId={selected}
+            settings={dozor.data.settings}
+            apply={dozor.data.apply}
+            scanTs={scanTs}
+            naborCount={basket.data?.length ?? 0}
+            open={panelOpen}
+            onToggle={() => setPanelOpen((v) => !v)}
+            onScanned={board.reload}
+          />
+          <DozorPanel
+            instanceId={selected}
+            live={dozor.data.settings}
+            open={panelOpen}
+            onApplied={dozor.reload}
+          />
+        </>
+      )}
+
       <Toolbar>
         <Chip
           active={tf === '4h'}

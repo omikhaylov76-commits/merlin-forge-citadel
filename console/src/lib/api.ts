@@ -241,3 +241,51 @@ export const removeBasketItem = (id: string) =>
   api<void>(`/v1/basket/items/${id}`, { method: 'DELETE' })
 // ключ звёздочки «в наборе?» — совпадает с uniq (symbol, tf) ядра
 export const basketKey = (symbol: string, tf: string) => `${symbol}|${tf}`
+
+// ── Разведка-стол: настройки дозора (S7, routes_dozor) — питает плашку + рояль ────────────────────
+// Ядро = ИСТИНА (Q4): хранит desired-пороги + журнал, доставляет картриджу командой dozor_apply.
+// Консоль = дисплей+редактор desired: 7 крутилок группы 1 правит Оператор, экспертные 5 идут как есть.
+export type DozorSettings = {
+  min_age_days: number
+  min_turnover_usd: number
+  max_spread_pct: number
+  min_history_bars: number
+  min_score: number
+  universe_max: number
+  list_max: number
+  tfs: string[]
+  primary_tf: string
+  fresh_bars: number
+  scan_bars: number
+  cal_bars: number
+  cal_utc_hour: number
+  rps: number
+}
+export type DozorApply = { status: string; at?: string | null }
+export type DozorSettingsResp = {
+  settings: DozorSettings
+  defaults: DozorSettings
+  apply: DozorApply
+  updated_at: string | null
+}
+export const getDozorSettings = (instanceId: string) =>
+  api<DozorSettingsResp>(`/v1/instances/${instanceId}/scout/settings`)
+export const putDozorSettings = (instanceId: string, settings: DozorSettings) =>
+  api<{ settings: DozorSettings; apply: DozorApply }>(
+    `/v1/instances/${instanceId}/scout/settings`,
+    { method: 'PUT', body: JSON.stringify(settings) },
+  )
+// Кнопка «Сканировать сейчас» — команда scan_now (картридж пишет триггер в scout_control).
+export const scanNow = (instanceId: string) =>
+  api<{ status: string; command_id: string }>(
+    `/v1/instances/${instanceId}/scout/scan-now`,
+    { method: 'POST' },
+  )
+export type DozorJournalEntry = {
+  ts: string | null
+  actor: string
+  before: Record<string, unknown>
+  after: Record<string, unknown>
+}
+export const getDozorJournal = (instanceId: string) =>
+  api<DozorJournalEntry[]>(`/v1/instances/${instanceId}/scout/settings/journal`)
