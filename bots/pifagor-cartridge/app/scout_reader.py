@@ -63,10 +63,12 @@ class ScoutReader:
         return self._scan_cursor()
 
     def scan_now(self, *, now_ms: int) -> None:
-        """Кнопка «Сканировать сейчас» (Разведка-стол): пишем scan_now_ms в scout_control вендорским
-        mark (его WAL/busy_timeout; короткая запись, Q2). Вендор на след. wake-loop триггерит Этап B
-        (scan_now_ms > scan_now_ack_ms, main.py:160) и ачит scan_now_ack_ms=scan_now_ms."""
-        self.scout_db.scout_control_mark(scan_now_ms=int(now_ms))
+        """Кнопка «Сканировать сейчас» (Разведка-стол): durable-намерение через ВЕНДОРСКИЙ канал
+        кнопки `scout_control_request_scan` (db.py:1247, дашборд-сторона). НЕ `scout_control_mark`:
+        тот — «скаут-сторона» с whitelist БЕЗ scan_now_ms, чужие ключи МОЛЧА дропает (db.py:1254-57)
+        — живой Галахад это показал: ack ok, а Этап B не стартует. Вендор на след. wake-loop видит
+        scan_now_ms > scan_now_ack_ms (main.py:160) → Этап B(button) → ачит ack=scan_now_ms."""
+        self.scout_db.scout_control_request_scan(int(now_ms))
 
     def build_snapshots(self) -> tuple[int, list[dict]]:
         """(scan_ms, список контрактных снимков). Пустой список = у скаута сейчас нет находок."""
