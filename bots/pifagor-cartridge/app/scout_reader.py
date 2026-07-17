@@ -70,6 +70,14 @@ class ScoutReader:
         scan_now_ms > scan_now_ack_ms (main.py:160) → Этап B(button) → ачит ack=scan_now_ms."""
         self.scout_db.scout_control_request_scan(int(now_ms))
 
+    def force_recalibrate(self) -> None:
+        """Принудительная перекалибровка списка (Разведка-стол, dozor_apply): сброс last_a_ms=0 →
+        вендорский decide() на след. тике даёт ('A','bootstrap') → Этап A пересоберёт scout_list на
+        НОВЫХ порогах отбора. Без этого рестарт грузит новый env, но при живом списке decide()
+        пропускает Этап A (main.py:158) → скан на СТАРОМ списке = «применил, а разницы нет».
+        Вендорский `mark` (last_a_ms в whitelist; targeted UPDATE, scan_now не клоббер)."""
+        self.scout_db.scout_control_mark(last_a_ms=0)
+
     def build_snapshots(self) -> tuple[int, list[dict]]:
         """(scan_ms, список контрактных снимков). Пустой список = у скаута сейчас нет находок."""
         scan_ms = self._scan_cursor()          # триггер+scan_ts по scout_control, не по meta

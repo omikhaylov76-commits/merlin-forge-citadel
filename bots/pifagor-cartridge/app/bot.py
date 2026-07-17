@@ -210,7 +210,12 @@ class PifagorCartridge:
         from app.scout_overrides import write_overrides
 
         try:
-            write_overrides(payload.get("settings") or {})
+            write_overrides(payload.get("settings") or {})  # новый env + gen-бамп → рестарт скаута
+            # Пороги отбора вендор читает ТОЛЬКО на Этапе A. Рестарт грузит env, но при живом списке
+            # decide() пропускает калибровку → скан на СТАРОМ списке. Форсим перекалибровку под
+            # новые пороги (иначе «применил, а разницы нет» — Галахад показал вживую).
+            if self._scout is not None:
+                self._scout.force_recalibrate()
             self._ack(cmd_id, "ok")
         except Exception as exc:  # noqa: BLE001
             log.error("dozor_apply не применён (%s)", exc)

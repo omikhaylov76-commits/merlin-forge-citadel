@@ -42,6 +42,27 @@ def test_vendor_mark_silently_drops_scan_now_ms(tmp_path):
     assert db.scout_control_get()["scan_now_ms"] == 0
 
 
+def test_force_recalibrate_makes_vendor_bootstrap(tmp_path):
+    """dozor_apply → перекалибровка: сброс last_a_ms → decide() даёт Этап A даже при ЖИВОМ списке
+    (иначе новые пороги отбора не пересобрали бы scout_list). Регресс живого бага «нет разницы»."""
+    from scout.main import decide
+    from storage.db import DB
+
+    path = str(tmp_path / "scout.db")
+    scout_side = DB(db_path=path, owner=True)
+    scout_side.scout_control_mark(last_a_ms=9_999)  # список откалиброван
+    kw = {"tf": "4h", "auto": False, "cal_hour": 9, "list_present": True}
+
+    # до сброса: живой список → decide пропускает bootstrap (Этап B/idle, не A)
+    assert decide(scout_side.scout_control_get(), 10_000, **kw)[0] != "A"
+
+    _reader(path).force_recalibrate()  # адаптер: сброс last_a_ms=0
+
+    ctrl = scout_side.scout_control_get()
+    assert ctrl["last_a_ms"] == 0, "last_a_ms не сброшен — регресс: настройки не перекалибруют"
+    assert decide(ctrl, 10_000, **kw) == ("A", "bootstrap")
+
+
 def test_scan_now_ack_flow_roundtrip(tmp_path):
     """Полный круг кнопки: request → decide=button → скаут ачит → decide=idle (single-shot)."""
     from scout.main import decide
