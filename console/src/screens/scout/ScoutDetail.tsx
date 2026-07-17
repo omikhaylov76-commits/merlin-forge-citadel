@@ -34,7 +34,16 @@ const LEVEL_STYLE: Record<string, { color: string; style: LineStyle }> = {
 }
 
 // Деталь-вью сетапа: график Lightweight Charts (свечи снимка + слой «теория» разведки vs «факт» бота).
-export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: () => void }) {
+// onBasketChange — сообщить доске о смене Набора (звёзды на карточках/счётчик плашки синкаются).
+export function ScoutDetail({
+  snap,
+  onClose,
+  onBasketChange,
+}: {
+  snap: ScoutSnapshot
+  onClose: () => void
+  onBasketChange?: () => void
+}) {
   const ref = useRef<HTMLDivElement>(null)
   const [expanded, setExpanded] = useState(false) // локально (без localStorage — запрещён в консоли)
   // НАБОР-1: звёздочка «в набор». basketId != null → этот сетап (symbol,tf) уже в Наборе.
@@ -168,6 +177,7 @@ export function ScoutDetail({ snap, onClose }: { snap: ScoutSnapshot; onClose: (
         })
         setBasketId(item.id)
       }
+      onBasketChange?.()
     } finally {
       setStarBusy(false)
     }

@@ -5,7 +5,21 @@ import { Sparkline } from './Sparkline'
 const fmt = (n?: number) => (n == null ? '—' : n.toLocaleString('ru-RU', { maximumFractionDigits: 6 }))
 
 // Карточка кандидата (по макету): пара · скор · возраст · входы+стоп · %-до-входа (снимок) · спарклайн.
-export function ScoutCard({ snap, onOpen }: { snap: ScoutSnapshot; onOpen: () => void }) {
+// Звёздочка «в Наборе» — прямо на карточке (макет razvedka-page-layout .star; фидбэк Оператора:
+// видно выбранных без захода в деталь). span, не button — карточка сама <button> (HTML-валидность).
+export function ScoutCard({
+  snap,
+  onOpen,
+  starred,
+  starBusy,
+  onStar,
+}: {
+  snap: ScoutSnapshot
+  onOpen: () => void
+  starred?: boolean
+  starBusy?: boolean
+  onStar?: () => void
+}) {
   const col = boardColumn(snap)
   const ready = col === 'ready'
   const committed = col === 'committed'
@@ -35,8 +49,33 @@ export function ScoutCard({ snap, onOpen }: { snap: ScoutSnapshot; onOpen: () =>
             </span>
           )}
         </span>
-        <span className={committed ? 'text-[12px] text-ash' : 'gild font-serif text-[15px] tnum'}>
-          {committed ? 'взят' : Math.round(snap.score)}
+        <span className="flex items-center gap-1.5">
+          {onStar && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (!starBusy) onStar()
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation()
+                  e.preventDefault()
+                  if (!starBusy) onStar()
+                }
+              }}
+              title={starred ? 'Убрать из Набора' : 'В Набор'}
+              className={`text-[14px] leading-none transition-colors ${
+                starBusy ? 'opacity-50' : ''
+              } ${starred ? 'text-gold' : 'text-[#3a3d46] hover:text-fog'}`}
+            >
+              {starred ? '★' : '☆'}
+            </span>
+          )}
+          <span className={committed ? 'text-[12px] text-ash' : 'gild font-serif text-[15px] tnum'}>
+            {committed ? 'взят' : Math.round(snap.score)}
+          </span>
         </span>
       </div>
 

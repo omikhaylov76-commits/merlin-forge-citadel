@@ -3,7 +3,15 @@ import { Chip, PageHead, Toolbar } from '@/components/ui/page'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAsync } from '@/lib/useAsync'
-import { getBasket, getDozorSettings, type ScoutSnapshot, visibleScoutInstances } from '@/lib/api'
+import {
+  addToBasket,
+  basketKey,
+  getBasket,
+  getDozorSettings,
+  removeBasketItem,
+  type ScoutSnapshot,
+  visibleScoutInstances,
+} from '@/lib/api'
 import { boardColumn, COLUMNS, loadScoutBoard, sortSnaps } from '@/lib/scout'
 import { ScoutCard } from './scout/ScoutCard'
 import { ScoutDetail } from './scout/ScoutDetail'
@@ -27,6 +35,34 @@ export function Scout() {
     [selected],
   )
   const basket = useAsync(getBasket, [])
+  // НАБОР-1 на доске: карта «symbol|tf → id» для звёздочек на карточках (фидбэк Оператора —
+  // видно без захода в деталь). Тот же паттерн, что на Скринере.
+  const [starBusy, setStarBusy] = useState<string | null>(null)
+  const inBasket = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const b of basket.data ?? []) m.set(basketKey(b.symbol, b.tf), b.id)
+    return m
+  }, [basket.data])
+  const toggleStar = async (s: ScoutSnapshot) => {
+    const key = basketKey(s.symbol, s.tf)
+    setStarBusy(key)
+    try {
+      const existing = inBasket.get(key)
+      if (existing) {
+        await removeBasketItem(existing)
+      } else {
+        await addToBasket({
+          symbol: s.symbol,
+          tf: s.tf,
+          source: 'scout',
+          context: { score: s.score, stage: s.state },
+        })
+      }
+      basket.reload()
+    } finally {
+      setStarBusy(null)
+    }
+  }
 
   // дефолт селектора = инстанс с самыми свежими снимками (режим представителя, ADR-0016 в.6);
   // сброс, если выбранный инстанс исчез из обновлённого флота (иначе показ пустого не того бота).
@@ -54,9 +90,14 @@ export function Scout() {
     (a, s) => (!a || Date.parse(s.scan_ts) > Date.parse(a.scan_ts) ? s : a),
     null,
   )
-  // свежесть скана для плашки дозора — самый свежий снимок инстанса (по всем ТФ)
+  // свежесть скана для плашки дозора — время ПРИЁМА свежайшего пуша ядром (received_at ≈ конец
+  // скана; фидбэк Оператора: «нажал сканировать — показывай текущее время»). scan_ts не годится:
+  // для boundary-сканов это округлённая граница ТФ (16:00), для кнопки — момент клика, не финиша.
   const scanTs = snaps.reduce<string | undefined>(
-    (a, s) => (!a || Date.parse(s.scan_ts) > Date.parse(a) ? s.scan_ts : a),
+    (a, s) => {
+      const t = s.received_at || s.scan_ts
+      return !a || Date.parse(t) > Date.parse(a) ? t : a
+    },
     undefined,
   )
 
@@ -195,7 +236,14 @@ export function Scout() {
               </div>
               <div className="flex flex-col gap-2">
                 {byCol[col.key].map((s) => (
-                  <ScoutCard key={s.symbol + s.tf} snap={s} onOpen={() => setDetail(s)} />
+                  <ScoutCard
+                    key={s.symbol + s.tf}
+                    snap={s}
+                    onOpen={() => setDetail(s)}
+                    starred={inBasket.has(basketKey(s.symbol, s.tf))}
+                    starBusy={starBusy === basketKey(s.symbol, s.tf)}
+                    onStar={() => toggleStar(s)}
+                  />
                 ))}
                 {byCol[col.key].length === 0 && (
                   <div className="px-1 py-2 text-[11px] text-ash">пусто</div>
@@ -206,7 +254,9 @@ export function Scout() {
         </div>
       )}
 
-      {detail && <ScoutDetail snap={detail} onClose={() => setDetail(null)} />}
+      {detail && (
+        <ScoutDetail snap={detail} onClose={() => setDetail(null)} onBasketChange={basket.reload} />
+      )}
     </div>
   )
 }
