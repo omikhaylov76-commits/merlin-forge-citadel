@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type ReactNode, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   getDozorJournal,
@@ -295,6 +295,7 @@ function Slider({
   onChange: (v: number) => void
   display: string
 }) {
+  const pct = max > min ? ((value - min) / (max - min)) * 100 : 0
   return (
     <div className="flex items-center gap-3">
       <input
@@ -303,9 +304,10 @@ function Slider({
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="h-[3px] flex-1 accent-copper"
+        style={{ '--pct': `${pct}%` } as CSSProperties}
+        className="range flex-1"
       />
-      <span className="min-w-[86px] text-right text-[14px] text-bone tnum">{display}</span>
+      <span className="min-w-[80px] text-right text-[13.5px] text-silver tnum">{display}</span>
     </div>
   )
 }

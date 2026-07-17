@@ -83,4 +83,26 @@
   /* мини-полоса просадки (запас до тормозов): заливка = глубина, цвет от меди к danger */
   .mini-dd { display: inline-block; width: 84px; height: 6px; border-radius: 9999px; background: var(--color-floating); overflow: hidden; vertical-align: middle; }
   .mini-dd > i { display: block; height: 100%; border-radius: 9999px; background: linear-gradient(90deg, var(--color-copper), var(--color-danger)); }
+
+  /* Слайдер «дозор» (Разведка-стол): волосяная дорожка 2px + медная бусина 11px — «gilded lines»,
+     БЕЗ свечения (замена жирного native accent-color по фидбэку Оператора). --pct = позиция заливки. */
+  .range { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; background: transparent; cursor: pointer; }
+  .range::-webkit-slider-runnable-track {
+    height: 2px; border-radius: 9999px;
+    background: linear-gradient(90deg, var(--color-gild) var(--pct, 50%), var(--color-line) var(--pct, 50%));
+  }
+  .range::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 11px; height: 11px; margin-top: -4.5px;
+    border-radius: 9999px; background: var(--color-copper); border: 2px solid var(--color-void);
+    transition: transform .14s ease, box-shadow .14s ease;
+  }
+  .range:hover::-webkit-slider-thumb { transform: scale(1.18); }
+  .range:focus-visible { outline: none; }
+  .range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 4px rgba(204, 145, 102, 0.16); }
+  .range::-moz-range-track { height: 2px; border-radius: 9999px; background: var(--color-line); }
+  .range::-moz-range-progress { height: 2px; border-radius: 9999px; background: var(--color-gild); }
+  .range::-moz-range-thumb {
+    width: 11px; height: 11px; border-radius: 9999px; border: 2px solid var(--color-void);
+    background: var(--color-copper);
+  }
 }
