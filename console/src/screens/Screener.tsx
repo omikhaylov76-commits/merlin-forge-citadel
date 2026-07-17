@@ -4,12 +4,17 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useAsync } from '@/lib/useAsync'
 import {
+  addToBasket,
+  basketKey,
   enqueueScreenerRun,
+  getBasket,
   getFleetInstances,
   getScreenerRun,
+  removeBasketItem,
   visibleScoutInstances,
   type ScreenerFinding,
   type ScreenerRun,
+  type ScreenerSetup,
 } from '@/lib/api'
 
 // Экран «Скринер» (С7-2б): оператор задаёт параметры → «Подобрать и сканировать» → ядро ставит
@@ -50,6 +55,35 @@ export function Screener() {
   const [run, setRun] = useState<ScreenerRun | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // НАБОР-1: звёздочка на сетап-чипе. Карта «symbol|tf → id элемента Набора» для состояния звёзд.
+  const basket = useAsync(getBasket, [])
+  const [starBusy, setStarBusy] = useState<string | null>(null)
+  const inBasket = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const b of basket.data ?? []) m.set(basketKey(b.symbol, b.tf), b.id)
+    return m
+  }, [basket.data])
+  const toggleStar = async (f: ScreenerFinding, su: ScreenerSetup) => {
+    const key = basketKey(f.symbol, su.tf)
+    setStarBusy(key)
+    try {
+      const existing = inBasket.get(key)
+      if (existing) {
+        await removeBasketItem(existing)
+      } else {
+        await addToBasket({
+          symbol: f.symbol,
+          tf: su.tf,
+          source: 'screener',
+          context: { score: su.score ?? f.score, stage: su.status, impulse: f.impulse_ratio },
+        })
+      }
+      basket.reload()
+    } finally {
+      setStarBusy(null)
+    }
+  }
 
   const insts = useMemo(() => (fleet.data ? visibleScoutInstances(fleet.data) : []), [fleet.data])
 
@@ -194,9 +228,24 @@ export function Screener() {
             </span>
           </div>
 
-          <FindingsTable title="Взятые (импульс)" rows={selectedRows} gold empty="Никто не прошёл импульс-порог" />
+          <FindingsTable
+            title="Взятые (импульс)"
+            rows={selectedRows}
+            gold
+            empty="Никто не прошёл импульс-порог"
+            inBasket={inBasket}
+            onToggle={toggleStar}
+            starBusy={starBusy}
+          />
           <div className="h-4" />
-          <FindingsTable title="Отсеяны" rows={rejectedRows} empty="Пусто" />
+          <FindingsTable
+            title="Отсеяны"
+            rows={rejectedRows}
+            empty="Пусто"
+            inBasket={inBasket}
+            onToggle={toggleStar}
+            starBusy={starBusy}
+          />
         </>
       )}
 
@@ -224,11 +273,17 @@ function FindingsTable({
   rows,
   gold,
   empty,
+  inBasket,
+  onToggle,
+  starBusy,
 }: {
   title: string
   rows: ScreenerFinding[]
   gold?: boolean
   empty: string
+  inBasket: Map<string, string>
+  onToggle: (f: ScreenerFinding, su: ScreenerSetup) => void
+  starBusy: string | null
 }) {
   return (
     <Card className={`p-0 ${gold ? 'border-gold/25' : 'border-line'}`}>
@@ -261,9 +316,31 @@ function FindingsTable({
                   </td>
                   <td className="px-4 py-2 tnum text-fog">{f.score}</td>
                   <td className="px-4 py-2 text-ash">
-                    {f.setups.length === 0
-                      ? '—'
-                      : f.setups.map((s) => `${s.tf} ${s.status}`).join(', ')}
+                    {f.setups.length === 0 ? (
+                      '—'
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {f.setups.map((s) => {
+                          const key = basketKey(f.symbol, s.tf)
+                          const on = inBasket.has(key)
+                          return (
+                            <button
+                              key={s.tf}
+                              onClick={() => onToggle(f, s)}
+                              disabled={starBusy === key}
+                              title={on ? 'Убрать из Набора' : 'В Набор'}
+                              className={`rounded-pill border px-2 py-0.5 text-[10px] transition-colors disabled:opacity-50 ${
+                                on
+                                  ? 'border-gold/50 bg-gold/10 text-gold'
+                                  : 'border-line text-fog hover:text-mist'
+                              }`}
+                            >
+                              {starBusy === key ? '…' : on ? '★' : '☆'} {s.tf} {s.status}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-ash">{f.reject_reason ?? '—'}</td>
                 </tr>
