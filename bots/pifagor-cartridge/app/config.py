@@ -35,6 +35,15 @@ class CartridgeConfig:
     scout_interval_s: float = 60.0   # каденция проверки нового scan_ts (сканы редки)
     detector_version: str = "pifagor-v81-b75bd17"  # версия детектора движка (снимок b75bd17)
     scout_producer: str = "pifagor-scout"          # producer снимка (в режиме представителя)
+    # dynamic-universe (ADR-0019, S8): бот берёт вселенную из печки. Геном, дефолт ВЫКЛ (как scout).
+    # Провайдер пишет coins.json (= COINS_CONFIG_PATH разъёма движка).
+    dynamic_enabled: bool = False
+    dynamic_coins_path: str = ""       # путь coins.json (провайдер↔разъём движка); пусто → off
+    dynamic_stack_max: int = 10        # предохранитель: макс монет в работе
+    dynamic_enter_scans: int = 1       # гистерезис: сканов до входа
+    dynamic_exit_scans: int = 2        # гистерезис: пропущенных сканов до выхода (слот свободен)
+    dynamic_fresh_bars: int = 0        # свежесть ≤ N баров (0 = без фильтра; канал Слоя 3/F5)
+    dynamic_min_write_s: float = 30.0  # min-интервал записи coins.json/gen (анти-thrash рестарта)
 
 
 def from_env() -> CartridgeConfig:
@@ -56,4 +65,16 @@ def from_env() -> CartridgeConfig:
         scout_interval_s=float(os.environ.get("MF_SCOUT_S", "60")),
         detector_version=os.environ.get("MF_DETECTOR_VERSION", "pifagor-v81-b75bd17"),
         scout_producer=os.environ.get("MF_SCOUT_PRODUCER", "pifagor-scout"),
+        # dynamic-universe: гейт как SCOUT_ENABLED (строго "1"); путь = COINS_CONFIG_PATH разъёма
+        # (start.sh задаёт его на эфемерном PIFAGOR_HOME ТОЛЬКО при DYNAMIC_ENABLED=1).
+        dynamic_enabled=os.environ.get("DYNAMIC_ENABLED") == "1",
+        dynamic_coins_path=os.environ.get(
+            "COINS_CONFIG_PATH",
+            f"{os.environ['PIFAGOR_HOME']}/coins.json" if os.environ.get("PIFAGOR_HOME") else "",
+        ),
+        dynamic_stack_max=int(os.environ.get("DYNAMIC_STACK_MAX", "10")),
+        dynamic_enter_scans=int(os.environ.get("DYNAMIC_ENTER_SCANS", "1")),
+        dynamic_exit_scans=int(os.environ.get("DYNAMIC_EXIT_SCANS", "2")),
+        dynamic_fresh_bars=int(os.environ.get("DYNAMIC_FRESH_BARS", "0")),
+        dynamic_min_write_s=float(os.environ.get("DYNAMIC_MIN_WRITE_S", "30")),
     )
