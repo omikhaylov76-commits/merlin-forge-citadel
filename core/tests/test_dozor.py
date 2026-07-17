@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Command, Instance
@@ -101,6 +102,29 @@ def test_scout_settings_validation(clean, users):
     # rps вне диапазона → 422
     bad3 = {**_valid_settings(), "rps": 99}
     assert c.put(f"/v1/instances/{iid}/scout/settings", headers=op, json=bad3).status_code == 422
+
+
+def _instance_token(iid: uuid.UUID) -> str:
+    with get_sessionmaker()() as s:
+        raw = issue_token(s, principal="instance", subject_id=str(iid), scope="instance")
+        s.commit()
+        return raw
+
+
+def test_scout_settings_self_instance_token(clean, users):
+    """Картридж (instance-токен) читает СВОИ настройки через /scout/settings/self."""
+    c = TestClient(create_app())
+    iid = _mk_instance()
+    op = _login(c, "op@mfc.local", "op-pass")
+    ih = {"Authorization": f"Bearer {_instance_token(iid)}"}
+
+    r = c.get("/v1/scout/settings/self", headers=ih)
+    assert r.status_code == 200, r.text
+    assert r.json()["settings"]["min_age_days"] == 180  # дефолты, пока не менялись
+
+    c.put(f"/v1/instances/{iid}/scout/settings", headers=op, json=_valid_settings())
+    r2 = c.get("/v1/scout/settings/self", headers=ih).json()
+    assert r2["settings"]["primary_tf"] == "1h" and r2["settings"]["list_max"] == 40
 
 
 def test_scan_now_enqueues_command(clean, users):

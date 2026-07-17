@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.audit import write_audit
-from app.auth import require_role
+from app.auth import current_instance, require_role
 from app.db import get_session
 from app.models import AuditLog, Command, Instance, ScoutSettings, User
 
@@ -125,6 +125,18 @@ def get_scout_settings(
         "apply": _apply_status(session, instance_id),
         "updated_at": row.updated_at.isoformat() if row and row.updated_at else None,
     }
+
+
+@router.get("/scout/settings/self")
+def get_scout_settings_self(
+    inst: Instance = Depends(current_instance),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Картридж читает СВОИ настройки дозора (instance-токен, паттерн /commands/next). Ядро =
+    durable-истина; картридж применяет на boot (без тома). Страж скоупа: отдаём ТОЛЬКО SCOUT_*-
+    пороги дозора — движок/риск каналом не ходят (их путь — Конструктор, отдельная веха)."""
+    row = session.get(ScoutSettings, inst.id)
+    return {"settings": {**SCOUT_DEFAULTS, **(row.desired if row else {})}}
 
 
 @router.put("/instances/{instance_id}/scout/settings")

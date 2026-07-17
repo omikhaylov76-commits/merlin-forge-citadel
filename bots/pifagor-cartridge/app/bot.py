@@ -150,6 +150,14 @@ class PifagorCartridge:
             self._launch_screener(resp.get("payload") or {})
             self._ack(cmd_id, "ok")
             return False
+        if cmd == "dozor_apply":
+            # Разведка-стол: записать оверрайды дозора (whitelist+coerce) → gen-рестарт скаута
+            # супервизором. Ядро=истина; движок не зависит от этого канала.
+            self._apply_dozor(resp.get("payload") or {}, cmd_id)
+            return False
+        if cmd == "scan_now":
+            self._scan_now(now, cmd_id)  # кнопка «Сканировать сейчас»
+            return False
         # неизвестная команда — ack error (это не stop_close, липкость ядра тут не держит)
         self._ack(cmd_id, "error", {"reason": f"unknown:{cmd}"})
         return False
@@ -195,6 +203,30 @@ class PifagorCartridge:
                          summary={"error": "скринер выключен на этом боте (SCREENER_ENABLED=0)"})
         except Exception as exc:
             log.warning("не смог отметить выключенный скринер в ядре (%s)", exc)
+
+    def _apply_dozor(self, payload: dict, cmd_id: str) -> None:
+        """dozor_apply: записать оверрайды дозора (whitelist+coerce, страж 2) → супервизор по смене
+        gen мягко рестартит ТОЛЬКО скаут. Движок не трогается. Ошибка → ack error (не липкая)."""
+        from app.scout_overrides import write_overrides
+
+        try:
+            write_overrides(payload.get("settings") or {})
+            self._ack(cmd_id, "ok")
+        except Exception as exc:  # noqa: BLE001
+            log.error("dozor_apply не применён (%s)", exc)
+            self._ack(cmd_id, "error", {"reason": str(exc)[:120]})
+
+    def _scan_now(self, now: datetime, cmd_id: str) -> None:
+        """scan_now: триггер Этапа B (scan_now_ms в scout_control). Только при живом скауте."""
+        if self._scout is None:
+            self._ack(cmd_id, "error", {"reason": "scout off"})
+            return
+        try:
+            self._scout.scan_now(now_ms=int(now.timestamp() * 1000))
+            self._ack(cmd_id, "ok")
+        except Exception as exc:  # noqa: BLE001
+            log.error("scan_now не записан (%s)", exc)
+            self._ack(cmd_id, "error", {"reason": str(exc)[:120]})
 
     # ── доставка с классификацией 4xx ─────────────────────────────────────────
 

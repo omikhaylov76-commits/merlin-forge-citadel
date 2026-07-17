@@ -32,11 +32,16 @@ scout_supervise() {
   _restarts=0
   while true; do
     _started=$(date +%s)
+    # Разведка-стол: подтягиваем оверрайды дозора из ядра (файл пишет boot-fetch/dozor_apply, только
+    # whitelist SCOUT_* числа/enum) — source на КАЖДОМ (ре)старте → новые пороги вступают при рестарте
+    # скаута. gen — маркер смены (бампается при записи), сверяем ниже для мягкого рестарта.
+    [ -f "$SCOUT_OVERRIDE_FILE" ] && . "$SCOUT_OVERRIDE_FILE"
+    _gen=$(cat "$SCOUT_OVERRIDE_FILE.gen" 2>/dev/null || echo 0)
     # -u DATABASE_URL: скаут ВСЕГДА на своей SQLite (DB_PATH), даже если движок на Postgres —
     # иначе config.ops берёт DATABASE_URL и скаут делит БД движка (ADR-0016 в.2, решение #51-приёмки).
     env -u DATABASE_URL DB_PATH="$SCOUT_DB" SCOUT_ENABLED=1 \
         SCOUT_RPS="$SCOUT_RPS" SCOUT_LIST_MAX="$SCOUT_LIST_MAX" \
-        SCOUT_CAL_UTC_HOUR="$SCOUT_CAL_UTC_HOUR" SCOUT_TFS="$SCOUT_TFS" \
+        SCOUT_CAL_UTC_HOUR="$SCOUT_CAL_UTC_HOUR" SCOUT_TFS="$SCOUT_TFS" SCOUT_TF="$SCOUT_TF" \
         $SCOUT_CMD &
     _pid=$!
     echo "[scout-sup] скаут запущен pid=$_pid (рестартов: $_restarts, db=$SCOUT_DB, rss-кап=${SCOUT_RSS_CAP_MB}MB)"
@@ -58,6 +63,13 @@ scout_supervise() {
           kill -9 "$_pid" 2>/dev/null || true
           break ;;
       esac
+      # Разведка-стол: сменились настройки дозора (gen бампнут dozor_apply/boot-fetch) → мягкий
+      # рестарт ТОЛЬКО скаута (source нового файла на след. итерации). Движок/адаптер не трогаются.
+      if [ "$(cat "$SCOUT_OVERRIDE_FILE.gen" 2>/dev/null || echo 0)" != "$_gen" ]; then
+        echo "[scout-sup] новые настройки дозора (gen сменился) → мягкий рестарт скаута"
+        kill -TERM "$_pid" 2>/dev/null || true
+        break
+      fi
     done
     wait "$_pid" 2>/dev/null || true          # пожать зомби (и после kill, и после естественной смерти)
     _restarts=$(( _restarts + 1 ))
@@ -88,6 +100,10 @@ start_scout_if_enabled() {
   SCOUT_LIST_MAX="${SCOUT_LIST_MAX:-50}"
   SCOUT_CAL_UTC_HOUR="${SCOUT_CAL_UTC_HOUR:-5}"
   SCOUT_TFS="${SCOUT_TFS:-4h,1h}"
+  # Разведка-стол: primary ТФ (гнал границу авто-скана; '1h' → часовой автоскан) + файл-оверрайд из
+  # ядра (пишет boot-fetch/dozor_apply; супервизор source'ит на каждом рестарте). Настройкам том не нужен.
+  SCOUT_TF="${SCOUT_TF:-4h}"
+  SCOUT_OVERRIDE_FILE="${SCOUT_OVERRIDE_FILE:-$PIFAGOR_HOME/scout_overrides.env}"
   # команда запуска скаута (тест-шов SCOUT_CMD; в проде — vendored scout/main.py снимка).
   SCOUT_CMD="${SCOUT_CMD:-python $PIFAGOR_HOME/scout/main.py}"
   # адаптеру (foreground, ниже) явно разрешаем читать scout.db и пушить снимки в ядро (#52) —

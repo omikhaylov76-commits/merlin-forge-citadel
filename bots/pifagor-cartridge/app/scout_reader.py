@@ -62,6 +62,12 @@ class ScoutReader:
         """Курсор последнего скана (для триггера «пушить, если новый»)."""
         return self._scan_cursor()
 
+    def scan_now(self, *, now_ms: int) -> None:
+        """Кнопка «Сканировать сейчас» (Разведка-стол): пишем scan_now_ms в scout_control вендорским
+        mark (его WAL/busy_timeout; короткая запись, Q2). Вендор на след. wake-loop триггерит Этап B
+        (scan_now_ms > scan_now_ack_ms, main.py:160) и ачит scan_now_ack_ms=scan_now_ms."""
+        self.scout_db.scout_control_mark(scan_now_ms=int(now_ms))
+
     def build_snapshots(self) -> tuple[int, list[dict]]:
         """(scan_ms, список контрактных снимков). Пустой список = у скаута сейчас нет находок."""
         scan_ms = self._scan_cursor()          # триггер+scan_ts по scout_control, не по meta

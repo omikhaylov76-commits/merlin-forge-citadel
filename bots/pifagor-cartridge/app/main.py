@@ -48,6 +48,13 @@ def main() -> None:
     scout_reader = _make_scout_reader(cfg, reader)
     if scout_reader is not None:
         log.info("scout-канал ВКЛ: читаю %s", cfg.scout_db_path)
+        # Разведка-стол (страж 1): фоновый boot-fetch настроек дозора из ядра → файл-оверрайд →
+        # gen-рестарт скаута супервизором. НЕ блокирует движок/скаут (уже бегут на генных дефолтах).
+        from app.scout_overrides import boot_fetch
+        threading.Thread(
+            target=boot_fetch, args=(cfg.core_url, cfg.instance_token),
+            name="scout-boot-fetch", daemon=True,
+        ).start()
     bot = PifagorCartridge(
         CoreClient(base_url=cfg.core_url, token=cfg.instance_token), reader, cfg,
         scout_reader=scout_reader,
