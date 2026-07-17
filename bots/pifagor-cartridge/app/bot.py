@@ -86,6 +86,9 @@ class PifagorCartridge:
         # equity — точка за ts=now; дедуп ядром по (instance, ts). Сбой → новая точка на след. тике.
         self._send(lambda: self._client.push_equity(
             mapper.equity_point(monitor, ts_iso=now.isoformat())), "equity")
+        # engine_state — компакт факт-слоя для карточки бота (replace-снимок, каждый тик, дёшево)
+        self._send(lambda: self._client.push_engine_state(
+            mapper.engine_state(monitor)), "engine_state")
         # trades / events — курсор двигаем лишь при не-транзиентном исходе (at-least-once)
         prev_tc = self._trade_cursor
         trades, new_tc = mapper.trades_batch(monitor, after_id=prev_tc)

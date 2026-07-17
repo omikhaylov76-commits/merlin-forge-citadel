@@ -378,6 +378,24 @@ class ScreenerFinding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class EngineState(Base):
+    """Последнее движковое состояние инстанса (карточка бота, S7). Один ряд на инстанс (upsert):
+    картридж пушит компакт каждый тик, ядро перезаписывает. payload — НЕДОВЕРЕННЫЙ JSON (позиции/
+    ордера/equity/статус; секретов НЕТ по контракту картриджа), экранируется на выводе."""
+
+    __tablename__ = "engine_states"
+    __table_args__ = (
+        {"comment": "Last engine_state per instance (карточка бота, S7); JSONB, replace-upsert."},
+    )
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), primary_key=True
+    )
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Contract(Base):
     __tablename__ = "contracts"
     __table_args__ = (

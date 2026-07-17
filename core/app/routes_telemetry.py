@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.auth import current_instance
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.models import EquityPoint, Event, Instance, ScoutSnapshot, Trade
+from app.models import EngineState, EquityPoint, Event, Instance, ScoutSnapshot, Trade
 
 router = APIRouter(prefix="/v1/telemetry")
 
@@ -172,6 +172,33 @@ def equity(
             currency=body.currency, working=body.working, cushion=body.cushion,
         )
         .on_conflict_do_nothing(constraint="uq_equity_instance_ts")  # dedup (instance, ts)
+    )
+    session.execute(stmt)
+    return {"received": 1}
+
+
+_ENGINE_LIST_CAP = 500  # анти-раздувание списков engine_state (позиции/ордера/хвосты)
+
+
+@router.post("/engine-state", status_code=status.HTTP_202_ACCEPTED)
+def engine_state(
+    body: dict[str, Any],
+    inst: Instance = Depends(current_instance),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Приём компакта движкового состояния (карточка бота S7). Replace: ряд на инстанс (upsert).
+    payload недоверенный — только храним (экранируется на выводе); секретов картридж не кладёт."""
+    for key in ("positions", "orders", "trades", "events"):
+        v = body.get(key)
+        if isinstance(v, list) and len(v) > _ENGINE_LIST_CAP:
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"{key}: слишком длинный")
+    now = datetime.now(UTC)
+    stmt = (
+        pg_insert(EngineState)
+        .values(instance_id=inst.id, payload=body, received_at=now)
+        .on_conflict_do_update(
+            index_elements=["instance_id"], set_={"payload": body, "received_at": now}
+        )
     )
     session.execute(stmt)
     return {"received": 1}

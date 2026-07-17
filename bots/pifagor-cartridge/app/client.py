@@ -101,6 +101,9 @@ class CoreClient:
         if trades:
             self._post("/v1/telemetry/trades", trades)
 
+    def push_engine_state(self, state: dict) -> None:
+        self._post("/v1/telemetry/engine-state", state)  # карточка бота (replace-снимок факт-слоя)
+
     def push_events(self, events: list[dict]) -> None:
         if events:
             self._post("/v1/telemetry/events", events)
