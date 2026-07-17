@@ -286,3 +286,70 @@ def scout_snapshot(
         snap["klines"] = klines
         snap["klines_tf"] = klines_tf or snap["tf"]  # = tf сетапа (свечи скан-ТФ)
     return snap
+
+
+# ── карточка бота (S7): engine_state — компакт движкового состояния для факт-вью Оператора ──
+def _recent_trades(monitor: dict, n: int = 10) -> list[dict]:
+    out = []
+    for r in (monitor.get("trades") or [])[:n]:            # closed_trades_recent — новые сверху
+        out.append({
+            "symbol": str(r.get("symbol") or "")[:40], "side": str(r.get("side") or "")[:8],
+            "qty": _num(r.get("qty")), "pnl": _num(r.get("closed_pnl")),
+            "ts": _iso_from_ms(r.get("created_ms")),
+        })
+    return out
+
+
+def _recent_events(monitor: dict, n: int = 10) -> list[dict]:
+    out = []
+    for r in (monitor.get("events") or [])[:n]:
+        out.append({
+            "kind": str(r.get("event") or r.get("kind") or "")[:40],
+            "ts": str(r.get("ts") or "")[:40], "detail": str(r.get("detail") or "")[:200],
+        })
+    return out
+
+
+def engine_state(monitor: dict) -> dict:
+    """Компакт движкового состояния для карточки бота: статус/капитал/позиции/ордера/хвосты сделок и
+    событий. Из build_monitor — только ЧИТАЕМ (0 vendor). Секреты/ключи биржи НЕ кладём — лишь
+    оператор-видимое (позиции/ордера/equity). Недоверенный JSON, экранируется на выводе."""
+    cap = monitor.get("capital") or {}
+    st = monitor.get("status") or {}
+    positions = []
+    for p in monitor.get("positions") or []:
+        if not _num(p.get("size")):
+            continue                                        # плоские/нулевые не показываем
+        pos = scout_position(p)
+        if pos:
+            pos["symbol"] = str(p.get("symbol") or "")[:40]
+            positions.append(pos)
+    orders = []
+    for row in monitor.get("pending") or []:
+        sym = str(row.get("symbol") or "")[:40]
+        payload = row.get("payload") or {}
+        legs = [{**leg, "side": payload.get("side")} for leg in payload.get("legs") or []]
+        for o in scout_orders(legs):
+            o["symbol"] = sym
+            orders.append(o)
+    ks = bool(cap.get("killswitch_active"))
+    state = str(cap.get("state") or ("stopping" if ks else "running"))[:16]
+    return {
+        "status": {
+            "state": state,
+            "kill_switch": ks,
+            "alarm": bool(cap.get("alarm_active")),
+            "stale": bool(st.get("stale")),
+            "banner": str(st.get("banner") or "")[:200],
+        },
+        "capital": {
+            "equity": _num(cap.get("equity")), "peak": _num(cap.get("peak_equity")),
+            "dd_pct": _num(cap.get("dd_pct")), "unrealised_pnl": _num(cap.get("unrealised_pnl")),
+            "realised_pnl": _num(cap.get("realised_pnl")),
+            "open_count": int(cap.get("open_count") or 0),
+        },
+        "positions": positions,
+        "orders": orders,
+        "trades": _recent_trades(monitor),
+        "events": _recent_events(monitor),
+    }

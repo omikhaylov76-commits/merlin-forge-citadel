@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { PageHead, Toolbar, Chip } from '@/components/ui/page'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { useAsync } from '@/lib/useAsync'
-import { getFleetInstances } from '@/lib/api'
+import { getFleetInstances, type FleetInstance } from '@/lib/api'
+import { BotCard } from './fleet/BotCard'
 
 const money = (n: string | null) => (n == null ? '—' : '$' + Number(n).toLocaleString('ru-RU'))
 
@@ -21,6 +23,7 @@ function badge(status: string): { tone: 'live' | 'pause' | 'alarm' | 'kill'; lab
 export function Fleet() {
   const fleet = useAsync(getFleetInstances, [])
   const rows = fleet.data ?? []
+  const [card, setCard] = useState<FleetInstance | null>(null)
   const desc = fleet.loading
     ? 'загрузка…'
     : fleet.error
@@ -62,7 +65,11 @@ export function Fleet() {
               {rows.map((r) => {
                 const b = badge(r.status)
                 return (
-                  <tr key={r.id}>
+                  <tr
+                    key={r.id}
+                    onClick={() => setCard(r)}
+                    className="cursor-pointer transition-colors hover:bg-panel/60"
+                  >
                     <td className="font-semibold text-bone tnum">{r.id.slice(0, 8)}…</td>
                     <td>{r.client}</td>
                     <td className="num tnum">{money(r.equity)}</td>
@@ -81,6 +88,8 @@ export function Fleet() {
           </table>
         </div>
       )}
+
+      {card && <BotCard inst={card} onClose={() => setCard(null)} />}
     </div>
   )
 }

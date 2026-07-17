@@ -25,6 +25,7 @@ def _cfg(**over):
 class FakeClient:
     def __init__(self):
         self.heartbeats, self.equities, self.trades, self.events, self.acks = [], [], [], [], []
+        self.engine_states: list[dict] = []
         self.cmds: list[dict] = []
         self.trade_errors: list[Exception | None] = []   # по одному на вызов push_trades
         self.hb_errors: list[Exception | None] = []       # по одному на вызов heartbeat
@@ -40,6 +41,9 @@ class FakeClient:
 
     def push_equity(self, point):
         self.equities.append(point)
+
+    def push_engine_state(self, state):
+        self.engine_states.append(state)
 
     def push_trades(self, trades):
         if self.trade_errors:
@@ -272,3 +276,11 @@ def test_screener_run_disabled_by_default_no_spawn(monkeypatch):
     assert spawned["n"] == 0                      # не запускали
     assert pushed.get("status") == "error"        # отметили выключенным в ядре
     assert c.acks == [{"cmd_id": "sc3", "result": "ok", "detail": None}]
+
+
+def test_engine_state_pushed_each_tick():
+    c, r = FakeClient(), FakeReader()
+    _bot(c, r).tick_once(NOW, 0.0)
+    assert len(c.engine_states) == 1
+    st = c.engine_states[0]
+    assert "status" in st and "capital" in st and "positions" in st and "orders" in st

@@ -172,3 +172,45 @@ export const listScreenerRuns = (instanceId: string) =>
 const _SCOUT_VISIBLE = /Галахад|Персиваль/
 export const visibleScoutInstances = (list: FleetInstance[]) =>
   list.filter((i) => _SCOUT_VISIBLE.test(i.client))
+
+// ── engine_state инстанса (карточка бота, S7) — факт-слой движка для Оператора ──────────────────
+export type EnginePosition = {
+  symbol: string
+  side: string
+  avg_px: number
+  size: number
+  live_pnl: number
+}
+export type EngineOrder = {
+  symbol: string
+  order_id: string
+  side: string
+  type: string
+  px: number
+  qty: number
+  status: string
+}
+export type EngineTrade = { symbol: string; side: string; qty: number; pnl: number; ts: string }
+export type EngineEvent = { kind: string; ts: string; detail: string }
+export type EngineState = {
+  status: { state: string; kill_switch: boolean; alarm: boolean; stale: boolean; banner: string }
+  capital: {
+    equity: number
+    peak: number
+    dd_pct: number
+    unrealised_pnl: number
+    realised_pnl: number
+    open_count: number
+  }
+  positions: EnginePosition[]
+  orders: EngineOrder[]
+  trades: EngineTrade[]
+  events: EngineEvent[]
+}
+export type EngineStateResp = {
+  instance_id: string
+  received_at: string | null
+  state: EngineState | null
+}
+export const getEngineState = (instanceId: string) =>
+  api<EngineStateResp>(`/v1/instances/${instanceId}/engine-state`)
