@@ -292,9 +292,10 @@ def test_engine_state_stack_only_when_provided():
     assert st["stack"]["count"] == 1 and st["stack"]["cap"] == 10
 
 
-def test_live_trading_tripwire_disables_dynamic(monkeypatch, tmp_path):
-    """Гейт Вехи 2 (триппвайр, fail-closed): DYNAMIC_ENABLED=1 + LIVE_TRADING_ENABLED=1 (пин НЕ
-    реализован) → провайдер НЕ создаётся; LIVE_TRADING_ENABLED=0 → провайдер живёт."""
+def test_live_trading_tripwire_removed_after_pin(monkeypatch, tmp_path):
+    """Веха 2 (F-tripwire): триппвайр LIVE СНЯТ (пин «б» + гейт рестарта «а» реализованы) —
+    DYNAMIC+LIVE_TRADING=1 → провайдер активен; защиту LIVE несёт явный гейт подписи при деплое.
+    Гейт флота (dynamic_enabled + scout_reader) сохранён — без скаута None (Персиваль/paper)."""
     from app.main import _make_dynamic_provider
     cfg = types.SimpleNamespace(
         dynamic_enabled=True, dynamic_coins_path=str(tmp_path / "coins.json"),
@@ -302,6 +303,5 @@ def test_live_trading_tripwire_disables_dynamic(monkeypatch, tmp_path):
         dynamic_criteria_path="", dynamic_min_score=0, dynamic_fresh_bars=0)
     scout = _FakeScout()
     monkeypatch.setenv("LIVE_TRADING_ENABLED", "1")
-    assert _make_dynamic_provider(cfg, scout) is None        # опасное комбо → fail-closed
-    monkeypatch.setenv("LIVE_TRADING_ENABLED", "0")
-    assert _make_dynamic_provider(cfg, scout) is not None     # безопасно → провайдер активен
+    assert _make_dynamic_provider(cfg, scout) is not None     # пин есть → LIVE больше не запирает
+    assert _make_dynamic_provider(cfg, None) is None          # нет скаута (флот) → None
