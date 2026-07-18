@@ -20,10 +20,18 @@ class _FakeScout:
 
 def _mk(tmp_path, **kw):
     d = dict(dynamic_coins_path=str(tmp_path / "coins.json"), dynamic_stack_max=3,
-             dynamic_enter_scans=1, dynamic_exit_scans=2, dynamic_min_write_s=0.0)
+             dynamic_enter_scans=1, dynamic_exit_scans=2, dynamic_min_write_s=0.0,
+             # ADR-0020: критерии из файла (по умолчанию файла нет → провайдер на ген-дефолтах)
+             dynamic_criteria_path=str(tmp_path / "dynamic_criteria.json"),
+             dynamic_min_score=0, dynamic_fresh_bars=0)
     d.update(kw)
     fs = _FakeScout()
     return DynamicUniverse(types.SimpleNamespace(**d), fs), fs
+
+
+def _write_criteria(tmp_path, **crit):
+    """Записать файл-критерии (как это делает re-fetch) — провайдер читает его живьём."""
+    (tmp_path / "dynamic_criteria.json").write_text(json.dumps(crit))
 
 
 def test_no_scan_is_floor_no_file(tmp_path):
@@ -93,6 +101,61 @@ def test_inactive_stage_ignored(tmp_path):
     fs.data = (1000, [{"symbol": "BTCUSDT", "tf": "4h", "state": "committed", "score": 90}])
     dv.tick(2.0)
     assert dv.view()["count"] == 0   # committed — производная UI, не стадия печки
+
+
+def test_min_score_filter(tmp_path):
+    """Канал ADR-0020: min_score отсекает низкоскоровые и без-скора кандидатов ПОВЕРХ дозора."""
+    dv, fs = _mk(tmp_path)
+    _write_criteria(tmp_path, min_score=50, stack_max=3, fresh_bars=0)
+    fs.data = (1000, [{"symbol": "AAAUSDT", "tf": "4h", "state": "ready", "score": 80},
+                      {"symbol": "BBBUSDT", "tf": "4h", "state": "ready", "score": 30},
+                      {"symbol": "CCCUSDT", "tf": "4h", "state": "ready", "score": None}])
+    dv.tick(2.0)
+    assert {i["symbol"] for i in dv.view()["items"]} == {"AAAUSDT"}   # 30<50 и None отсеяны
+
+
+def test_fresh_bars_filter(tmp_path):
+    """ADR-0020: fresh_bars отсекает старые сетапы (bars_since_anchor > порога) и без-возраста."""
+    dv, fs = _mk(tmp_path)
+    _write_criteria(tmp_path, min_score=0, stack_max=3, fresh_bars=48)
+    fs.data = (1000, [
+        {"symbol": "AAAUSDT", "state": "ready", "score": 80, "bars_since_anchor": 10},
+        {"symbol": "BBBUSDT", "state": "ready", "score": 80, "bars_since_anchor": 100},
+        {"symbol": "CCCUSDT", "state": "ready", "score": 80, "bars_since_anchor": None}])
+    dv.tick(2.0)
+    assert {i["symbol"] for i in dv.view()["items"]} == {"AAAUSDT"}   # 100>48 и None отсеяны
+
+
+def test_cap_shrink_no_evict(tmp_path):
+    """EDIT 2: сжатие капа на живую НЕ выгоняет (убытие), добора нет, кап честен."""
+    dv, fs = _mk(tmp_path)                              # cfg cap=3
+    full = [{"symbol": f"C{i}USDT", "state": "ready", "score": 90 - i} for i in range(3)]
+    fs.data = (1000, full)
+    dv.tick(2.0)
+    assert dv.view()["count"] == 3
+    _write_criteria(tmp_path, min_score=0, stack_max=1, fresh_bars=0)   # Оператор сжал 3→1 на живую
+    fs.data = (2000, full)                              # те же 3 ещё в печке
+    dv.tick(3.0)
+    v = dv.view()
+    assert v["count"] == 3 and v["cap"] == 1            # никто не выгнан, кап честен (3·кап1)
+    fs.data = (3000, [{"symbol": "NEWUSDT", "state": "ready", "score": 99}, *full])
+    dv.tick(4.0)
+    assert "NEWUSDT" not in {i["symbol"] for i in dv.view()["items"]}   # добора нет (стек ≥ кап)
+
+
+def test_criteria_read_live(tmp_path):
+    """ADR-0020 D1: критерии читаются каждый скан — смена файла между тиками без рестарта."""
+    dv, fs = _mk(tmp_path)
+    _write_criteria(tmp_path, min_score=0, stack_max=3, fresh_bars=0)
+    fs.data = (1000, [{"symbol": "LOWUSDT", "tf": "4h", "state": "ready", "score": 40}])
+    dv.tick(2.0)
+    assert "LOWUSDT" in {i["symbol"] for i in dv.view()["items"]}       # порог 0 → прошёл
+    _write_criteria(tmp_path, min_score=50, stack_max=3, fresh_bars=0)  # порог поднят на живую
+    fs.data = (2000, [{"symbol": "LOWUSDT", "tf": "4h", "state": "ready", "score": 40}])
+    dv.tick(3.0)                                        # score40<50 → не кандидат → missed=1
+    fs.data = (3000, [{"symbol": "LOWUSDT", "tf": "4h", "state": "ready", "score": 40}])
+    dv.tick(4.0)                                        # missed=2 ≥ exit → вышел
+    assert "LOWUSDT" not in {i["symbol"] for i in dv.view()["items"]}
 
 
 def test_findings_for_universe_empty_real_scout_db(tmp_path):

@@ -16,6 +16,8 @@ import logging
 import os
 import tempfile
 
+from app.dynamic_overrides import read_criteria  # живое чтение файла-критериев (ADR-0020 D1)
+
 log = logging.getLogger("mfc.pifagor-cartridge")
 
 # Дефолтный per-coin блок scout-монет (ADR-0019 F6): parity-приближение, НЕ боевая настройка;
@@ -36,15 +38,32 @@ class DynamicUniverse:
     def __init__(self, cfg, scout_reader) -> None:
         self._scout = scout_reader
         self._coins_path = cfg.dynamic_coins_path
-        self._n = max(1, int(cfg.dynamic_stack_max))
-        self._enter = max(1, int(cfg.dynamic_enter_scans))
-        self._exit = max(1, int(cfg.dynamic_exit_scans))
+        # Критерии канала (ADR-0020 D1): читаются ЖИВЬЁМ из файла каждый скан; cfg = ген-дефолт
+        # (файла нет / re-fetch не доехал). Живой кап → view() честен при сжатии (EDIT 2).
+        self._criteria_path = cfg.dynamic_criteria_path
+        self._cfg_n = max(1, int(cfg.dynamic_stack_max))
+        self._cfg_min_score = int(cfg.dynamic_min_score)
+        self._cfg_fresh_bars = int(cfg.dynamic_fresh_bars)
+        self._n = self._cfg_n
+        self._min_score = self._cfg_min_score
+        self._fresh_bars = self._cfg_fresh_bars
+        self._enter = max(1, int(cfg.dynamic_enter_scans))   # гистерезис (геном, не канал)
+        self._exit = max(1, int(cfg.dynamic_exit_scans))     # гистерезис (геном, не канал)
         self._min_write_s = float(cfg.dynamic_min_write_s)
         self._stack: dict[str, dict] = {}       # {symbol: {stage,score,tf,missed}}
         self._pending: dict[str, int] = {}      # кандидат → сканов подряд виден (гистерезис входа)
         self._last_scan_ms = 0
         self._written: frozenset[str] = frozenset()
         self._last_write_mono = float("-inf")
+
+    def _load_criteria(self) -> None:
+        """ADR-0020 D1: критерии из файла (re-fetch пишет), fallback = ген-дефолты cfg. Читаются на
+        КАЖДОМ скане → правка в консоли доезжает до Борса без рестарта. `stack_max` → живой кап
+        (EDIT 2: сжатие 10→5 не выгоняет — естественное убытие; view() честен: 7·кап5)."""
+        c = read_criteria(self._criteria_path) if self._criteria_path else {}
+        self._n = max(1, int(c.get("stack_max", self._cfg_n)))
+        self._min_score = int(c.get("min_score", self._cfg_min_score))
+        self._fresh_bars = int(c.get("fresh_bars", self._cfg_fresh_bars))
 
     def tick(self, now_mono: float) -> None:
         """Один заход. No-op без нового скана (анти-thrash). Сбой печки → стек/файл не трогаем."""
@@ -60,13 +79,21 @@ class DynamicUniverse:
         self._maybe_write(now_mono)
 
     def _recompute(self, findings: list[dict]) -> None:
+        self._load_criteria()                   # ADR-0020 D1: критерии ЖИВЬЁМ (кап/скор/свежесть)
         fresh = {}
         for f in findings:
             if str(f.get("state") or "") not in _ACTIVE_STAGES:
                 continue                        # неактивная стадия — не кандидат
+            score = f.get("score")
+            if self._min_score > 0 and (score is None or score < self._min_score):
+                continue                        # доп-порог скора ПОВЕРХ дозорного (0 = выкл)
+            if self._fresh_bars > 0:            # свежесть: слишком старый сетап — мимо (0 = выкл)
+                bsa = f.get("bars_since_anchor")
+                if bsa is None or bsa > self._fresh_bars:
+                    continue
             sym = str(f.get("symbol") or "").strip().upper()   # нормализация регистра
             if sym:
-                fresh[sym] = {"stage": f["state"], "score": f.get("score"),
+                fresh[sym] = {"stage": f["state"], "score": score,
                               "tf": f.get("tf") or "4h"}
         for sym in list(self._stack):           # обновление/выход существующих
             if sym in fresh:

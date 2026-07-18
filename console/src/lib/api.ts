@@ -192,6 +192,9 @@ export type EngineOrder = {
 }
 export type EngineTrade = { symbol: string; side: string; qty: number; pnl: number; ts: string }
 export type EngineEvent = { kind: string; ts: string; detail: string }
+// S8/ADR-0020: стек рабочих монет динамической вселенной (символ+стадия+скор из провайдера)
+export type EngineStackItem = { symbol: string; stage: string | null; score: number | null; tf: string | null }
+export type EngineStack = { cap: number; count: number; items: EngineStackItem[] }
 export type EngineState = {
   status: { state: string; kill_switch: boolean; alarm: boolean; stale: boolean; banner: string }
   capital: {
@@ -206,6 +209,8 @@ export type EngineState = {
   orders: EngineOrder[]
   trades: EngineTrade[]
   events: EngineEvent[]
+  // ТОЛЬКО у динамик-бота (Борс); фикс-набор/Персиваль — ключа нет (секция «Стек» не рендерится)
+  stack?: EngineStack
 }
 export type EngineStateResp = {
   instance_id: string
@@ -289,3 +294,25 @@ export type DozorJournalEntry = {
 }
 export const getDozorJournal = (instanceId: string) =>
   api<DozorJournalEntry[]>(`/v1/instances/${instanceId}/scout/settings/journal`)
+
+// ── Динамика (S8/ADR-0020, routes_dynamic) — критерии динамической вселенной ──────────────────────
+// Ядро = ИСТИНА: хранит desired-критерии (min_score/stack_max/fresh_bars) движко-скоупа. Картридж
+// забирает своим /self и применяет ЖИВЬЁМ (провайдер читает файл-критерии, без рестарта; re-fetch ~5мин).
+// Команды НЕТ (D2). Дозор-скоуп (капитализация/оборот) — отдельный канал, не смешиваем (ADR-0018 п.3).
+export type DynamicSettings = {
+  min_score: number
+  stack_max: number
+  fresh_bars: number
+}
+export type DynamicSettingsResp = {
+  settings: DynamicSettings
+  defaults: DynamicSettings
+  updated_at: string | null
+}
+export const getDynamicSettings = (instanceId: string) =>
+  api<DynamicSettingsResp>(`/v1/instances/${instanceId}/dynamic/settings`)
+export const putDynamicSettings = (instanceId: string, settings: DynamicSettings) =>
+  api<{ settings: DynamicSettings }>(
+    `/v1/instances/${instanceId}/dynamic/settings`,
+    { method: 'PUT', body: JSON.stringify(settings) },
+  )

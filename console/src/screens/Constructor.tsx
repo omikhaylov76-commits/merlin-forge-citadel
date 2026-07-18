@@ -1,10 +1,17 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { PageHead } from '@/components/ui/page'
 import { Card, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { cn } from '@/lib/cn'
+import {
+  getDynamicSettings,
+  getFleetInstances,
+  putDynamicSettings,
+  type DynamicSettings,
+  type FleetInstance,
+} from '@/lib/api'
 import {
   KNOB_CATEGORIES,
   ETALON,
@@ -358,35 +365,145 @@ function Universe() {
           </div>
         </>
       ) : (
-        <>
-          <div className="mb-2 flex items-center gap-2">
-            <h4 className="text-[13px] font-medium text-mist">Критерии динамического набора</h4>
-            <Maturity t="planned" />
-          </div>
-          <div className={cn('flex flex-wrap items-end gap-3', disCls)}>
-            <DisField label="Мин. скор ≥">
-              <input type="number" disabled title={PLAN_TIP} defaultValue={35} className={cn(inCls, 'w-20 text-right tnum')} />
-            </DisField>
-            <DisField label="Капитализация">
-              <select disabled title={PLAN_TIP} className={inCls} defaultValue="Топ-100">
-                <option>Топ-50</option>
-                <option>Топ-100</option>
-                <option>Топ-300</option>
-              </select>
-            </DisField>
-            <DisField label="Макс. монет">
-              <input type="number" disabled title={PLAN_TIP} defaultValue={16} className={cn(inCls, 'w-20 text-right tnum')} />
-            </DisField>
-            <DisField label="Свежесть ≤, бар">
-              <input type="number" disabled title={PLAN_TIP} defaultValue={72} className={cn(inCls, 'w-20 text-right tnum')} />
-            </DisField>
-          </div>
-          <div className="mt-2 text-[11px] text-ash">
-            Те же пороги, что в Разведке (скор/оборот/возраст/капа) — бот берёт монеты динамически. Планируется (движок в доработке).
-          </div>
-        </>
+        <DynamicCriteria />
       )}
     </Card>
+  )
+}
+
+// ── раздел 5 · Динамика (S8/ADR-0020): ЖИВЫЕ критерии отбора монет из Разведки → ядро ─────────────
+function NumField({
+  label, value, onChange, title,
+}: { label: string; value: number; onChange: (v: number) => void; title?: string }) {
+  // критерии — целые ≥0; усекаем на вводе (иначе дробь/мусор доедет до ядра → 422 без причины Оператору)
+  const toInt = (raw: string) => {
+    const n = Math.trunc(Number(raw))
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  }
+  return (
+    <label className="flex flex-col gap-1 text-[11px] text-ash" title={title}>
+      {label}
+      <input
+        type="number"
+        min={0}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(toInt(e.target.value))}
+        className={cn(inCls, 'w-24 text-right tnum')}
+      />
+    </label>
+  )
+}
+
+function DynamicCriteria() {
+  const [instances, setInstances] = useState<FleetInstance[]>([])
+  const [instanceId, setInstanceId] = useState('')
+  const [draft, setDraft] = useState<DynamicSettings | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    getFleetInstances()
+      .then((list) => {
+        setInstances(list)
+        setInstanceId((cur) => cur || list[0]?.id || '')
+      })
+      .catch(() => setErr('не удалось загрузить список ботов'))
+  }, [])
+
+  useEffect(() => {
+    if (!instanceId) return
+    setDraft(null)
+    setSaved(false)
+    setErr(null)
+    getDynamicSettings(instanceId)
+      .then((r) => setDraft(r.settings))
+      .catch(() => setErr('не удалось загрузить критерии'))
+  }, [instanceId])
+
+  const set = (patch: Partial<DynamicSettings>) => {
+    setDraft((d) => (d ? { ...d, ...patch } : d))
+    setSaved(false)
+  }
+
+  const save = async () => {
+    if (!draft) return
+    setBusy(true)
+    setErr(null)
+    try {
+      await putDynamicSettings(instanceId, draft)
+      setSaved(true)
+    } catch {
+      setErr('не удалось сохранить критерии')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h4 className="text-[13px] font-medium text-mist">Критерии динамического набора</h4>
+        <Maturity t="live" />
+      </div>
+
+      <label className="mb-4 flex flex-col gap-1 text-[11px] text-ash">
+        Бот (инстанс)
+        <select
+          value={instanceId}
+          onChange={(e) => setInstanceId(e.target.value)}
+          className={cn(inCls, 'min-w-[240px]')}
+        >
+          {instances.length === 0 && <option value="">— нет ботов —</option>}
+          {instances.map((i) => (
+            <option key={i.id} value={i.id}>
+              {i.client} · {i.id.slice(0, 8)} · {i.status}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      {draft ? (
+        <>
+          <div className="flex flex-wrap items-end gap-3">
+            <NumField
+              label="Мин. скор ≥"
+              value={draft.min_score}
+              onChange={(v) => set({ min_score: v })}
+              title="работает ПОВЕРХ дозорного порога Разведки: ниже него эффекта нет (не поломка)"
+            />
+            <DisField label="Капитализация">
+              <select
+                disabled
+                title="настройка Дозора — крутится на экране Разведка"
+                className={cn(inCls, disCls)}
+                defaultValue="Топ-100"
+              >
+                <option>Топ-100</option>
+              </select>
+            </DisField>
+            <NumField label="Макс. монет" value={draft.stack_max} onChange={(v) => set({ stack_max: v })} />
+            <NumField label="Свежесть ≤, бар" value={draft.fresh_bars} onChange={(v) => set({ fresh_bars: v })} />
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <Button variant="primary" onClick={save} disabled={busy || !instanceId}>
+              {busy ? 'Сохраняю…' : 'Сохранить критерии'}
+            </Button>
+            {saved && <span className="text-[12px] text-ok">Сохранено · применится в течение ~5 минут</span>}
+            {err && <span className="text-[12px] text-danger">{err}</span>}
+          </div>
+
+          <div className="mt-3 text-[11px] text-ash">
+            Критерии отбора монет из Разведки: движок берёт вселенную динамически. Дозорные пороги
+            (капитализация/оборот/возраст) — на экране Разведка. Бот подхватывает критерии сам, без рестарта.
+          </div>
+        </>
+      ) : (
+        <div className="text-[12px] text-fog">{err ?? 'Загрузка критериев…'}</div>
+      )}
+    </>
   )
 }
 

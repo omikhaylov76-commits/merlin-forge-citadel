@@ -39,11 +39,16 @@ class CartridgeConfig:
     # Провайдер пишет coins.json (= COINS_CONFIG_PATH разъёма движка).
     dynamic_enabled: bool = False
     dynamic_coins_path: str = ""       # путь coins.json (провайдер↔разъём движка); пусто → off
-    dynamic_stack_max: int = 10        # предохранитель: макс монет в работе
+    dynamic_stack_max: int = 10        # предохранитель: макс монет (ген-дефолт; канал ADR-0020)
     dynamic_enter_scans: int = 1       # гистерезис: сканов до входа
     dynamic_exit_scans: int = 2        # гистерезис: пропущенных сканов до выхода (слот свободен)
-    dynamic_fresh_bars: int = 0        # свежесть ≤ N баров (0 = без фильтра; канал Слоя 3/F5)
+    dynamic_fresh_bars: int = 0        # свежесть ≤ N баров (0 = выкл; ген-дефолт; канал ADR-0020)
+    dynamic_min_score: int = 0         # доп-порог скора поверх дозорного (0 = выкл; канал ADR-0020)
     dynamic_min_write_s: float = 30.0  # min-интервал записи coins.json/gen (анти-thrash рестарта)
+    # ADR-0020 «Динамика»: критерии (min_score/stack_max/fresh_bars) ядро отдаёт по /self; фоновый
+    # re-fetch пишет JSON-файл, провайдер читает его ЖИВЬЁМ. Пусто → провайдер на ген-дефолтах.
+    dynamic_criteria_path: str = ""    # путь dynamic_criteria.json (re-fetch↔провайдер)
+    dynamic_refetch_s: float = 300.0   # интервал re-fetch критериев из ядра (D1: живое применение)
 
 
 def from_env() -> CartridgeConfig:
@@ -76,5 +81,12 @@ def from_env() -> CartridgeConfig:
         dynamic_enter_scans=int(os.environ.get("DYNAMIC_ENTER_SCANS", "1")),
         dynamic_exit_scans=int(os.environ.get("DYNAMIC_EXIT_SCANS", "2")),
         dynamic_fresh_bars=int(os.environ.get("DYNAMIC_FRESH_BARS", "0")),
+        dynamic_min_score=int(os.environ.get("DYNAMIC_MIN_SCORE", "0")),
         dynamic_min_write_s=float(os.environ.get("DYNAMIC_MIN_WRITE_S", "30")),
+        dynamic_criteria_path=os.environ.get(
+            "DYNAMIC_CRITERIA_PATH",
+            f"{os.environ['PIFAGOR_HOME']}/dynamic_criteria.json"
+            if os.environ.get("PIFAGOR_HOME") else "",
+        ),
+        dynamic_refetch_s=float(os.environ.get("DYNAMIC_REFETCH_S", "300")),
     )

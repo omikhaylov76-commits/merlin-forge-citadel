@@ -72,6 +72,16 @@ def main() -> None:
     if provider is not None:
         log.info("dynamic-канал ВКЛ: вселенная из печки → %s (кап %d)",
                  cfg.dynamic_coins_path, cfg.dynamic_stack_max)
+        # ADR-0020 D1: фоновый ПЕРИОДИЧЕСКИЙ re-fetch критериев → JSON, провайдер читает живьём.
+        # НЕ блокирует провайдер (он на ген-дефолтах, пока файла нет). Без файла-пути — скип.
+        if cfg.dynamic_criteria_path:
+            from app.dynamic_overrides import refetch_loop
+            threading.Thread(
+                target=refetch_loop,
+                args=(cfg.core_url, cfg.instance_token, cfg.dynamic_criteria_path),
+                kwargs={"interval": cfg.dynamic_refetch_s},
+                name="dynamic-refetch", daemon=True,
+            ).start()
     bot = PifagorCartridge(
         CoreClient(base_url=cfg.core_url, token=cfg.instance_token), reader, cfg,
         scout_reader=scout_reader, provider=provider,

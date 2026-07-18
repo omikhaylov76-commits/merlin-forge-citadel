@@ -63,9 +63,10 @@ class ScoutReader:
         return self._scan_cursor()
 
     def findings_for_universe(self) -> tuple[int, list[dict]]:
-        """Лёгкие находки для динамического провайдера (S8): (scan_ms, [{symbol,tf,state,score}]).
-        Без klines/levels/ордеров — геометрия отбора для стека. scan_ms=0 → скаут ещё не сканил.
-        Символы в верхнем регистре. Переиспользует build_scout (принцип #10)."""
+        """Лёгкие находки для динамического провайдера (S8): (scan_ms, [{symbol,tf,state,score,
+        bars_since_anchor}]). Без klines/levels — геометрия отбора для стека. `bars_since_anchor` —
+        возраст сетапа в барах (уже в build_scout) для фильтра свежести ADR-0020 (0 vendor — только
+        дочитываем). scan_ms=0 → скаут ещё не сканил. Символы в верхнем регистре."""
         scan_ms = self._scan_cursor()
         if scan_ms == 0:
             return 0, []
@@ -75,7 +76,8 @@ class ScoutReader:
             sym = str(f.get("symbol") or "").strip().upper()
             if sym:
                 out.append({"symbol": sym, "tf": f.get("tf") or "4h",
-                            "state": f.get("state") or "", "score": f.get("score")})
+                            "state": f.get("state") or "", "score": f.get("score"),
+                            "bars_since_anchor": f.get("bars_since_anchor")})
         return scan_ms, out
 
     def scan_now(self, *, now_ms: int) -> None:
