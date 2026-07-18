@@ -46,6 +46,13 @@ def _make_dynamic_provider(cfg, scout_reader):
     (флот/paper: динамика ВЫКЛ, геном). Читает печку через scout_reader. Сбой init не роняет."""
     if not cfg.dynamic_enabled or scout_reader is None:
         return None
+    # ГЕЙТ ВЕХИ 2 (триппвайр, fail-closed): пин символа с позицией («б» ADR-0019) НЕ реализован.
+    # Пока пина нет, динамика + ЖИВАЯ торговля запрещены (рестарт бросил бы позицию). Комбо
+    # DYNAMIC_ENABLED=1 + LIVE_TRADING_ENABLED=1 → провайдер НЕ активируется (движок на дефолте).
+    if os.environ.get("LIVE_TRADING_ENABLED") == "1":
+        log.error("динамика ОТКЛЮЧЕНА: LIVE_TRADING_ENABLED=1 без пина позиций — гейт Вехи 2 "
+                  "(рестарт бросил бы позицию); движок на дефолтной вселенной (ADR-0019).")
+        return None
     try:
         from app.dynamic_universe import DynamicUniverse
         return DynamicUniverse(cfg, scout_reader)

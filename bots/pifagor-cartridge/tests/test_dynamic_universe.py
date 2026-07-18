@@ -235,3 +235,18 @@ def test_engine_state_stack_only_when_provided():
     assert "stack" not in mapper.engine_state({})
     st = mapper.engine_state({}, stack={"cap": 10, "count": 1, "items": [{"symbol": "BTCUSDT"}]})
     assert st["stack"]["count"] == 1 and st["stack"]["cap"] == 10
+
+
+def test_live_trading_tripwire_disables_dynamic(monkeypatch, tmp_path):
+    """Гейт Вехи 2 (триппвайр, fail-closed): DYNAMIC_ENABLED=1 + LIVE_TRADING_ENABLED=1 (пин НЕ
+    реализован) → провайдер НЕ создаётся; LIVE_TRADING_ENABLED=0 → провайдер живёт."""
+    from app.main import _make_dynamic_provider
+    cfg = types.SimpleNamespace(
+        dynamic_enabled=True, dynamic_coins_path=str(tmp_path / "coins.json"),
+        dynamic_stack_max=10, dynamic_enter_scans=1, dynamic_exit_scans=2, dynamic_min_write_s=0.0,
+        dynamic_criteria_path="", dynamic_min_score=0, dynamic_fresh_bars=0)
+    scout = _FakeScout()
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "1")
+    assert _make_dynamic_provider(cfg, scout) is None        # опасное комбо → fail-closed
+    monkeypatch.setenv("LIVE_TRADING_ENABLED", "0")
+    assert _make_dynamic_provider(cfg, scout) is not None     # безопасно → провайдер активен
