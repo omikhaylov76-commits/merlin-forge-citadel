@@ -442,6 +442,29 @@ class ScoutSettings(Base):
     updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
+class DynamicSettings(Base):
+    """Критерии динамической вселенной на инстанс — ИСТОЧНИК ИСТИНЫ (S8 «Динамо-близнец», ADR-0020).
+    Оператор крутит в разделе 5 «Динамика» Конструктора → ядро хранит desired + журнал (audit_log) →
+    картридж забирает своим `/self` (boot + периодический re-fetch) и применяет ЖИВЬЁМ: провайдер
+    читает файл-критерии в каждом `_recompute`, БЕЗ рестарта (ADR-0020 D1; провайдер = foreground-
+    адаптер, рестарт = смерть контейнера). desired — валидированный JSON движко-скоупа: что бот БЕРЁТ
+    из печки (min_score/stack_max/fresh_bars). Дозор-скоуп (что скаут СМОТРИТ) — отдельный канал 0018,
+    не смешиваем (ADR-0018 п.3 зеркально). Один ряд на инстанс (upsert)."""
+
+    __tablename__ = "dynamic_settings"
+    __table_args__ = (
+        {"comment": "Критерии динамической вселенной на инстанс (S8/ADR-0020); ядро=истина, картридж "
+                    "забирает своим /self и применяет живьём (min_score/stack_max/fresh_bars)."},
+    )
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), primary_key=True
+    )
+    desired: Mapped[dict] = mapped_column(JSONB, nullable=False)   # валидированные критерии отбора
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # кто менял — свободная ссылка (как audit_log.actor), без жёсткого FK на users
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+
 class Contract(Base):
     __tablename__ = "contracts"
     __table_args__ = (

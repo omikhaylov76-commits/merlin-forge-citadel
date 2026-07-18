@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getEngineState, type EngineStateResp, type FleetInstance } from '@/lib/api'
+import { getEngineState, type EngineStack, type EngineStateResp, type FleetInstance } from '@/lib/api'
 
 // Карточка бота (S7): клик по строке Флота → факт-слой движка. Дизайн «midnight vault + gilded lines»:
 // ФИКСИРОВАННАЯ шапка-герой (статус/equity/пик/просадка/флаги) + скроллящееся тело (плитки + секции-
@@ -140,6 +140,9 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
                   tone={pnlCls(cap?.realised_pnl)}
                 />
               </div>
+
+              {/* S8/ADR-0020: рабочая вселенная динамик-бота (Борс). Персиваль/фикс-набор — stack нет → секции нет */}
+              {st.stack && <StackPanel stack={st.stack} />}
 
               <Section title="Позиции" count={st.positions.length} empty="Открытых позиций нет">
                 <DataTable cols={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']} numFrom={2}>
@@ -382,4 +385,63 @@ function SideBadge({ side }: { side: string }) {
       ? 'border-danger/40 text-danger'
       : 'border-line text-fog'
   return <span className={`rounded-pill border px-2 py-0.5 text-[10px] ${cls}`}>{side || '—'}</span>
+}
+
+// S8/ADR-0020: стек рабочих монет динамик-бота из печки. Чип «в стеке k · кап N» — ЧЕСТЕН при сжатии
+// капа на живую (EDIT 2 Куратора: перебор подсвечивается медью, никого не выгоняем — естественное убытие).
+function StackPanel({ stack }: { stack: EngineStack }) {
+  const over = stack.count > stack.cap
+  return (
+    <div className="mb-3 overflow-hidden rounded-card border border-white/[0.06] bg-[#0d1017]">
+      <div className="flex items-center justify-between px-4 py-2.5">
+        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
+          Стек · рабочая вселенная
+        </span>
+        <span
+          className={`rounded-pill border px-2 py-0.5 text-[11px] tnum ${
+            over ? 'border-copper/45 bg-copper/10 text-copper' : 'border-line text-ash'
+          }`}
+        >
+          в стеке {stack.count} · кап {stack.cap}
+        </span>
+      </div>
+      {stack.items.length === 0 ? (
+        <div className="border-t border-line px-4 py-6 text-center text-[12px] text-steel">
+          — стек пуст: печка ещё не дала сетапов —
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ']} numFrom={2}>
+            {stack.items.map((it, i) => (
+              <tr key={i} className="hover:bg-white/[0.015]">
+                <Td strong>{it.symbol}</Td>
+                <Td>
+                  <StageBadge stage={it.stage} />
+                </Td>
+                <Td num tone="text-copper">
+                  {it.score ?? '—'}
+                </Td>
+                <Td num>{it.tf ?? '—'}</Td>
+              </tr>
+            ))}
+          </DataTable>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function StageBadge({ stage }: { stage: string | null }) {
+  const s = stage ?? ''
+  const cls =
+    s === 'ready'
+      ? 'border-gold/45 bg-gold/10 text-gold'
+      : s === 'tracking'
+        ? 'border-copper/40 bg-copper/10 text-copper'
+        : s === 'forming'
+          ? 'border-line text-fog'
+          : 'border-line text-ash'
+  const label =
+    s === 'ready' ? 'готов' : s === 'tracking' ? 'отслеж.' : s === 'forming' ? 'формир.' : s || '—'
+  return <span className={`rounded-pill border px-2 py-0.5 text-[10px] ${cls}`}>{label}</span>
 }

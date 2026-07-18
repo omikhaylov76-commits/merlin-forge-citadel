@@ -22,6 +22,7 @@ from app.routes_billing import router as billing_router
 from app.routes_commands import router as commands_router
 from app.routes_crm import router as crm_router
 from app.routes_dozor import router as dozor_router
+from app.routes_dynamic import router as dynamic_router
 from app.routes_fleet import router as fleet_router
 from app.routes_internal import router as internal_router
 from app.routes_screener import router as screener_router
@@ -95,6 +96,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(screener_router)  # скринер по параметрам (С7-2б): запуск/приём/readout
     app.include_router(basket_router)  # Набор Оператора (НАБОР-1): витрина+хранение сетапов
     app.include_router(dozor_router)  # Разведка-стол (S7): настройки дозора + scan_now
+    app.include_router(dynamic_router)  # Динамика (S8/ADR-0020): критерии динамической вселенной
 
     @app.get("/healthz")
     def healthz() -> dict[str, object]:
