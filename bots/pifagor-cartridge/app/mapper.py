@@ -310,6 +310,26 @@ def _recent_events(monitor: dict, n: int = 10) -> list[dict]:
     return out
 
 
+def held_symbols(monitor: dict) -> frozenset[str]:
+    """Символы с ЖИВЫМ money-следом: открытая позиция (size≠0) ИЛИ висящий ордер (pending).
+
+    Источник пина Вехи 2 (ADR-0019 «б», F-pin-scope Оператора): монета пришпилена, пока по ней есть
+    позиция ИЛИ ордер; отпуск — ТОЛЬКО когда пусто И то, и другое. Читаем ОБА источника из того же
+    build_monitor, что engine_state (единый факт-слой, 0 vendor). Регистр → upper (== ключи стека
+    провайдера). Пустой/битый монитор → ∅ (пин безвреден; флот с held=∅, динамика выкл)."""
+    held: set[str] = set()
+    for p in monitor.get("positions") or []:
+        if _num(p.get("size")):                             # плоские/нулевые — слот не занят
+            sym = str(p.get("symbol") or "").strip().upper()
+            if sym:
+                held.add(sym)
+    for row in monitor.get("pending") or []:                # висящий ордер по символу (любая нога)
+        sym = str(row.get("symbol") or "").strip().upper()
+        if sym:
+            held.add(sym)
+    return frozenset(held)
+
+
 def engine_state(monitor: dict, stack: dict | None = None) -> dict:
     """Компакт движкового состояния для карточки бота: статус/капитал/позиции/ордера/хвосты сделок и
     событий. Из build_monitor — только ЧИТАЕМ (0 vendor). Секреты/ключи биржи НЕ кладём — лишь

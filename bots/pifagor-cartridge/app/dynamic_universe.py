@@ -25,6 +25,7 @@ log = logging.getLogger("mfc.pifagor-cartridge")
 _DEFAULT_COIN = {"enabled": True, "mb1": 2.0, "mb2": 3.5, "leverage": 5, "weight": 1.0}
 _ACTIVE_STAGES = ("forming", "tracking", "ready")   # committed — производная UI, не стадия печки
 _STACK_MAX_CAP = 100   # потолок предохранителя (зеркало ядра le=100; env-путь мимо валидации)
+_EMPTY_SETUP = {"stage": None, "score": None, "tf": None}   # пришпилен без сетапа печки
 
 
 def _score_key(v):
@@ -52,6 +53,7 @@ class DynamicUniverse:
         self._exit = max(1, int(cfg.dynamic_exit_scans))     # гистерезис (геном, не канал)
         self._min_write_s = float(cfg.dynamic_min_write_s)
         self._stack: dict[str, dict] = {}       # {symbol: {stage,score,tf,missed}}
+        self._held: frozenset[str] = frozenset()   # символы с живой позицией/ордером (пин, Веха 2)
         self._pending: dict[str, int] = {}      # кандидат → сканов подряд виден (гистерезис входа)
         self._last_scan_ms = 0
         self._written: frozenset[str] = frozenset()
@@ -67,8 +69,14 @@ class DynamicUniverse:
         self._min_score = int(c.get("min_score", self._cfg_min_score))
         self._fresh_bars = int(c.get("fresh_bars", self._cfg_fresh_bars))
 
-    def tick(self, now_mono: float) -> None:
-        """Один заход. No-op без нового скана (анти-thrash). Сбой печки → стек/файл не трогаем."""
+    def tick(self, now_mono: float, held: frozenset[str] = frozenset()) -> None:
+        """Один заход. held = символы с живой позицией/ордером (пин Вехи 2, ADR-0019 «б»).
+
+        Флаг-файл позиций пишем КАЖДЫЙ тик (позиции меняются между сканами) — супервизор start.sh
+        читает его перед мягким рестартом движка (F-restart «а»). Рекомпьют/запись набора — только
+        на НОВЫЙ скан (анти-thrash). Сбой печки → набор не трогаем, но флаг уже свежий."""
+        self._held = frozenset(s.strip().upper() for s in held if s)   # нормализация == ключи стека
+        self._write_positions_flag()            # F-restart «а»: адаптер пишет флаг открытых позиций
         try:
             scan_ms, findings = self._scout.findings_for_universe()
         except Exception:  # noqa: BLE001 — печка недоступна → не роняем цикл, набор держим
@@ -102,10 +110,16 @@ class DynamicUniverse:
             if sym in fresh:
                 self._stack[sym].update(fresh[sym])
                 self._stack[sym]["missed"] = 0
+            elif sym in self._held:             # ПИН (ADR-0019 «б»): позиция/ордер жив → держим
+                self._stack[sym]["missed"] = 0   # слот занят (сетап ушёл)
             else:
                 self._stack[sym]["missed"] += 1
                 if self._stack[sym]["missed"] >= self._exit:
                     del self._stack[sym]        # слот свободен (сетап ушёл/протух)
+        for sym in self._held:                  # ПИН: held без слота печки → до-шпилить,
+            if sym not in self._stack:          # чтобы нести в coins.json и карточке
+                base = fresh.get(sym) or _EMPTY_SETUP
+                self._stack[sym] = {**base, "missed": 0}
         cands = sorted((s for s in fresh if s not in self._stack),
                        key=lambda s: _score_key(fresh[s]), reverse=True)
         for sym in cands:                       # вход: гистерезис enter_scans + кап N, по скору
@@ -117,9 +131,9 @@ class DynamicUniverse:
                          if s in fresh and s not in self._stack}
 
     def _maybe_write(self, now_mono: float) -> None:
-        symbols = frozenset(self._stack)
+        symbols = frozenset(self._stack) | self._held   # ПИН: held ВСЕГДА в наборе (даже вне стека)
         if not symbols:
-            return                              # ПОЛ НА ПУСТОТУ: не пишем, gen не бампаем
+            return                              # ПОЛ НА ПУСТОТУ: стек и held пусты → не пишем
         if symbols == self._written:
             return                              # набор не менялся
         if now_mono - self._last_write_mono < self._min_write_s:
@@ -151,10 +165,28 @@ class DynamicUniverse:
         os.replace(gen_tmp, path + ".gen")
         log.info("dynamic: вселенная (%d монет): %s", len(coins), ",".join(sorted(coins)))
 
+    def _write_positions_flag(self) -> None:
+        """F-restart «а» (ADR-0019): адаптер пишет флаг открытых позиций/ордеров рядом с coins.json;
+        супервизор start.sh проверяет `[ -s ]` ПЕРЕД мягким рестартом движка. Непусто = есть held
+        (рестарт отложить — не бросать позицию мид-ордер). Пусто (0 байт) = слотов нет (рестарт ок).
+        Атомарно (tmp+os.replace): супервизор не прочтёт рваную строку."""
+        if not self._coins_path:
+            return
+        path = self._coins_path + ".positions"
+        payload = " ".join(sorted(self._held))   # непусто = есть позиции/ордера; "" = 0 байт
+        tmp = path + ".tmp"
+        try:
+            with open(tmp, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            os.replace(tmp, path)
+        except OSError:
+            log.exception("dynamic: не смог записать флаг позиций %s", path)
+
     def view(self) -> dict:
-        """Снимок стека для engine_state.stack (карточка Борса): cap/count/items."""
+        """Снимок стека для engine_state.stack (карточка Борса): cap/count/items (+pinned)."""
         items = sorted(
-            ({"symbol": s, "stage": v.get("stage"), "score": v.get("score"), "tf": v.get("tf")}
+            ({"symbol": s, "stage": v.get("stage"), "score": v.get("score"), "tf": v.get("tf"),
+              "pinned": s in self._held}         # пришпилена под живую позицию/ордер (ADR-0019 «б»)
              for s, v in self._stack.items()),
             key=lambda i: (i["score"] is not None, i["score"] or 0), reverse=True,
         )
