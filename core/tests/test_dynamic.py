@@ -97,7 +97,7 @@ def test_dynamic_settings_validation(clean, users):
     op = _login(c, "op@mfc.local", "op-pass")
     iid = str(_mk_instance())
 
-    # верхний кап stack_max ОБЯЗАТЕЛЕН: снять предохранитель через PUT нельзя (Куратор: 100000 не пройдёт)
+    # верхний кап stack_max ОБЯЗАТЕЛЕН: снять предохранитель через PUT нельзя (100000 не пройдёт)
     bad = {**_valid_settings(), "stack_max": 100_000}
     assert c.put(f"/v1/instances/{iid}/dynamic/settings", headers=op, json=bad).status_code == 422
     # stack_max=0 (нижняя граница ge=1) → 422
