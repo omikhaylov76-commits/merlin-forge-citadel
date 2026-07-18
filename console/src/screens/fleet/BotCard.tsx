@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react'
-import { getEngineState, type EngineStack, type EngineStateResp, type FleetInstance } from '@/lib/api'
+import {
+  getEngineState,
+  getInstanceScout,
+  type EngineStack,
+  type EngineStateResp,
+  type FleetInstance,
+  type ScoutSnapshot,
+} from '@/lib/api'
+import { ScoutDetail } from '../scout/ScoutDetail'
 
 // Карточка бота (S7): клик по строке Флота → факт-слой движка. Дизайн «midnight vault + gilded lines»:
 // ФИКСИРОВАННАЯ шапка-герой (статус/equity/пик/просадка/флаги) + скроллящееся тело (плитки + секции-
@@ -28,6 +36,8 @@ const chipOf = (s?: string) =>
 export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () => void }) {
   const [resp, setResp] = useState<EngineStateResp | null>(null)
   const [err, setErr] = useState(false)
+  const [detail, setDetail] = useState<ScoutSnapshot | null>(null) // клик по монете стека → график Разведки
+  const [pickErr, setPickErr] = useState<string | null>(null)
 
   useEffect(() => {
     let stop = false
@@ -51,6 +61,22 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
     }
   }, [inst.id])
 
+  // Клик по монете стека → снимок сетапа (symbol,tf) из ЕГО печки → тот же деталь-график, что в Разведке
+  // (ScoutDetail: свечи + уровни входов/стоп + факт-слой ордера/позиция из снимка). Только карточка Борса.
+  const pickCoin = async (symbol: string, tf: string | null) => {
+    setPickErr(null)
+    try {
+      const snaps = await getInstanceScout(inst.id)
+      const hit =
+        snaps.find((s) => s.symbol === symbol && (tf == null || s.tf === tf)) ??
+        snaps.find((s) => s.symbol === symbol)
+      if (hit) setDetail(hit)
+      else setPickErr(`${symbol}: снимок сетапа ещё не пришёл от скаута`)
+    } catch {
+      setPickErr(`${symbol}: не удалось получить снимок`)
+    }
+  }
+
   const st = resp?.state
   const cap = st?.capital
   const status = st?.status
@@ -58,6 +84,7 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   const dd = cap?.dd_pct ?? 0
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-void/80 p-4 backdrop-blur-[2px]"
       onClick={onClose}
@@ -142,7 +169,7 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
               </div>
 
               {/* S8/ADR-0020: рабочая вселенная динамик-бота (Борс). Персиваль/фикс-набор — stack нет → секции нет */}
-              {st.stack && <StackPanel stack={st.stack} />}
+              {st.stack && <StackPanel stack={st.stack} onPick={pickCoin} pickErr={pickErr} />}
 
               <Section title="Позиции" count={st.positions.length} empty="Открытых позиций нет">
                 <DataTable cols={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']} numFrom={2}>
@@ -231,6 +258,8 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
         </div>
       </div>
     </div>
+    {detail && <ScoutDetail snap={detail} onClose={() => setDetail(null)} />}
+    </>
   )
 }
 
@@ -389,7 +418,15 @@ function SideBadge({ side }: { side: string }) {
 
 // S8/ADR-0020: стек рабочих монет динамик-бота из печки. Чип «в стеке k · кап N» — ЧЕСТЕН при сжатии
 // капа на живую (EDIT 2 Куратора: перебор подсвечивается медью, никого не выгоняем — естественное убытие).
-function StackPanel({ stack }: { stack: EngineStack }) {
+function StackPanel({
+  stack,
+  onPick,
+  pickErr,
+}: {
+  stack: EngineStack
+  onPick?: (symbol: string, tf: string | null) => void
+  pickErr?: string | null
+}) {
   const over = stack.count > stack.cap
   return (
     <div className="mb-3 overflow-hidden rounded-card border border-white/[0.06] bg-[#0d1017]">
@@ -413,8 +450,18 @@ function StackPanel({ stack }: { stack: EngineStack }) {
         <div className="overflow-x-auto">
           <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ']} numFrom={2}>
             {stack.items.map((it, i) => (
-              <tr key={i} className="hover:bg-white/[0.015]">
-                <Td strong>{it.symbol}</Td>
+              <tr
+                key={i}
+                className={
+                  onPick ? 'cursor-pointer hover:bg-white/[0.035]' : 'hover:bg-white/[0.015]'
+                }
+                onClick={onPick ? () => onPick(it.symbol, it.tf) : undefined}
+                title={onPick ? 'открыть график сетапа (уровни + ордера)' : undefined}
+              >
+                <Td strong>
+                  {it.symbol}
+                  {onPick && <span className="ml-1.5 text-ash">↗</span>}
+                </Td>
                 <Td>
                   <StageBadge stage={it.stage} />
                 </Td>
@@ -426,6 +473,9 @@ function StackPanel({ stack }: { stack: EngineStack }) {
             ))}
           </DataTable>
         </div>
+      )}
+      {pickErr && (
+        <div className="border-t border-line px-4 py-2 text-[11px] text-copper">{pickErr}</div>
       )}
     </div>
   )
