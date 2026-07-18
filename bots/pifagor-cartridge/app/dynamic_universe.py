@@ -23,7 +23,14 @@ log = logging.getLogger("mfc.pifagor-cartridge")
 # Дефолтный per-coin блок scout-монет (ADR-0019 F6): parity-приближение, НЕ боевая настройка;
 # пересмотр перед Вехой 2. Проходит config.validate (mb1/mb2>0, lev 1..5, weight>0).
 _DEFAULT_COIN = {"enabled": True, "mb1": 2.0, "mb2": 3.5, "leverage": 5, "weight": 1.0}
-_ACTIVE_STAGES = ("forming", "tracking", "ready")   # committed — производная UI, не стадия печки
+# Решение Оператора (живая сверка Вехи 2): БЕЗ "forming" — сетап ещё зарождается, не факт что
+# родится (не кандидат в торговую вселенную); committed — производная UI, не стадия печки.
+_ACTIVE_STAGES = ("tracking", "ready")
+# Решение Оператора: движок торгует ТОЛЬКО 4h (config.strategy.SIGNAL_TF="4h" — vendor, ОДНОЗНАЧНО
+# захардкожен здесь, не импортируем vendor в 0-vendor модуль); 1h-находки скаута для ЭТОГО движка
+# некорректны как торговый сигнал → в динамическую вселенную не пускаем (были бы monета-пустышка:
+# слот занят, 4h-входа у движка на ней никогда не будет).
+_SIGNAL_TF = "4h"
 _STACK_MAX_CAP = 100   # потолок предохранителя (зеркало ядра le=100; env-путь мимо валидации)
 _EMPTY_SETUP = {"stage": None, "score": None, "tf": None}   # пришпилен без сетапа печки
 
@@ -92,8 +99,10 @@ class DynamicUniverse:
         self._load_criteria()                   # ADR-0020 D1: критерии ЖИВЬЁМ (кап/скор/свежесть)
         fresh = {}
         for f in findings:
+            if (f.get("tf") or "4h") != _SIGNAL_TF:
+                continue                        # движок торгует ТОЛЬКО 4h — иной ТФ не кандидат
             if str(f.get("state") or "") not in _ACTIVE_STAGES:
-                continue                        # неактивная стадия — не кандидат
+                continue                        # неактивная/незрелая стадия — не кандидат
             score = f.get("score")
             if self._min_score > 0 and (score is None or score < self._min_score):
                 continue                        # доп-порог скора ПОВЕРХ дозорного (0 = выкл)

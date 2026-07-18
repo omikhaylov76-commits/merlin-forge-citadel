@@ -103,6 +103,27 @@ def test_inactive_stage_ignored(tmp_path):
     assert dv.view()["count"] == 0   # committed — производная UI, не стадия печки
 
 
+def test_forming_stage_excluded(tmp_path):
+    """Решение Оператора (живая сверка Вехи 2): "Формируется" НЕ кандидат — сетап ещё зарождается,
+    не факт что родится. Только tracking/ready (Отслеживаем/Готов) идут в торговую вселенную."""
+    dv, fs = _mk(tmp_path)
+    fs.data = (1000, [{"symbol": "FORMUSDT", "tf": "4h", "state": "forming", "score": 80},
+                      {"symbol": "TRACKUSDT", "tf": "4h", "state": "tracking", "score": 70},
+                      {"symbol": "READYUSDT", "tf": "4h", "state": "ready", "score": 90}])
+    dv.tick(2.0)
+    assert {i["symbol"] for i in dv.view()["items"]} == {"TRACKUSDT", "READYUSDT"}
+
+
+def test_only_signal_tf_4h_admitted(tmp_path):
+    """Решение Оператора: движок торгует ТОЛЬКО 4h — 1h-находка НЕ кандидат, даже с высоким скором
+    и зрелой стадией (иначе слот занят монетой без 4h-входа — путает теорию/факт на графике)."""
+    dv, fs = _mk(tmp_path)
+    fs.data = (1000, [{"symbol": "ONEHUSDT", "tf": "1h", "state": "ready", "score": 99},
+                      {"symbol": "FOURHUSDT", "tf": "4h", "state": "tracking", "score": 60}])
+    dv.tick(2.0)
+    assert {i["symbol"] for i in dv.view()["items"]} == {"FOURHUSDT"}
+
+
 def test_min_score_filter(tmp_path):
     """Канал ADR-0020: min_score отсекает низкоскоровые и без-скора кандидатов ПОВЕРХ дозора."""
     dv, fs = _mk(tmp_path)
@@ -167,15 +188,17 @@ def test_stack_max_capped(tmp_path):
     assert dv.view()["cap"] == 100 and dv.view()["count"] == 100   # кламп 100, не 100000
 
 
-def test_fresh_bars_keeps_anchorless_forming(tmp_path):
-    """fresh_bars НЕ режет forming: нет bars_since_anchor → свежесть не определена → пропускаем."""
+def test_fresh_bars_anchorless_active_stage_not_cut(tmp_path):
+    """fresh_bars НЕ режет активную стадию без bars_since_anchor (защита от None-краха; в реальном
+    вендоре tracking/ready всегда несут anchor — forming исключён РАНЬШЕ, отдельным фильтром стадии,
+    решением Оператора, независимо от fresh_bars)."""
     dv, fs = _mk(tmp_path)
     _write_criteria(tmp_path, min_score=0, stack_max=3, fresh_bars=48)
     fs.data = (1000, [
-        {"symbol": "FORMUSDT", "state": "forming", "score": 80},                        # bsa нет
-        {"symbol": "OLDUSDT", "state": "ready", "score": 80, "bars_since_anchor": 100}])
+        {"symbol": "NOANCHORUSDT", "tf": "4h", "state": "tracking", "score": 80},        # bsa нет
+        {"symbol": "OLDUSDT", "tf": "4h", "state": "ready", "score": 80, "bars_since_anchor": 100}])
     dv.tick(2.0)
-    assert {i["symbol"] for i in dv.view()["items"]} == {"FORMUSDT"}   # forming прошёл, старый нет
+    assert {i["symbol"] for i in dv.view()["items"]} == {"NOANCHORUSDT"}   # старый (100>48) отсеян
 
 
 def test_pin_holds_symbol_through_exit_scans(tmp_path):
