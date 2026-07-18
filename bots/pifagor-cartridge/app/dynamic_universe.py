@@ -24,6 +24,7 @@ log = logging.getLogger("mfc.pifagor-cartridge")
 # пересмотр перед Вехой 2. Проходит config.validate (mb1/mb2>0, lev 1..5, weight>0).
 _DEFAULT_COIN = {"enabled": True, "mb1": 2.0, "mb2": 3.5, "leverage": 5, "weight": 1.0}
 _ACTIVE_STAGES = ("forming", "tracking", "ready")   # committed — производная UI, не стадия печки
+_STACK_MAX_CAP = 100   # потолок предохранителя (зеркало ядра le=100; env-путь мимо валидации)
 
 
 def _score_key(v):
@@ -61,7 +62,8 @@ class DynamicUniverse:
         КАЖДОМ скане → правка в консоли доезжает до Борса без рестарта. `stack_max` → живой кап
         (EDIT 2: сжатие 10→5 не выгоняет — естественное убытие; view() честен: 7·кап5)."""
         c = read_criteria(self._criteria_path) if self._criteria_path else {}
-        self._n = max(1, int(c.get("stack_max", self._cfg_n)))
+        # предохранитель держим и на env-пути (config.py без потолка) → кламп ЗДЕСЬ (страж в коде)
+        self._n = max(1, min(_STACK_MAX_CAP, int(c.get("stack_max", self._cfg_n))))
         self._min_score = int(c.get("min_score", self._cfg_min_score))
         self._fresh_bars = int(c.get("fresh_bars", self._cfg_fresh_bars))
 
@@ -89,7 +91,8 @@ class DynamicUniverse:
                 continue                        # доп-порог скора ПОВЕРХ дозорного (0 = выкл)
             if self._fresh_bars > 0:            # свежесть: слишком старый сетап — мимо (0 = выкл)
                 bsa = f.get("bars_since_anchor")
-                if bsa is None or bsa > self._fresh_bars:
+                # bsa=None → якоря нет (forming) → свежесть не определена → пропускаем (не режем)
+                if bsa is not None and bsa > self._fresh_bars:
                     continue
             sym = str(f.get("symbol") or "").strip().upper()   # нормализация регистра
             if sym:
@@ -141,8 +144,11 @@ class DynamicUniverse:
         finally:
             if os.path.exists(tmp):
                 os.unlink(tmp)
-        with open(path + ".gen", "w", encoding="utf-8") as fh:
+        # .gen тоже атомарно (tmp+os.replace): иначе рваное чтение cat'ом → спурьёзный рестарт
+        gen_tmp = path + ".gen.tmp"
+        with open(gen_tmp, "w", encoding="utf-8") as fh:
             fh.write(str(self._last_scan_ms))   # супервизор сверяет gen → рестарт ТОЛЬКО движка
+        os.replace(gen_tmp, path + ".gen")
         log.info("dynamic: вселенная (%d монет): %s", len(coins), ",".join(sorted(coins)))
 
     def view(self) -> dict:

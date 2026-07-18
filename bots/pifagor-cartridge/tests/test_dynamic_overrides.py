@@ -93,3 +93,18 @@ def test_refetch_loop_survives_core_down(tmp_path, monkeypatch):
 
     mod.refetch_loop("http://core", "tok", p, interval=0, sleep=lambda s: None, stop=stop)
     assert not os.path.exists(p)                         # сбой ядра не уронил цикл (страж 1)
+
+
+def test_refetch_skips_empty_no_clobber(tmp_path, monkeypatch):
+    """Кривой 200 без settings → пусто → refetch НЕ перезаписывает файл (держим прежние)."""
+    p = str(tmp_path / "dynamic_criteria.json")
+    write_criteria({"min_score": 50, "stack_max": 5, "fresh_bars": 48}, p)   # прежние валидные
+    monkeypatch.setattr(mod, "fetch_self", lambda url, tok: {})              # ядро вернуло пусто
+    calls = {"n": 0}
+
+    def stop():
+        calls["n"] += 1
+        return calls["n"] > 1
+
+    mod.refetch_loop("http://core", "tok", p, interval=0, sleep=lambda s: None, stop=stop)
+    assert json.load(open(p)) == {"min_score": 50, "stack_max": 5, "fresh_bars": 48}  # не клоббрен

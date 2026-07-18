@@ -484,14 +484,19 @@ function DynamicCriteria() {
               </select>
             </DisField>
             <NumField label="Макс. монет" value={draft.stack_max} onChange={(v) => set({ stack_max: v })} />
-            <NumField label="Свежесть ≤, бар" value={draft.fresh_bars} onChange={(v) => set({ fresh_bars: v })} />
+            <NumField
+              label="Свежесть ≤, бар"
+              value={draft.fresh_bars}
+              onChange={(v) => set({ fresh_bars: v })}
+              title="работает ПОВЕРХ дозорной свежести Разведки: выше неё эффекта нет (не поломка)"
+            />
           </div>
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Button variant="primary" onClick={save} disabled={busy || !instanceId}>
               {busy ? 'Сохраняю…' : 'Сохранить критерии'}
             </Button>
-            {saved && <span className="text-[12px] text-ok">Сохранено · применится в течение ~5 минут</span>}
+            {saved && <span className="text-[12px] text-ok">Сохранено · бот применит к следующему скану</span>}
             {err && <span className="text-[12px] text-danger">{err}</span>}
           </div>
 
