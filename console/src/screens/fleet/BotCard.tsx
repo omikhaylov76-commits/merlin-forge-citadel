@@ -71,7 +71,9 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
         snaps.find((s) => s.symbol === symbol && (tf == null || s.tf === tf)) ??
         snaps.find((s) => s.symbol === symbol)
       if (hit) setDetail(hit)
-      else setPickErr(`${symbol}: снимок сетапа ещё не пришёл от скаута`)
+      // честно: не «ещё не пришёл» (это подразумевало бы «подожди») — скаут мог перестать отслеживать
+      // монету (сетап закоммитился/отработал и ушёл из его находок), пока позиция ещё открыта (F-scout-snap)
+      else setPickErr(`${symbol}: скаут сейчас не отслеживает эту монету (сетап отработал/в развитии)`)
     } catch {
       setPickErr(`${symbol}: не удалось получить снимок`)
     }
