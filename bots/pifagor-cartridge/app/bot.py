@@ -27,12 +27,14 @@ log = logging.getLogger("mfc.pifagor-cartridge")
 
 class PifagorCartridge:
     def __init__(self, client, reader, config: CartridgeConfig,
-                 *, sleep: Callable[[float], None] = time.sleep, scout_reader=None) -> None:
+                 *, sleep: Callable[[float], None] = time.sleep, scout_reader=None,
+                 provider=None) -> None:
         self._client = client
         self._reader = reader
         self._cfg = config
         self._sleep = sleep
         self._scout = scout_reader          # None → scout-канал выключен (scout.db нет; флот)
+        self._provider = provider           # None → динамика выкл (dynamic_enabled=0; флот) S8
         self._start_mono: float | None = None
         self._last_hb_mono: float | None = None
         self._last_scout_mono: float | None = None
@@ -57,6 +59,8 @@ class PifagorCartridge:
             ), "heartbeat"):
                 self._last_hb_mono = mono
 
+        if self._provider is not None:
+            self._provider.tick(mono)       # печка→стек→coins.json (S8); no-op без нового скана
         self._push_telemetry(monitor, now)
         self._push_scout(mono)
         return self._handle_command(now, mono)
@@ -87,8 +91,10 @@ class PifagorCartridge:
         self._send(lambda: self._client.push_equity(
             mapper.equity_point(monitor, ts_iso=now.isoformat())), "equity")
         # engine_state — компакт факт-слоя для карточки бота (replace-снимок, каждый тик, дёшево)
+        # + стек динамики (S8): рабочая вселенная из печки — только когда провайдер вкл
+        stack = self._provider.view() if self._provider is not None else None
         self._send(lambda: self._client.push_engine_state(
-            mapper.engine_state(monitor)), "engine_state")
+            mapper.engine_state(monitor, stack=stack)), "engine_state")
         # trades / events — курсор двигаем лишь при не-транзиентном исходе (at-least-once)
         prev_tc = self._trade_cursor
         trades, new_tc = mapper.trades_batch(monitor, after_id=prev_tc)
@@ -188,8 +194,12 @@ class PifagorCartridge:
             "--min-age-days", str(p.get("min_age_days", 180)),
             "--min-turnover", str(p.get("min_turnover_usd", 5_000_000)),
         ]
+        # скринер на ДЕФОЛТНОЙ вселенной: скоуп разъёма = движок+адаптер (ADR-0019), не скринер
+        # (он сам ищет вселенную по капе/обороту). Стрижём COINS_CONFIG_PATH, чтобы не текло в бары.
+        child_env = os.environ.copy()
+        child_env.pop("COINS_CONFIG_PATH", None)
         try:
-            subprocess.Popen(args)
+            subprocess.Popen(args, env=child_env)
             log.info("screener_run запущен отдельным процессом: run_id=%s", run_id)
         except Exception as exc:
             log.error("screener_run не запустился (%s)", exc)

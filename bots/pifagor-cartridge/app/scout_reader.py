@@ -62,6 +62,22 @@ class ScoutReader:
         """Курсор последнего скана (для триггера «пушить, если новый»)."""
         return self._scan_cursor()
 
+    def findings_for_universe(self) -> tuple[int, list[dict]]:
+        """Лёгкие находки для динамического провайдера (S8): (scan_ms, [{symbol,tf,state,score}]).
+        Без klines/levels/ордеров — геометрия отбора для стека. scan_ms=0 → скаут ещё не сканил.
+        Символы в верхнем регистре. Переиспользует build_scout (принцип #10)."""
+        scan_ms = self._scan_cursor()
+        if scan_ms == 0:
+            return 0, []
+        sv = self._build_scout(self.scout_db) or {}
+        out = []
+        for f in sv.get("findings") or []:
+            sym = str(f.get("symbol") or "").strip().upper()
+            if sym:
+                out.append({"symbol": sym, "tf": f.get("tf") or "4h",
+                            "state": f.get("state") or "", "score": f.get("score")})
+        return scan_ms, out
+
     def scan_now(self, *, now_ms: int) -> None:
         """Кнопка «Сканировать сейчас» (Разведка-стол): durable-намерение через ВЕНДОРСКИЙ канал
         кнопки `scout_control_request_scan` (db.py:1247, дашборд-сторона). НЕ `scout_control_mark`:

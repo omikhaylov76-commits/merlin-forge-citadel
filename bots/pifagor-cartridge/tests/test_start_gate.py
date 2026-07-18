@@ -62,3 +62,35 @@ def test_scout_child_clears_database_url(tmp_path):
     subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=20)
     assert marker.exists(), "SCOUT_CMD не запустился"
     assert "DBURL=[EMPTY]" in marker.read_text()  # DATABASE_URL зачищен для скаута
+
+
+def test_engine_supervise_guard_no_keys():
+    """S8 супервизор движка: без BYBIT_* движок НЕ поднят (быстрый возврат, config.validate)."""
+    script = f'. "{_START}"\nunset BYBIT_API_KEY BYBIT_API_SECRET\nengine_supervise\n'
+    r = subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=15)
+    assert "движок НЕ поднят" in (r.stdout + r.stderr)
+
+
+def test_scout_child_clears_coins_config_path(tmp_path):
+    """S8/ADR-0019: дочерний скаут получает COINS_CONFIG_PATH ЗАЧИЩЕННЫМ (env -u) — скоуп разъёма =
+    движок+адаптер, динамика Борса не течёт в бары скаута (scout/bars.py)."""
+    marker = tmp_path / "ccp"
+    dump = tmp_path / "dump.sh"
+    dump.write_text('echo "CCP=[${COINS_CONFIG_PATH:-EMPTY}]" > "$1"; sleep 2\n')
+    script = (
+        f'. "{_START}"\n'
+        'export COINS_CONFIG_PATH="/tmp/coins.json"\n'
+        f'SCOUT_DB="{tmp_path}/scout.db"\n'
+        'SCOUT_RSS_CAP_MB=300 SCOUT_CHECK_SEC=2 SCOUT_MAX_SILENCE_SEC=99 SCOUT_GRACE_SEC=99\n'
+        'SCOUT_RPS=1 SCOUT_LIST_MAX=50 SCOUT_CAL_UTC_HOUR=5 SCOUT_TFS=4h\n'
+        f'SCOUT_CMD="sh {dump} {marker}"\n'
+        'scout_supervise >/dev/null 2>&1 &\n'
+        'SUP=$!\n'
+        f'i=0; while [ ! -f "{marker}" ] && [ $i -lt 20 ]; do sleep 0.2; i=$((i+1)); done\n'
+        'kill $SUP 2>/dev/null\n'
+        f'pkill -f "{dump}" 2>/dev/null\n'
+        'exit 0\n'
+    )
+    subprocess.run(["sh", "-c", script], capture_output=True, text=True, timeout=20)
+    assert marker.exists(), "SCOUT_CMD не запустился"
+    assert "CCP=[EMPTY]" in marker.read_text()  # COINS_CONFIG_PATH зачищен для скаута

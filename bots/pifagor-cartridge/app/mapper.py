@@ -310,10 +310,12 @@ def _recent_events(monitor: dict, n: int = 10) -> list[dict]:
     return out
 
 
-def engine_state(monitor: dict) -> dict:
+def engine_state(monitor: dict, stack: dict | None = None) -> dict:
     """Компакт движкового состояния для карточки бота: статус/капитал/позиции/ордера/хвосты сделок и
     событий. Из build_monitor — только ЧИТАЕМ (0 vendor). Секреты/ключи биржи НЕ кладём — лишь
-    оператор-видимое (позиции/ордера/equity). Недоверенный JSON, экранируется на выводе."""
+    оператор-видимое (позиции/ордера/equity). Недоверенный JSON, экранируется на выводе.
+    stack (S8, опц.): рабочая вселенная из печки {cap,count,items} — только при динамике; без неё
+    ключа НЕТ (payload прежний, Персиваль/флот чисты)."""
     cap = monitor.get("capital") or {}
     st = monitor.get("status") or {}
     positions = []
@@ -334,7 +336,7 @@ def engine_state(monitor: dict) -> dict:
             orders.append(o)
     ks = bool(cap.get("killswitch_active"))
     state = str(cap.get("state") or ("stopping" if ks else "running"))[:16]
-    return {
+    out = {
         "status": {
             "state": state,
             "kill_switch": ks,
@@ -353,3 +355,6 @@ def engine_state(monitor: dict) -> dict:
         "trades": _recent_trades(monitor),
         "events": _recent_events(monitor),
     }
+    if stack is not None:
+        out["stack"] = stack          # S8: рабочая вселенная (символ+стадия) для карточки Борса
+    return out
