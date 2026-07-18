@@ -73,6 +73,33 @@ def test_mapper_trades_and_events_faithful(seeded_db):
     assert any(e["kind"] == "entry_filled" and e["detail"].get("leg") == 1 for e in events)
 
 
+def test_held_symbols_from_real_build_monitor(tmp_path):
+    """held_symbols против НАСТОЯЩЕГО build_monitor (урок vendor-integration-tests-not-mocks):
+    позиция (account.positions) + ордер (orders_open) → ОБА символа в held. Пин Вехи 2 читает оба
+    источника (F-pin-scope); мок структуры мог бы разойтись с реальными ключами вендора."""
+    db_path = str(tmp_path / "pif.db")
+    owner = DB(db_path=db_path, owner=True)
+    Ledger(CapitalStore(owner)).seed(1000.0, 200.0)
+    owner.heartbeat_put(ts_ms=_NOW_MS, active_setups=0)
+    owner.account_put(total_equity=1000.0, positions=[            # позиция → positions
+        {"symbol": "BTCUSDT", "size": 0.1, "side": "Buy", "avgPrice": 60000, "unrealisedPnl": 1.0}])
+    owner.orders_open_put("ETHUSDT", {"side": "buy",             # ордер → pending
+                                      "legs": [{"order_id": "o1", "entry": 3000, "qty": 1.0}]})
+    snap = PifagorReader(db_path=db_path).snapshot(now_ms=_NOW_MS)
+    assert mapper.held_symbols(snap) == frozenset({"BTCUSDT", "ETHUSDT"})   # позиция И ордер
+
+
+def test_held_symbols_ignores_flat_position(tmp_path):
+    """Плоская позиция (size=0) — слот НЕ занят → не held (иначе пин держал бы закрытую монету)."""
+    db_path = str(tmp_path / "pif.db")
+    owner = DB(db_path=db_path, owner=True)
+    Ledger(CapitalStore(owner)).seed(1000.0, 200.0)
+    owner.heartbeat_put(ts_ms=_NOW_MS, active_setups=0)
+    owner.account_put(total_equity=1000.0, positions=[{"symbol": "BTCUSDT", "size": 0}])
+    snap = PifagorReader(db_path=db_path).snapshot(now_ms=_NOW_MS)
+    assert mapper.held_symbols(snap) == frozenset()
+
+
 def test_controls_hit_real_engine_mechanisms(seeded_db):
     """pause виден через effective(); stop_close виден через killswitch.is_halted (тот же латч)."""
     r = PifagorReader(db_path=seeded_db)

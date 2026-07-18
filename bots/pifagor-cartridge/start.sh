@@ -26,8 +26,9 @@ start_engine() {
 
 # ── супервизор движка (S8 «Динамо-близнец», ADR-0019): при смене вселенной (провайдер-адаптер бампнул ──
 # ── COINS_CONFIG_PATH.gen) мягко рестартит ТОЛЬКО движок → тот перечитывает разъём. ДОЖИДАЕТСЯ выхода ──
-# ── старого процесса (flock/advisory-lock БД освободятся) перед рестартом. Гейт-позиций рестарта — ──
-# ── заглушка (Веха 1 dry-run, позиций нет); Веха 2 (ордера) требует рабочего гейта (ADR-0019). ──
+# ── старого процесса (flock/advisory-lock БД освободятся) перед рестартом. F-restart «а» (Веха 2): ──
+# ── при открытых позициях/ордерах (флаг .positions непуст) рестарт ОТКЛАДЫВАЕТСЯ до закрытия ИЛИ ──
+# ── max-defer (громкий лог) — не бросаем движок мид-ордер; пин держит held в наборе (ADR-0019). ──
 engine_supervise() {
   if [ -z "$BYBIT_API_KEY" ] || [ -z "$BYBIT_API_SECRET" ]; then
     echo "[engine-sup] BYBIT_* не заданы → движок НЕ поднят (config.validate требует demo-ключи)"
@@ -36,20 +37,31 @@ engine_supervise() {
   set +e                                     # единичный non-zero не роняет супервизор
   _erestarts=0
   _gfile="$COINS_CONFIG_PATH.gen"
+  _pfile="$COINS_CONFIG_PATH.positions"                     # F-restart «а»: флаг открытых позиций (пишет адаптер)
   while true; do
     _egen=$(cat "$_gfile" 2>/dev/null || echo 0)
     ( cd /pifagor && exec python app/main.py ) &
     _epid=$!
+    _defer=0                                                # счётчик отложенных рестартов (на жизнь движка)
     echo "[engine-sup] движок [$(engine_mode)] pid=$_epid (рестартов: $_erestarts, gen=$_egen)"
     while kill -0 "$_epid" 2>/dev/null; do
       sleep "${DYNAMIC_SUP_CHECK_SEC:-15}"
       kill -0 "$_epid" 2>/dev/null || break                 # движок сам умер → на рестарт
-      # TODO Веха 2: гейт «не рестартить при открытых позициях» (сейчас dry-run → позиций нет, no-op).
-      if [ "$(cat "$_gfile" 2>/dev/null || echo 0)" != "$_egen" ]; then
-        echo "[engine-sup] вселенная сменилась (gen $_egen→$(cat "$_gfile" 2>/dev/null)) → рестарт ТОЛЬКО движка"
-        kill -TERM "$_epid" 2>/dev/null || true
-        break
+      [ "$(cat "$_gfile" 2>/dev/null || echo 0)" = "$_egen" ] && continue   # вселенная та же → живём
+      # Вселенная сменилась. F-restart «а» (ADR-0019): НЕ рестартить движок при открытых позициях —
+      # брошенная мид-ордер позиция = money-риск. Пин держит held в наборе → отсрочка безопасна.
+      if [ -s "$_pfile" ]; then
+        _defer=$(( _defer + 1 ))
+        _maxdefer="${DYNAMIC_RESTART_MAX_DEFER:-240}"       # 240×15с ≈ 1ч до принудительного рестарта
+        if [ "$_defer" -lt "$_maxdefer" ]; then
+          echo "[engine-sup] ⏸ рестарт ОТЛОЖЕН: открытые позиции/ордера [$(cat "$_pfile" 2>/dev/null)] ($_defer/$_maxdefer)"
+          continue                                          # держим движок, ждём закрытия слота
+        fi
+        echo "[engine-sup] ⚠ max-defer $_maxdefer превышен при открытых позициях → рестарт (пин несёт held, движок перечитает из БД)"
       fi
+      echo "[engine-sup] вселенная сменилась (gen $_egen→$(cat "$_gfile" 2>/dev/null)) → рестарт ТОЛЬКО движка"
+      kill -TERM "$_epid" 2>/dev/null || true
+      break
     done
     wait "$_epid" 2>/dev/null || true                        # ДОЖДАТЬСЯ выхода → лок БД освобождён
     _erestarts=$(( _erestarts + 1 ))

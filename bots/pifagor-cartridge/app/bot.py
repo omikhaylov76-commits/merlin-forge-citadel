@@ -60,7 +60,10 @@ class PifagorCartridge:
                 self._last_hb_mono = mono
 
         if self._provider is not None:
-            self._provider.tick(mono)       # печка→стек→coins.json (S8); no-op без нового скана
+            # S8 Веха 2 (ADR-0019 «б»): символы с живой позицией/ордером → провайдер ПРИШПИЛИВАЕТ их
+            # (не роняет из набора при смене вселенной) + пишет флаг-файл позиций для супервизора
+            # (F-restart). held из ОБОИХ источников монитора (позиции И ордера) — единый факт-слой.
+            self._provider.tick(mono, mapper.held_symbols(monitor))   # печка→стек→coins.json
         self._push_telemetry(monitor, now)
         self._push_scout(mono)
         return self._handle_command(now, mono)

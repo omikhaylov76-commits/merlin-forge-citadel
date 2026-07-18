@@ -178,6 +178,61 @@ def test_fresh_bars_keeps_anchorless_forming(tmp_path):
     assert {i["symbol"] for i in dv.view()["items"]} == {"FORMUSDT"}   # forming прошёл, старый нет
 
 
+def test_pin_holds_symbol_through_exit_scans(tmp_path):
+    """ПИН Вехи 2 (ADR-0019 «б»): символ с живой позицией НЕ выселяется, хоть ушёл из печки."""
+    dv, fs = _mk(tmp_path)                              # exit_scans=2
+    fs.data = (1000, [{"symbol": "BTCUSDT", "tf": "4h", "state": "ready", "score": 90}])
+    dv.tick(2.0, frozenset({"BTCUSDT"}))               # позиция открыта → held
+    fs.data = (2000, [])                                # сетап ушёл из печки (committed)
+    dv.tick(3.0, frozenset({"BTCUSDT"}))               # без пина missed=1
+    fs.data = (3000, [])
+    dv.tick(4.0, frozenset({"BTCUSDT"}))               # без пина выгнали бы; пин держит
+    items = {i["symbol"]: i for i in dv.view()["items"]}
+    assert "BTCUSDT" in items and items["BTCUSDT"]["pinned"] is True
+    assert "BTCUSDT" in json.load(open(tmp_path / "coins.json"))   # монета с позицией в наборе
+
+
+def test_pin_released_after_position_closes(tmp_path):
+    """Отпуск (F-pin-scope): held опустел (позиция закрыта И ордера сняты) → нормальный exit."""
+    dv, fs = _mk(tmp_path)                              # exit_scans=2
+    fs.data = (1000, [{"symbol": "BTCUSDT", "tf": "4h", "state": "ready", "score": 90}])
+    dv.tick(2.0, frozenset({"BTCUSDT"}))
+    fs.data = (2000, [])
+    dv.tick(3.0, frozenset())                          # позиция закрыта → held пуст → missed=1
+    assert "BTCUSDT" in {i["symbol"] for i in dv.view()["items"]}   # <exit — ещё держим
+    fs.data = (3000, [])
+    dv.tick(4.0, frozenset())                          # missed=2≥exit → слот свободен
+    assert dv.view()["count"] == 0
+
+
+def test_pin_held_not_in_pechka_carried(tmp_path):
+    """held-символ, которого НЕТ в печке (позиция вне сетапов) → до-шпилен."""
+    dv, fs = _mk(tmp_path)
+    fs.data = (1000, [{"symbol": "BTCUSDT", "tf": "4h", "state": "ready", "score": 90}])
+    dv.tick(2.0, frozenset({"ETHUSDT"}))               # позиция на ETH, печка про BTC
+    v = {i["symbol"]: i for i in dv.view()["items"]}
+    assert v["ETHUSDT"]["pinned"] is True and v["ETHUSDT"]["stage"] is None   # до-шпилен без сетапа
+    assert set(json.load(open(tmp_path / "coins.json"))) == {"BTCUSDT", "ETHUSDT"}   # оба в наборе
+
+
+def test_pin_survives_empty_floor(tmp_path):
+    """Пол на пустоту НЕ роняет позицию: печка пуста, но held непуст → coins.json пишется с held."""
+    dv, fs = _mk(tmp_path)
+    fs.data = (1000, [])                                # печка пуста
+    dv.tick(2.0, frozenset({"BTCUSDT"}))               # но есть позиция
+    assert set(json.load(open(tmp_path / "coins.json"))) == {"BTCUSDT"}   # пол не съел позицию
+
+
+def test_positions_flag_written_each_tick(tmp_path):
+    """F-restart «а»: флаг непуст при held, пуст (0 байт) без held (супервизор `[ -s ]`)."""
+    dv, fs = _mk(tmp_path)
+    flag = tmp_path / "coins.json.positions"
+    dv.tick(2.0, frozenset({"BTCUSDT", "ethusdt"}))    # даже без нового скана флаг пишется
+    assert flag.read_text().split() == ["BTCUSDT", "ETHUSDT"]   # непусто, нормализовано, сорт
+    dv.tick(3.0, frozenset())
+    assert flag.read_text() == ""                       # 0 байт → `[ -s ]` false → рестарт разрешён
+
+
 def test_findings_for_universe_empty_real_scout_db(tmp_path):
     """findings_for_universe против НАСТОЯЩЕЙ storage.db (не мок): пустая печка → (0, []).
     Поля находок (symbol/tf/state/score) едут через build_scout — контракт #52."""
@@ -237,9 +292,10 @@ def test_engine_state_stack_only_when_provided():
     assert st["stack"]["count"] == 1 and st["stack"]["cap"] == 10
 
 
-def test_live_trading_tripwire_disables_dynamic(monkeypatch, tmp_path):
-    """Гейт Вехи 2 (триппвайр, fail-closed): DYNAMIC_ENABLED=1 + LIVE_TRADING_ENABLED=1 (пин НЕ
-    реализован) → провайдер НЕ создаётся; LIVE_TRADING_ENABLED=0 → провайдер живёт."""
+def test_live_trading_tripwire_removed_after_pin(monkeypatch, tmp_path):
+    """Веха 2 (F-tripwire): триппвайр LIVE СНЯТ (пин «б» + гейт рестарта «а» реализованы) —
+    DYNAMIC+LIVE_TRADING=1 → провайдер активен; защиту LIVE несёт явный гейт подписи при деплое.
+    Гейт флота (dynamic_enabled + scout_reader) сохранён — без скаута None (Персиваль/paper)."""
     from app.main import _make_dynamic_provider
     cfg = types.SimpleNamespace(
         dynamic_enabled=True, dynamic_coins_path=str(tmp_path / "coins.json"),
@@ -247,6 +303,5 @@ def test_live_trading_tripwire_disables_dynamic(monkeypatch, tmp_path):
         dynamic_criteria_path="", dynamic_min_score=0, dynamic_fresh_bars=0)
     scout = _FakeScout()
     monkeypatch.setenv("LIVE_TRADING_ENABLED", "1")
-    assert _make_dynamic_provider(cfg, scout) is None        # опасное комбо → fail-closed
-    monkeypatch.setenv("LIVE_TRADING_ENABLED", "0")
-    assert _make_dynamic_provider(cfg, scout) is not None     # безопасно → провайдер активен
+    assert _make_dynamic_provider(cfg, scout) is not None     # пин есть → LIVE больше не запирает
+    assert _make_dynamic_provider(cfg, None) is None          # нет скаута (флот) → None

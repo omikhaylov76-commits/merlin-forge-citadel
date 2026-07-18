@@ -43,15 +43,13 @@ def _make_scout_reader(cfg, worker_reader):
 
 def _make_dynamic_provider(cfg, scout_reader):
     """DynamicUniverse при dynamic_enabled=1 И scout_reader (Борс = свой скаут; S8). Иначе None
-    (флот/paper: динамика ВЫКЛ, геном). Читает печку через scout_reader. Сбой init не роняет."""
+    (флот/paper: динамика ВЫКЛ, геном). Читает печку через scout_reader. Сбой init не роняет.
+
+    Веха 2 (ADR-0019 «реализован»): пин символа с позицией/ордером («б») + гейт рестарта в
+    start.sh («а») готовы и покрыты тестами → триппвайр LIVE СНЯТ (F-tripwire, подпись Куратора).
+    DYNAMIC+LIVE_TRADING разрешён; защиту от включения LIVE без ведома людей несёт ЯВНЫЙ гейт
+    «подпись Оператора+Куратора на LIVE_TRADING_ENABLED=1» при деплое (гейт-человек)."""
     if not cfg.dynamic_enabled or scout_reader is None:
-        return None
-    # ГЕЙТ ВЕХИ 2 (триппвайр, fail-closed): пин символа с позицией («б» ADR-0019) НЕ реализован.
-    # Пока пина нет, динамика + ЖИВАЯ торговля запрещены (рестарт бросил бы позицию). Комбо
-    # DYNAMIC_ENABLED=1 + LIVE_TRADING_ENABLED=1 → провайдер НЕ активируется (движок на дефолте).
-    if os.environ.get("LIVE_TRADING_ENABLED") == "1":
-        log.error("динамика ОТКЛЮЧЕНА: LIVE_TRADING_ENABLED=1 без пина позиций — гейт Вехи 2 "
-                  "(рестарт бросил бы позицию); движок на дефолтной вселенной (ADR-0019).")
         return None
     try:
         from app.dynamic_universe import DynamicUniverse
