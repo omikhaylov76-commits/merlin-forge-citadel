@@ -99,7 +99,12 @@ def refetch_loop(
     последнее валидное/ген-дефолты). `stop` — callable для теста (True → выход из цикла)."""
     while stop is None or not stop():
         try:
-            write_criteria(to_criteria(fetch_self(core_url, token)), path)
+            crit = to_criteria(fetch_self(core_url, token))
+            # пустой (кривой 200 без settings) → НЕ клоббрим файл: держим прежние критерии
+            if crit:
+                write_criteria(crit, path)
+            else:
+                log.warning("re-fetch: ядро вернуло пусто — файл не трогаю (держу прежние)")
         except Exception as exc:  # noqa: BLE001 — сеть/ядро недоступно: ретрай на след. цикле
             log.info("re-fetch критериев: не удалось (%s), повтор через %.0fс", exc, interval)
         sleep(interval)

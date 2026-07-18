@@ -75,8 +75,11 @@ class ScoutReader:
         for f in sv.get("findings") or []:
             sym = str(f.get("symbol") or "").strip().upper()
             if sym:
+                # ВЕНДОР build_scout кладёт стадию под ключом "status" (viewmodel:542), НЕ "state";
+                # маппим в "state" (как рабочий mapper:265). Читать "state" = всегда None
+                # → стек пуст → фича немая (мок маскировал; тест ниже — против вендора).
                 out.append({"symbol": sym, "tf": f.get("tf") or "4h",
-                            "state": f.get("state") or "", "score": f.get("score"),
+                            "state": f.get("status") or "", "score": f.get("score"),
                             "bars_since_anchor": f.get("bars_since_anchor")})
         return scan_ms, out
 
