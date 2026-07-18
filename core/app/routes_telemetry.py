@@ -192,6 +192,11 @@ def engine_state(
         v = body.get(key)
         if isinstance(v, list) and len(v) > _ENGINE_LIST_CAP:
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"{key}: слишком длинный")
+    stk = body.get("stack")  # S8: стек-dict — кап items отдельно (цикл выше ловит только list-поля)
+    items = stk.get("items") if isinstance(stk, dict) else None
+    if isinstance(items, list) and len(items) > _ENGINE_LIST_CAP:
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            "stack.items: слишком длинный")
     now = datetime.now(UTC)
     stmt = (
         pg_insert(EngineState)

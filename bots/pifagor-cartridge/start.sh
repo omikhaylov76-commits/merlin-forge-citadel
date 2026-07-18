@@ -24,6 +24,41 @@ start_engine() {
   fi
 }
 
+# ── супервизор движка (S8 «Динамо-близнец», ADR-0019): при смене вселенной (провайдер-адаптер бампнул ──
+# ── COINS_CONFIG_PATH.gen) мягко рестартит ТОЛЬКО движок → тот перечитывает разъём. ДОЖИДАЕТСЯ выхода ──
+# ── старого процесса (flock/advisory-lock БД освободятся) перед рестартом. Гейт-позиций рестарта — ──
+# ── заглушка (Веха 1 dry-run, позиций нет); Веха 2 (ордера) требует рабочего гейта (ADR-0019). ──
+engine_supervise() {
+  if [ -z "$BYBIT_API_KEY" ] || [ -z "$BYBIT_API_SECRET" ]; then
+    echo "[engine-sup] BYBIT_* не заданы → движок НЕ поднят (config.validate требует demo-ключи)"
+    return 0
+  fi
+  set +e                                     # единичный non-zero не роняет супервизор
+  _erestarts=0
+  _gfile="$COINS_CONFIG_PATH.gen"
+  while true; do
+    _egen=$(cat "$_gfile" 2>/dev/null || echo 0)
+    ( cd /pifagor && exec python app/main.py ) &
+    _epid=$!
+    echo "[engine-sup] движок [$(engine_mode)] pid=$_epid (рестартов: $_erestarts, gen=$_egen)"
+    while kill -0 "$_epid" 2>/dev/null; do
+      sleep "${DYNAMIC_SUP_CHECK_SEC:-15}"
+      kill -0 "$_epid" 2>/dev/null || break                 # движок сам умер → на рестарт
+      # TODO Веха 2: гейт «не рестартить при открытых позициях» (сейчас dry-run → позиций нет, no-op).
+      if [ "$(cat "$_gfile" 2>/dev/null || echo 0)" != "$_egen" ]; then
+        echo "[engine-sup] вселенная сменилась (gen $_egen→$(cat "$_gfile" 2>/dev/null)) → рестарт ТОЛЬКО движка"
+        kill -TERM "$_epid" 2>/dev/null || true
+        break
+      fi
+    done
+    wait "$_epid" 2>/dev/null || true                        # ДОЖДАТЬСЯ выхода → лок БД освобождён
+    _erestarts=$(( _erestarts + 1 ))
+    _epause="${DYNAMIC_MIN_RESTART_SEC:-20}"                 # min-интервал рестарта (анти-thrash поверх провайдера)
+    echo "[engine-sup] движок завершился → рестарт #$_erestarts (пауза ${_epause}с)"
+    sleep "$_epause"
+  done
+}
+
 # ── супервизор скаута (ADR-0016 в.4): liveness по scout_control.heartbeat + RSS-кап через ──
 # ── app.scout_health; рестарт ТОЛЬКО процесса скаута. Движок/адаптер не трогаются; ──
 # ── restartPolicy=never контейнера цел (OOM контейнера убил бы движок с позициями). ──
@@ -39,7 +74,8 @@ scout_supervise() {
     _gen=$(cat "$SCOUT_OVERRIDE_FILE.gen" 2>/dev/null || echo 0)
     # -u DATABASE_URL: скаут ВСЕГДА на своей SQLite (DB_PATH), даже если движок на Postgres —
     # иначе config.ops берёт DATABASE_URL и скаут делит БД движка (ADR-0016 в.2, решение #51-приёмки).
-    env -u DATABASE_URL DB_PATH="$SCOUT_DB" SCOUT_ENABLED=1 \
+    # -u COINS_CONFIG_PATH (S8/ADR-0019): скаут на ДЕФОЛТНОЙ вселенной (bars.py), динамика Борса в бары не течёт.
+    env -u DATABASE_URL -u COINS_CONFIG_PATH DB_PATH="$SCOUT_DB" SCOUT_ENABLED=1 \
         SCOUT_RPS="$SCOUT_RPS" SCOUT_LIST_MAX="$SCOUT_LIST_MAX" \
         SCOUT_CAL_UTC_HOUR="$SCOUT_CAL_UTC_HOUR" SCOUT_TFS="$SCOUT_TFS" SCOUT_TF="$SCOUT_TF" \
         $SCOUT_CMD &
@@ -131,7 +167,15 @@ main() {
   mkdir -p "$(dirname "$DB_PATH")" 2>/dev/null || true
   echo "[cartridge] engine-БД: DB_PATH=$DB_PATH (durable при томе на $(dirname "$DB_PATH"))"
   risk_rebaseline_if_requested   # ДО движка: иначе singleton-lock займёт БД (#Персиваль-ks)
-  start_engine
+  if [ "$DYNAMIC_ENABLED" = "1" ]; then
+    # S8 «Динамо-близнец»: движок берёт вселенную из печки. COINS_CONFIG_PATH на ЭФЕМЕРНОМ пути
+    # (провайдер-адаптер пишет coins.json, разъём strategy.py читает); скаут/скринер стрижём (env -u).
+    export COINS_CONFIG_PATH="${COINS_CONFIG_PATH:-$PIFAGOR_HOME/coins.json}"
+    echo "[cartridge] динамика ВКЛ (DYNAMIC_ENABLED=1): COINS_CONFIG_PATH=$COINS_CONFIG_PATH → супервизор движка"
+    engine_supervise &
+  else
+    start_engine                 # флот/Персиваль: путь БАЙТ-В-БАЙТ прежний (COINS_CONFIG_PATH не задан)
+  fi
   start_scout_if_enabled
   # Адаптер — foreground (PID 1-логика). stop_close встаёт → процесс выходит (restartPolicy=never).
   exec python -m app.main

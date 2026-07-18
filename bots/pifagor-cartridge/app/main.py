@@ -41,6 +41,19 @@ def _make_scout_reader(cfg, worker_reader):
         return None
 
 
+def _make_dynamic_provider(cfg, scout_reader):
+    """DynamicUniverse при dynamic_enabled=1 И scout_reader (Борс = свой скаут; S8). Иначе None
+    (флот/paper: динамика ВЫКЛ, геном). Читает печку через scout_reader. Сбой init не роняет."""
+    if not cfg.dynamic_enabled or scout_reader is None:
+        return None
+    try:
+        from app.dynamic_universe import DynamicUniverse
+        return DynamicUniverse(cfg, scout_reader)
+    except Exception:  # noqa: BLE001
+        log.exception("dynamic provider init упал — динамика выключена")
+        return None
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     cfg = from_env()
@@ -55,9 +68,13 @@ def main() -> None:
             target=boot_fetch, args=(cfg.core_url, cfg.instance_token),
             name="scout-boot-fetch", daemon=True,
         ).start()
+    provider = _make_dynamic_provider(cfg, scout_reader)
+    if provider is not None:
+        log.info("dynamic-канал ВКЛ: вселенная из печки → %s (кап %d)",
+                 cfg.dynamic_coins_path, cfg.dynamic_stack_max)
     bot = PifagorCartridge(
         CoreClient(base_url=cfg.core_url, token=cfg.instance_token), reader, cfg,
-        scout_reader=scout_reader,
+        scout_reader=scout_reader, provider=provider,
     )
 
     stop = threading.Event()
