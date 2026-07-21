@@ -149,7 +149,8 @@ def test_trades_past_accepted_future_rejected(sm):
             "side": "buy", "qty": 0.1}]                        # 3 дня назад — бэкфилл-кейс Борса
     assert c.post("/v1/telemetry/trades", headers=_hdr(tok), json=old).status_code == 202
     assert _count(sm, "trades", iid) == 1
-    fut = [{"ts": _iso(3600), "exec_id": "fut1", "symbol": "BTCUSDT", "side": "buy", "qty": 0.1}]
+    fut = [{"ts": _iso(100 * 86400), "exec_id": "fut1",   # +100 суток — за 48ч-окном skew
+            "symbol": "BTCUSDT", "side": "buy", "qty": 0.1}]
     assert c.post("/v1/telemetry/trades", headers=_hdr(tok), json=fut).status_code == 422
     ev_old = [{"ts": _iso(-3 * 24 * 3600), "kind": "entry_filled"}]
     assert c.post("/v1/telemetry/events", headers=_hdr(tok), json=ev_old).status_code == 202
