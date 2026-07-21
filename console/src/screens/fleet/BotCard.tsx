@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   getEngineState,
   getInstanceScout,
+  scanNow,
   type EngineStack,
   type EngineStateResp,
   type FleetInstance,
@@ -38,6 +39,21 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   const [err, setErr] = useState(false)
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null) // клик по монете стека → график Разведки
   const [pickErr, setPickErr] = useState<string | null>(null)
+  const [scanState, setScanState] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
+
+  // Кнопка «Сканировать сейчас» прямо на карточке (просьба Оператора): та же команда scan_now,
+  // что на Разведке — скаут пересканирует (~1-2 мин), свечи/сетапы/графики обновятся сами.
+  const doScan = async () => {
+    setScanState('busy')
+    try {
+      await scanNow(inst.id)
+      setScanState('sent')
+      setTimeout(() => setScanState('idle'), 120_000) // через ~2 мин кнопка снова активна
+    } catch {
+      setScanState('err')
+      setTimeout(() => setScanState('idle'), 5_000)
+    }
+  }
 
   useEffect(() => {
     let stop = false
@@ -171,7 +187,15 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
               </div>
 
               {/* S8/ADR-0020: рабочая вселенная динамик-бота (Борс). Персиваль/фикс-набор — stack нет → секции нет */}
-              {st.stack && <StackPanel stack={st.stack} onPick={pickCoin} pickErr={pickErr} />}
+              {st.stack && (
+                <StackPanel
+                  stack={st.stack}
+                  onPick={pickCoin}
+                  pickErr={pickErr}
+                  scanState={scanState}
+                  onScan={doScan}
+                />
+              )}
 
               <Section title="Позиции" count={st.positions.length} empty="Открытых позиций нет">
                 <DataTable cols={['Монета', 'Сторона', 'Вход', 'Размер', 'P&L']} numFrom={2}>
@@ -420,28 +444,57 @@ function SideBadge({ side }: { side: string }) {
 
 // S8/ADR-0020: стек рабочих монет динамик-бота из печки. Чип «в стеке k · кап N» — ЧЕСТЕН при сжатии
 // капа на живую (EDIT 2 Куратора: перебор подсвечивается медью, никого не выгоняем — естественное убытие).
+const SCAN_LABEL: Record<string, string> = {
+  idle: '⟳ Сканировать сейчас',
+  busy: '…отправляю',
+  sent: '✓ скан запрошен · ~1-2 мин',
+  err: 'не прошло — ещё раз?',
+}
+
 function StackPanel({
   stack,
   onPick,
   pickErr,
+  scanState = 'idle',
+  onScan,
 }: {
   stack: EngineStack
   onPick?: (symbol: string, tf: string | null) => void
   pickErr?: string | null
+  scanState?: 'idle' | 'busy' | 'sent' | 'err'
+  onScan?: () => void
 }) {
   const over = stack.count > stack.cap
   return (
     <div className="mb-3 overflow-hidden rounded-card border border-white/[0.06] bg-[#0d1017]">
-      <div className="flex items-center justify-between px-4 py-2.5">
+      <div className="flex items-center justify-between gap-2 px-4 py-2.5">
         <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
           Стек · рабочая вселенная
         </span>
-        <span
-          className={`rounded-pill border px-2 py-0.5 text-[11px] tnum ${
-            over ? 'border-copper/45 bg-copper/10 text-copper' : 'border-line text-ash'
-          }`}
-        >
-          в стеке {stack.count} · кап {stack.cap}
+        <span className="flex items-center gap-2">
+          {onScan && (
+            <button
+              onClick={onScan}
+              disabled={scanState === 'busy' || scanState === 'sent'}
+              title="пересканировать печку этого бота прямо сейчас (не ждать 4h/1h-границы): свежие свечи, сетапы и графики"
+              className={`rounded-pill border px-2 py-0.5 text-[11px] transition-colors ${
+                scanState === 'sent'
+                  ? 'border-ok/40 bg-ok/10 text-ok'
+                  : scanState === 'err'
+                    ? 'border-danger/40 bg-danger/10 text-danger'
+                    : 'border-line text-fog hover:border-white/25 hover:text-mist'
+              }`}
+            >
+              {SCAN_LABEL[scanState]}
+            </button>
+          )}
+          <span
+            className={`rounded-pill border px-2 py-0.5 text-[11px] tnum ${
+              over ? 'border-copper/45 bg-copper/10 text-copper' : 'border-line text-ash'
+            }`}
+          >
+            в стеке {stack.count} · кап {stack.cap}
+          </span>
         </span>
       </div>
       {stack.items.length === 0 ? (

@@ -142,6 +142,9 @@ class ScoutSnapshotIn(BaseModel):
     config_fingerprint: str = Field(max_length=80)
     config_mismatch: ScoutConfigMismatchIn
     producer: str = Field(max_length=40)
+    # S8/F-scout-snap: levels — реальная сетка сделки движка (warm-реплей) для held-символа,
+    # не оценка скаута. Аддитивное поле; None = обычный скаут-снимок.
+    verified: bool | None = None
 
 
 @router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)

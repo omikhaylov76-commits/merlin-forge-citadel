@@ -125,6 +125,7 @@ export type ScoutSnapshot = {
   config_fingerprint: string
   config_mismatch: ScoutConfigMismatch
   producer: string
+  verified?: boolean // S8/F-scout-snap: levels = РЕАЛЬНАЯ сетка сделки движка (held-символ), не оценка скаута
   received_at: string // добавляет readout ядра
 }
 export const getInstanceScout = (instanceId: string) =>

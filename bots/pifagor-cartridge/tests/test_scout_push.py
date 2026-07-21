@@ -44,7 +44,7 @@ class FakeScout:
     def __init__(self):
         self.ret = (0, [])
 
-    def build_snapshots(self):
+    def build_snapshots(self, held=frozenset()):
         return self.ret
 
 
