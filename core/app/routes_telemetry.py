@@ -41,6 +41,17 @@ def _check_skew(ts: datetime, now: datetime, skew_s: int) -> None:
         )
 
 
+def _check_future_skew(ts: datetime, now: datetime, skew_s: int) -> None:
+    """Для ЖУРНАЛОВ (trades/events): прошлое легально — journal-sync движка бэкфиллит историю
+    с биржи в свежую БД (редеплой/новый Postgres), и её честные старые ts валидны (дедуп по
+    exec_id делает повтор идемпотентным). Запрещаем только будущее за окном (кривые часы бота).
+    Живой урок 2026-07-21: строгий skew ронял 422 весь бэкфилл-батч Борса на свежей БД."""
+    if (_norm(ts) - now).total_seconds() > skew_s:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "ts из будущего (часы бота врут)"
+        )
+
+
 def _guard_batch(n: int) -> None:
     if n > _MAX_BATCH:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, f"батч > {_MAX_BATCH}")
@@ -223,7 +234,7 @@ def trades(
     now = datetime.now(UTC)
     rows = []
     for t in body:
-        _check_skew(t.ts, now, settings.telemetry_max_skew_seconds)
+        _check_future_skew(t.ts, now, settings.telemetry_max_skew_seconds)
         rows.append({
             "instance_id": inst.id, "ts": _norm(t.ts), "exec_id": t.exec_id,
             "symbol": t.symbol, "side": t.side, "qty": t.qty, "pnl": t.pnl,
@@ -248,7 +259,7 @@ def events(
     now = datetime.now(UTC)
     rows = []
     for e in body:
-        _check_skew(e.ts, now, settings.telemetry_max_skew_seconds)
+        _check_future_skew(e.ts, now, settings.telemetry_max_skew_seconds)
         rows.append({
             "instance_id": inst.id, "ts": _norm(e.ts), "kind": e.kind, "detail": e.detail,
         })
