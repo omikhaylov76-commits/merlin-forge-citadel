@@ -45,7 +45,10 @@ class ScoutReader:
         self._build_scout_chart = build_scout_chart
         self._vendor_cfg = _vcfg
         self._warm_classify = _warm.classify
-        self.scout_db = DB(db_path=scout_db_path, owner=False)  # scout.db, singleton-lock НЕ берём
+        # database_url="" — ЯВНЫЙ пин на SQLite-файл скаута: с приходом DATABASE_URL (Postgres
+        # воркера, 2026-07-21) vendor DB() предпочёл бы его пути файла → адаптер читал бы ПУСТЫЕ
+        # scout-таблицы воркер-БД, а скаут писал бы в свой SQLite (живой баг: вселенная молчит).
+        self.scout_db = DB(db_path=scout_db_path, owner=False, database_url="")
         self._worker = worker_reader
         self._scout_stop_fib = float(getattr(_exec, "STOP_FIB", 1.0))
         self._detector = detector_version

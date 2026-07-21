@@ -42,7 +42,7 @@ class _Worker:
 
 def _reader(tmp_path, worker_db):
     path = str(tmp_path / "scout.db")
-    db = DB(db_path=path, owner=True)
+    db = DB(db_path=path, owner=True, database_url="")   # пин SQLite (как сам ScoutReader)
     db.scout_control_mark(last_b_boundary_ms=NOW)       # ненулевой курсор скана
     r = ScoutReader(scout_db_path=path, worker_reader=_Worker(worker_db),
                     detector_version="test", producer="test")
@@ -104,6 +104,25 @@ def test_scout_only_snapshot_untouched_without_held(tmp_path):
     assert "verified" not in s
     lv = {x["role"]: x["price"] for x in s["levels"]}
     assert lv["entry_05"] == 1.5                     # оценка скаута нетронута
+    r.close()
+
+
+def test_scout_db_pinned_to_sqlite_despite_database_url(tmp_path, monkeypatch):
+    """Живой баг 2026-07-21: с DATABASE_URL (Postgres воркера) vendor DB() предпочитал его пути
+    файла → ScoutReader читал ПУСТЫЕ scout-таблицы воркер-БД, скаут писал в SQLite → вселенная
+    молчала. Пин database_url='' обязан держать чтение на SQLite-файле скаута."""
+    import config as vcfg
+    monkeypatch.setattr(vcfg.ops, "DATABASE_URL", "postgresql://x:y@nowhere:5432/worker")
+    wdb = _WorkerDB()
+    r, db = _reader(tmp_path, wdb)          # НЕ должен пойти в postgres (упал бы на connect)
+    assert r.scout_db.is_pg is False        # читаем именно SQLite-файл скаута
+    db.scout_findings_put_snapshot(
+        [{"symbol": "PINUSDT", "status": "ready", "tf": "4h", "score": 80,
+          "A": 1.0, "B": 2.0, "entries": {"0.382": 1.618, "0.5": 1.5, "0.618": 1.382},
+          "stop": 1.0}],
+        NOW, "4h")
+    _, snaps = r.build_snapshots()
+    assert {s["symbol"] for s in snaps} == {"PINUSDT"}   # видим написанное скаутом
     r.close()
 
 
