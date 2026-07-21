@@ -67,6 +67,7 @@ def test_scout_schema_field_structure():
         "symbol", "tf", "state", "score", "bars_since_anchor", "levels", "klines_tf", "klines",
         "orders", "position", "scan_ts", "orders_ts", "data_upto", "detector_version",
         "config_fingerprint", "config_mismatch", "producer",
+        "verified",   # S8/F-scout-snap: levels = реальная сетка сделки движка (held), опциональное
     }
     assert set(item["required"]) == {
         "symbol", "tf", "state", "score", "scan_ts", "orders_ts", "data_upto",

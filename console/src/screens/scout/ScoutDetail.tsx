@@ -203,6 +203,14 @@ export function ScoutDetail({
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              {snap.verified && (
+                <span
+                  className="rounded-pill border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] text-gold"
+                  title="уровни на графике — реальная сетка сделки движка (warm-реплей), не независимая оценка скаута"
+                >
+                  ✓ сетка сделки · движок
+                </span>
+              )}
               <StaleBadge snap={snap} />
               <MismatchBadge snap={snap} />
             </div>

@@ -91,7 +91,8 @@
           "details": {"type": "object", "description": "разошедшиеся крутилки, ключи = имена движка as-is UPPERCASE (SHORTS_ENABLED/EMA_FILTER_ENABLED/REANCHOR_AFTER_SCALP/STOP_FIB); открыт"}
         }
       },
-      "producer": {"type": "string", "maxLength": 40, "description": "кто произвёл снимок (напр. pifagor-scout); в режиме представителя — чей это скаут"}
+      "producer": {"type": "string", "maxLength": 40, "description": "кто произвёл снимок (напр. pifagor-scout); в режиме представителя — чей это скаут"},
+      "verified": {"type": "boolean", "description": "уровни levels — РЕАЛЬНАЯ сетка сделки движка (warm-реплей той же функции, что ставит ордера) для символа с живой позицией/ордером, а НЕ независимая оценка скаута. Опциональное, аддитивное (S8 Веха 2, F-scout-snap)."}
     }
   },
   "examples": [

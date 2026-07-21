@@ -255,10 +255,12 @@ def scout_snapshot(
     finding: dict, *, worker_eff: dict, scout_stop_fib: float, orders_raw: list | None,
     position: dict | None, detector_version: str, producer: str,
     scan_ts_iso: str, orders_ts_iso: str, data_upto_iso: str,
-    candles: list | None = None, klines_tf: str | None = None,
+    candles: list | None = None, klines_tf: str | None = None, verified: bool = False,
 ) -> dict:
     """Одна находка скаута → контрактный снимок. Несёт ВСЕ required схемы (вкл. data_upto).
-    Свечи скан-ТФ (klines_tf = tf сетапа) — из кэша; младший ТФ прорисовки — задел (ADR-0016 д)."""
+    Свечи скан-ТФ (klines_tf = tf сетапа) — из кэша; младший ТФ прорисовки — задел (ADR-0016 д).
+    verified=True: сетка (A/B/levels) — из warm.classify() (та же функция, что реально решает
+    вход) для held-символа, а НЕ независимая оценка скаута — честно, «это подтверждённая сделка»."""
     snap = {
         "symbol": str(finding.get("symbol") or "")[:40],
         "tf": finding.get("tf") or "4h",
@@ -270,6 +272,8 @@ def scout_snapshot(
         "config_mismatch": scout_config_mismatch(worker_eff, scout_stop_fib=scout_stop_fib),
         "producer": str(producer)[:40],
     }
+    if verified:
+        snap["verified"] = True
     levels = scout_levels(finding)
     if levels:
         snap["levels"] = levels
