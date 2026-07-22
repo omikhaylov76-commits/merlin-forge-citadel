@@ -16,5 +16,10 @@ COH4); **events[]** {ts, kind, detail?} — dedup (instance, ts, kind); **scout*
 движко-нейтральный СНИМОК сетапов per (instance, symbol, tf), **replace-семантика** (upsert, не append):
 {symbol, tf, state, levels[{role,price}], score, bars_since_anchor, klines[≤500], klines_tf, orders,
 position, scan_ts, …, config_mismatch{flag,details}, producer}; приёмная ручка/таблица/readout — #52.
+Аддитивные поля S8: `verified` (F-scout-snap: levels = сетка сделки движка для held) и `engine`
+(единая Разведка, подпись Куратора 22.07: ПРАВДА ДВИЖКА per-coin — факты warm.classify {kind
+PENDING|OPEN|null, auto_eligible, reanchored, in_universe, side?, age_bars?, entries?, stop?,
+targets?, est_risk_pct?}; ключа нет = правда не посчитана, «неизвестно» ≠ «не берёт»; снимок
+скаута, не живой тик — лексика причин выводится консолью из фактов).
 Команды (S4←): **command** {cmd: none|pause|resume|stop_close, cmd_id}. Приём —
 [core-api](core-api.md) §Контракт Бота, поток — [flows](flows.md).

@@ -9,7 +9,7 @@ POST /v1/telemetry/heartbeat   {status, uptime_s, note?}          — не ре�
 POST /v1/telemetry/equity      {ts, equity, working?, cushion?}
 POST /v1/telemetry/trades      [{ts, symbol, side, qty, pnl, ...}]
 POST /v1/telemetry/events      [{ts, kind, detail}]  kind: entry_filled|sl_moved|kill_switch|error|...
-POST /v1/telemetry/scout       [{symbol, tf, state, levels[], klines[], orders[], position, ...}]  — снимок сетапов (v1, ADR-0016; replace-семантика; ручка/таблица — #52)
+POST /v1/telemetry/scout       [{symbol, tf, state, levels[], klines[], orders[], position, verified?, engine?, ...}]  — снимок сетапов (v1, ADR-0016; replace-семантика; ручка/таблица — #52; engine = правда движка per-coin, S8 единая Разведка)
 
 ## Команды (бот опрашивает)
 GET  /v1/commands/next?wait=25s → {cmd: none|pause|resume|stop_close, cmd_id}
