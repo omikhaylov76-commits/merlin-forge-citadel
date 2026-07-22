@@ -46,6 +46,9 @@ class DynamicUniverse:
 
     def __init__(self, cfg, scout_reader) -> None:
         self._scout = scout_reader
+        # F-lookahead v3: источник вселенной. "engine" → отбор по warm.classify из scout_list;
+        # иначе "scout" (дефолт, байт-в-байт прежний путь). getattr — старые cfg без поля = scout.
+        self._source = str(getattr(cfg, "dynamic_source", "scout") or "scout").lower()
         self._coins_path = cfg.dynamic_coins_path
         # Критерии канала (ADR-0020 D1): читаются ЖИВЬЁМ из файла каждый скан; cfg = ген-дефолт
         # (файла нет / re-fetch не доехал). Живой кап → view() честен при сжатии (EDIT 2).
@@ -85,15 +88,52 @@ class DynamicUniverse:
         self._held = frozenset(s.strip().upper() for s in held if s)   # нормализация == ключи стека
         self._write_positions_flag()            # F-restart «а»: адаптер пишет флаг открытых позиций
         try:
-            scan_ms, findings = self._scout.findings_for_universe()
+            # F-lookahead v3: источник. engine → placeable по warm.classify из scout_list;
+            # scout → прежние находки. Оба дают (scan_ms, кандидаты-под-свой-recompute).
+            if self._source == "engine":
+                scan_ms, cand = self._scout.placeable_scan()
+            else:
+                scan_ms, cand = self._scout.findings_for_universe()
         except Exception:  # noqa: BLE001 — печка недоступна → не роняем цикл, набор держим
-            log.exception("dynamic: чтение печки упало — пропуск")
+            log.exception("dynamic: чтение источника (%s) упало — пропуск", self._source)
             return
         if scan_ms == 0 or scan_ms == self._last_scan_ms:
             return                              # скаут не готов / скан не новый → тишина
         self._last_scan_ms = scan_ms
-        self._recompute(findings)
+        if self._source == "engine":
+            self._recompute_engine(cand)        # F-lookahead v3: отбор по warm.classify (placeable)
+        else:
+            self._recompute(cand)               # прежний путь: по скаут-стадии/скору
         self._maybe_write(now_mono)
+
+    def _apply_fresh(self, fresh: dict, cand_key) -> None:
+        """ПРЕДОХРАНИТЕЛИ Вехи 2 (пин held / exit-гистерезис / вход enter+кап / пол-на-пустоту через
+        _maybe_write) — ЕДИНЫ для обоих источников, НЕ переписаны (условие Куратора): извлечены
+        из прежнего _recompute без смены поведения (регресс-гвоздь DYNAMIC_SOURCE=scout доказывает).
+        fresh — {symbol:{stage,score,tf,…}} кандидатов ЭТОГО скана; cand_key — ключ сортировки входа
+        (источник задаёт: скаут по скору, движок auto-первыми)."""
+        for sym in list(self._stack):           # обновление/выход существующих
+            if sym in fresh:
+                self._stack[sym].update(fresh[sym])
+                self._stack[sym]["missed"] = 0
+            elif sym in self._held:             # ПИН (ADR-0019 «б»): позиция/ордер жив → держим
+                self._stack[sym]["missed"] = 0   # слот занят (сетап ушёл)
+            else:
+                self._stack[sym]["missed"] += 1
+                if self._stack[sym]["missed"] >= self._exit:
+                    del self._stack[sym]        # слот свободен (сетап ушёл/протух)
+        for sym in self._held:                  # ПИН: held без слота печки → до-шпилить,
+            if sym not in self._stack:          # чтобы нести в coins.json и карточке
+                base = fresh.get(sym) or _EMPTY_SETUP
+                self._stack[sym] = {**base, "missed": 0}
+        cands = sorted((s for s in fresh if s not in self._stack), key=cand_key, reverse=True)
+        for sym in cands:                       # вход: гистерезис enter_scans + кап N
+            self._pending[sym] = self._pending.get(sym, 0) + 1
+            if self._pending[sym] >= self._enter and len(self._stack) < self._n:
+                self._stack[sym] = {**fresh[sym], "missed": 0}
+                self._pending.pop(sym, None)
+        self._pending = {s: c for s, c in self._pending.items()
+                         if s in fresh and s not in self._stack}
 
     def _recompute(self, findings: list[dict]) -> None:
         self._load_criteria()                   # ADR-0020 D1: критерии ЖИВЬЁМ (кап/скор/свежесть)
@@ -115,29 +155,27 @@ class DynamicUniverse:
             if sym:
                 fresh[sym] = {"stage": f["state"], "score": score,
                               "tf": f.get("tf") or "4h"}
-        for sym in list(self._stack):           # обновление/выход существующих
-            if sym in fresh:
-                self._stack[sym].update(fresh[sym])
-                self._stack[sym]["missed"] = 0
-            elif sym in self._held:             # ПИН (ADR-0019 «б»): позиция/ордер жив → держим
-                self._stack[sym]["missed"] = 0   # слот занят (сетап ушёл)
-            else:
-                self._stack[sym]["missed"] += 1
-                if self._stack[sym]["missed"] >= self._exit:
-                    del self._stack[sym]        # слот свободен (сетап ушёл/протух)
-        for sym in self._held:                  # ПИН: held без слота печки → до-шпилить,
-            if sym not in self._stack:          # чтобы нести в coins.json и карточке
-                base = fresh.get(sym) or _EMPTY_SETUP
-                self._stack[sym] = {**base, "missed": 0}
-        cands = sorted((s for s in fresh if s not in self._stack),
-                       key=lambda s: _score_key(fresh[s]), reverse=True)
-        for sym in cands:                       # вход: гистерезис enter_scans + кап N, по скору
-            self._pending[sym] = self._pending.get(sym, 0) + 1
-            if self._pending[sym] >= self._enter and len(self._stack) < self._n:
-                self._stack[sym] = {**fresh[sym], "missed": 0}
-                self._pending.pop(sym, None)
-        self._pending = {s: c for s, c in self._pending.items()
-                         if s in fresh and s not in self._stack}
+        self._apply_fresh(fresh, lambda s: _score_key(fresh[s]))
+
+    def _recompute_engine(self, placeable: dict) -> None:
+        """F-lookahead v3: кандидаты = движко-PLACEABLE (`warm.classify` PENDING) из пула качества
+        scout_list — НЕ скаут-стадия/скор. auto_eligible ПЕРВЫМИ (самоход поставит сам), reanchored
+        после (кнопка «Поставить»). Сито качества УЖЕ применено при сборе scout_list (Этап A) — не
+        дублируем; `min_score` канала → доп-порог к скору КАЧЕСТВА монеты (семантика в README).
+        fresh_bars в engine-режиме НЕ применяем — движок сам режет окном TIMEOUT_BARS=72 (placeable
+        уже в нём). Предохранители — общий `_apply_fresh`."""
+        self._load_criteria()                   # ADR-0020 D1: живой кап/мин-скор качества
+        fresh = {}
+        for sym, p in placeable.items():
+            score = p.get("score")
+            if self._min_score > 0 and (score is None or score < self._min_score):
+                continue                        # доп-порог качества поверх сита scout_list (0=выкл)
+            fresh[sym] = {"stage": "ready" if p.get("auto_eligible") else "tracking",
+                          "score": score, "tf": _SIGNAL_TF, "auto": bool(p.get("auto_eligible"))}
+        # вход: auto-годные ПЕРВЫМИ (самоход возьмёт без кнопки), затем по скору качества
+        self._apply_fresh(
+            fresh,
+            lambda s: (fresh[s]["auto"], fresh[s]["score"] is not None, fresh[s]["score"] or 0))
 
     def _maybe_write(self, now_mono: float) -> None:
         symbols = frozenset(self._stack) | self._held   # ПИН: held ВСЕГДА в наборе (даже вне стека)

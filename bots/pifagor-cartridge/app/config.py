@@ -38,6 +38,11 @@ class CartridgeConfig:
     # dynamic-universe (ADR-0019, S8): бот берёт вселенную из печки. Геном, дефолт ВЫКЛ (как scout).
     # Провайдер пишет coins.json (= COINS_CONFIG_PATH разъёма движка).
     dynamic_enabled: bool = False
+    # F-lookahead v3 (подпись Куратора 2026-07-22): ИСТОЧНИК торговой вселенной.
+    #   "scout"  — прежний путь: стек = скаут-находки tracking/ready (дефолт, байт-в-байт);
+    #   "engine" — вселенная ОТ ДВИЖКА: warm.classify по курированному scout_list берёт placeable
+    #              (лечит misalignment «скаут-скор ≠ движок-placeable»). Только Борсу (роль).
+    dynamic_source: str = "scout"
     dynamic_coins_path: str = ""       # путь coins.json (провайдер↔разъём движка); пусто → off
     dynamic_stack_max: int = 10        # предохранитель: макс монет (ген-дефолт; канал ADR-0020)
     dynamic_enter_scans: int = 1       # гистерезис: сканов до входа
@@ -73,6 +78,7 @@ def from_env() -> CartridgeConfig:
         # dynamic-universe: гейт как SCOUT_ENABLED (строго "1"); путь = COINS_CONFIG_PATH разъёма
         # (start.sh задаёт его на эфемерном PIFAGOR_HOME ТОЛЬКО при DYNAMIC_ENABLED=1).
         dynamic_enabled=os.environ.get("DYNAMIC_ENABLED") == "1",
+        dynamic_source=(os.environ.get("DYNAMIC_SOURCE") or "scout").strip().lower(),
         dynamic_coins_path=os.environ.get(
             "COINS_CONFIG_PATH",
             f"{os.environ['PIFAGOR_HOME']}/coins.json" if os.environ.get("PIFAGOR_HOME") else "",

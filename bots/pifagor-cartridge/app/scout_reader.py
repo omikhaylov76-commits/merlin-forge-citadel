@@ -81,6 +81,54 @@ class ScoutReader:
         """Курсор последнего скана (для триггера «пушить, если новый»)."""
         return self._scan_cursor()
 
+    def scan_list_rows(self) -> list[dict]:
+        """Курированный ПУЛ КАЧЕСТВА (vendor `scout_list_all`): монеты с ПУСТЫМИ hard_rejects
+        (оборот/возраст≥90д/спред/история/не-стейбл — фильтры Оператора, Этап A `universe.py`) И
+        скором качества ≥ порога. [{symbol, score}] по убыванию скора. Fail-soft [] (пул не
+        прочитался → провайдер держит прежний набор). УСЛОВИЕ ПОДПИСИ: берём ТОЛЬКО отфильтрованный
+        scout_list, НЕ сырой scout_universe_all — сито качества = защита от мусора."""
+        try:
+            out = []
+            for r in self.scout_db.scout_list_all() or []:
+                sym = str(r.get("symbol") or "").strip().upper()
+                if sym:
+                    out.append({"symbol": sym, "score": r.get("score")})
+            return out
+        except Exception:  # noqa: BLE001 — пул не прочитался → пусто (провайдер держит набор)
+            log.exception("scan_list: чтение курированного пула упало — пул пуст")
+            return []
+
+    def placeable_scan(self) -> tuple[int, dict]:
+        """F-lookahead v3 (подпись Куратора): движко-PLACEABLE отбор ИЗ пула качества scout_list —
+        НЕ скаут-курация. Гоняет warm-реплей (`_classify`, ТА ЖЕ функция постановки) по каждой
+        монете пула на свежих свечах кэша (Этап B докачал ВЕСЬ scout_list каждые 4h). Возврат:
+        (scan_ms, {symbol: {kind, auto_eligible, reanchored, score}}) ТОЛЬКО для placeable
+        (PENDING: самоход ставит auto, кнопка — reanchored; OPEN=в позиции/None → мимо). scan_ms —
+        триггер провайдера (зеркало findings_for_universe). Замер длительности в лог."""
+        scan_ms = self._scan_cursor()
+        if scan_ms == 0:
+            return 0, {}                      # скаут ещё не сканил — пула нет
+        from app.dynamic_universe import _DEFAULT_COIN
+        pool = self.scan_list_rows()
+        t0 = time.monotonic()
+        out: dict = {}
+        for row in pool:
+            sym = row["symbol"]
+            # АДВЕРС-РЕВЬЮ: движок при dynamic берёт coins.json ЦЕЛИКОМ (REPLACE, strategy.py:125)
+            # с _DEFAULT_COIN. Форсим ТЕ ЖЕ пороги (не унаследованные mb статик-вендора вроде
+            # AAVE 2.5/4.0 — иначе вердикт адаптера разойдётся с постановкой движка).
+            self._vendor_cfg.strategy.COINS_CONFIG[sym] = dict(_DEFAULT_COIN)
+            ok, desc = self._classify(sym)
+            if not ok or desc is None:
+                continue
+            if str(desc.get("kind")) != "PENDING":   # OPEN (в рынке) / None — не свежая постановка
+                continue
+            out[sym] = {"kind": "PENDING", "auto_eligible": bool(desc.get("auto_eligible")),
+                        "reanchored": bool(desc.get("reanchored")), "score": row.get("score")}
+        log.info("scout: placeable-скан пула %d → годных %d за %.2fс",
+                 len(pool), len(out), time.monotonic() - t0)
+        return scan_ms, out
+
     def findings_for_universe(self) -> tuple[int, list[dict]]:
         """Лёгкие находки для динамического провайдера (S8): (scan_ms, [{symbol,tf,state,score,
         bars_since_anchor}]). Без klines/levels — геометрия отбора для стека. `bars_since_anchor` —
