@@ -113,6 +113,14 @@ export function Scout() {
     if (selected) localStorage.setItem(SELECTED_KEY, selected)
   }, [selected])
 
+  // Авто-обновление доски (~25с): снимки приходят в ядро асинхронно (пуш на смену содержимого),
+  // консоль подхватывает их сама — без ручного F5. board.reload стабилен (useAsync deps=[]).
+  useEffect(() => {
+    const id = setInterval(() => board.reload(), 25_000)
+    return () => clearInterval(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const instances = board.data ? visibleScoutInstances(board.data.instances) : []
   const selInst = instances.find((i) => i.id === selected)
   const byInstance = board.data?.byInstance ?? {}
@@ -226,7 +234,7 @@ export function Scout() {
         {freshest && <StaleBadge snap={freshest} />}
       </Toolbar>
 
-      {board.loading ? (
+      {board.loading && !board.data ? (
         <SkeletonBoard />
       ) : board.error ? (
         <EmptyState kind="error" msg={board.error.message} onRetry={board.reload} />
