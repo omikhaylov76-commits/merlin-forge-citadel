@@ -9,7 +9,10 @@ import {
   type FleetInstance,
   type ScoutSnapshot,
 } from '@/lib/api'
+import { skipReason } from '@/lib/scout'
 import { ScoutDetail } from '../scout/ScoutDetail'
+
+const WARM_TICK_MS = 16 * 60_000 // окно до исполнения warm на ближайшем 15m-тике
 
 // Карточка бота (S7): клик по строке Флота → факт-слой движка. Дизайн «midnight vault + gilded lines»:
 // ФИКСИРОВАННАЯ шапка-герой (статус/equity/пик/просадка/флаги) + скроллящееся тело (плитки + секции-
@@ -40,12 +43,20 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   const [err, setErr] = useState(false)
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null) // клик по монете стека → график Разведки
   const [pickErr, setPickErr] = useState<string | null>(null)
-  const [scanState, setScanState] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
+  // #3: скан переживает уход/возврат (localStorage, общий с Разведкой) — не «висит с нуля».
+  const [scanState, setScanState] = useState<'idle' | 'busy' | 'sent' | 'err'>(() => {
+    const v = Number(localStorage.getItem(`mfc.scanAt.${inst.id}`) || 0)
+    return v && Date.now() - v < 120_000 ? 'sent' : 'idle'
+  })
   // F-warm-button (ADR-0022): мультивыбор сетапов → ОДНА команда warm_apply (движок за один тик
   // разберёт пачку, поставит только годные PENDING; невалидные молча skip). Список — уже в контракте.
   const [warmSel, setWarmSel] = useState<Set<string>>(new Set())
   const [warmBatch, setWarmBatch] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
-  const [warmSent, setWarmSent] = useState<Set<string>>(new Set()) // ⏳ отправлено, ждёт 15m-тик
+  // symbol → момент отправки warm (мс). Держим, чтобы показать СУДЬБУ после ⏳: поставлено (в
+  // ордерах) / не взято + причина (из вердикта движка scout-снимка). Не тихий Set (жалоба Оператора).
+  const [warmSentAt, setWarmSentAt] = useState<Record<string, number>>({})
+  // scout-снимки этого бота (engine-поле = вердикт движка per-coin) — для причины «не взято».
+  const [scoutSnaps, setScoutSnaps] = useState<ScoutSnapshot[]>([])
 
   // Кнопка «Сканировать сейчас» прямо на карточке (просьба Оператора): та же команда scan_now,
   // что на Разведке — скаут пересканирует (~1-2 мин), свечи/сетапы/графики обновятся сами.
@@ -53,6 +64,7 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
     setScanState('busy')
     try {
       await scanNow(inst.id)
+      localStorage.setItem(`mfc.scanAt.${inst.id}`, String(Date.now())) // #3: переживает навигацию
       setScanState('sent')
       setTimeout(() => setScanState('idle'), 120_000) // через ~2 мин кнопка снова активна
     } catch {
@@ -78,16 +90,10 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
       await warmApply(inst.id, sent) // ОДНА команда со списком → движок разберёт пачку
       setWarmBatch('sent')
       setWarmSel(new Set())
-      setWarmSent((s) => new Set([...s, ...sent])) // ⏳ на отправленных до тика
+      const now = Date.now()
+      setWarmSentAt((m) => ({ ...m, ...Object.fromEntries(sent.map((c) => [c, now])) }))
       setTimeout(() => setWarmBatch('idle'), 60_000)
-      // тик прошёл (~15м) — снять ⏳ (годные уже «в работе» = в ордерах, негодные движок пропустил)
-      setTimeout(() => {
-        setWarmSent((s) => {
-          const n = new Set(s)
-          sent.forEach((c) => n.delete(c))
-          return n
-        })
-      }, 16 * 60_000)
+      // ⏳→судьба — производная (warmSentAt + время + ордера + вердикт), НЕ таймер (не «тихо гаснет»)
     } catch {
       setWarmBatch('err')
       setTimeout(() => setWarmBatch('idle'), 5_000)
@@ -115,6 +121,33 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
       clearTimeout(timer)
     }
   }, [inst.id])
+
+  // scout-снимки (вердикт движка per-coin) — для причины «не взято» в стеке. Реже, чем engine_state.
+  useEffect(() => {
+    let stop = false
+    let timer: ReturnType<typeof setTimeout>
+    const tick = async () => {
+      try {
+        const s = await getInstanceScout(inst.id)
+        if (!stop) setScoutSnaps(s)
+      } catch {
+        /* снимков нет — причину просто не покажем, не роняем карточку */
+      }
+      if (!stop) timer = setTimeout(tick, 20_000)
+    }
+    tick()
+    return () => {
+      stop = true
+      clearTimeout(timer)
+    }
+  }, [inst.id])
+
+  // Судьба warm-монеты по её вердикту движка (из scout-снимка): человеческая причина «не взято».
+  const warmReason = (symbol: string): string | undefined => {
+    const snap = scoutSnaps.find((s) => s.symbol === symbol)
+    if (!snap) return undefined // снимка нет → причину не знаем (движок мог пропустить по тайму/капу)
+    return skipReason(snap)?.label // «уже не годен» / «вход по рынку» / «мимо списка» / …
+  }
 
   // Клик по монете стека → снимок сетапа (symbol,tf) из ЕГО печки → тот же деталь-график, что в Разведке
   // (ScoutDetail: свечи + уровни входов/стоп + факт-слой ордера/позиция из снимка). Только карточка Борса.
@@ -237,7 +270,15 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
                   onToggleWarm={toggleWarm}
                   warmBatch={warmBatch}
                   onWarmBatch={doWarmBatch}
-                  warmSent={warmSent}
+                  warmSentAt={warmSentAt}
+                  warmReason={warmReason}
+                  onWarmClear={(sym) =>
+                    setWarmSentAt((m) => {
+                      const n = { ...m }
+                      delete n[sym]
+                      return n
+                    })
+                  }
                   inOrders={new Set(st.orders.map((o) => o.symbol))}
                 />
               )}
@@ -492,7 +533,7 @@ function SideBadge({ side }: { side: string }) {
 const SCAN_LABEL: Record<string, string> = {
   idle: '⟳ Сканировать сейчас',
   busy: '…отправляю',
-  sent: '✓ скан запрошен · ~1-2 мин',
+  sent: '✓ скан идёт · ~1-2 мин · можно уходить',
   err: 'не прошло — ещё раз?',
 }
 
@@ -532,7 +573,9 @@ function StackPanel({
   onToggleWarm,
   warmBatch = 'idle',
   onWarmBatch,
-  warmSent,
+  warmSentAt,
+  warmReason,
+  onWarmClear,
   inOrders,
 }: {
   stack: EngineStack
@@ -544,7 +587,9 @@ function StackPanel({
   onToggleWarm?: (symbol: string) => void
   warmBatch?: 'idle' | 'busy' | 'sent' | 'err'
   onWarmBatch?: () => void
-  warmSent?: Set<string>
+  warmSentAt?: Record<string, number>
+  warmReason?: (symbol: string) => string | undefined
+  onWarmClear?: (symbol: string) => void
   inOrders?: Set<string>
 }) {
   const over = stack.count > stack.cap
@@ -633,47 +678,16 @@ function StackPanel({
                 </Td>
                 <Td num>{it.tf ?? '—'}</Td>
                 <Td num>
-                  {onToggleWarm &&
-                    (inOrders?.has(it.symbol) ? (
-                      <span
-                        className="inline-flex items-center gap-1 text-[10px] text-ok"
-                        title="движок ведёт этот сетап — есть живые ордера (см. раздел «Ордера» ниже)"
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full bg-ok" />в работе
-                      </span>
-                    ) : warmSent?.has(it.symbol) ? (
-                      <span
-                        className="hourglass text-[13px]"
-                        title="отправлено · ждёт ближайший 15m-тик; движок поставит, если сетап годен"
-                      >
-                        ⏳
-                      </span>
-                    ) : (
-                      <span
-                        role="checkbox"
-                        aria-checked={warmSel?.has(it.symbol) ?? false}
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onToggleWarm(it.symbol)
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.stopPropagation()
-                            e.preventDefault()
-                            onToggleWarm(it.symbol)
-                          }
-                        }}
-                        title="Отметить сетап в пачку (кнопка «Поставить отмеченные» вверху). Движок сам проверит годность на тике."
-                        className={`inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded border text-[10px] transition-colors ${
-                          warmSel?.has(it.symbol)
-                            ? 'border-copper bg-copper/20 text-copper'
-                            : 'border-line text-transparent hover:border-copper/50'
-                        }`}
-                      >
-                        ✓
-                      </span>
-                    ))}
+                  {onToggleWarm && (
+                    <WarmCell
+                      inOrders={inOrders?.has(it.symbol) ?? false}
+                      sentAt={warmSentAt?.[it.symbol]}
+                      reason={warmReason?.(it.symbol)}
+                      selected={warmSel?.has(it.symbol) ?? false}
+                      onToggle={() => onToggleWarm(it.symbol)}
+                      onClear={() => onWarmClear?.(it.symbol)}
+                    />
+                  )}
                 </Td>
               </tr>
             ))}
@@ -684,6 +698,94 @@ function StackPanel({
         <div className="border-t border-line px-4 py-2 text-[11px] text-copper">{pickErr}</div>
       )}
     </div>
+  )
+}
+
+// Судьба отмеченного сетапа (жалоба Оператора «после ⏳ ничего не пишется»): в работе (поставлен) /
+// ⏳ ждёт тик / ✗ не взято + причина (вердикт движка) / чек-бокс. Причина — из scout-снимка; нет
+// снимка → просто «не взято» (движок пропустил по тайму/капу). Клик по «не взято» → отметить снова.
+function WarmCell({
+  inOrders,
+  sentAt,
+  reason,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  inOrders: boolean
+  sentAt?: number
+  reason?: string
+  selected: boolean
+  onToggle: () => void
+  onClear: () => void
+}) {
+  if (inOrders)
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] text-ok"
+        title="движок поставил — есть живые ордера (см. раздел «Ордера» ниже)"
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-ok" />в работе
+      </span>
+    )
+  if (sentAt != null) {
+    if (Date.now() - sentAt < WARM_TICK_MS)
+      return (
+        <span
+          className="hourglass text-[13px]"
+          title="отправлено · ждёт ближайший 15m-тик; движок поставит, если сетап годен"
+        >
+          ⏳
+        </span>
+      )
+    // тик прошёл, в ордера не попал → движок НЕ взял. Показываем причину (не молчим).
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={(e) => {
+          e.stopPropagation()
+          onClear()
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.stopPropagation()
+            e.preventDefault()
+            onClear()
+          }
+        }}
+        title={`движок не взял на тике${reason ? ` — ${reason}` : ' (пропустил)'} · клик — отметить снова`}
+        className="inline-flex cursor-pointer items-center gap-1 rounded-pill border border-steel/40 px-1.5 text-[10px] text-steel hover:border-fog/40"
+      >
+        ✗ не взято{reason ? `: ${reason}` : ''}
+      </span>
+    )
+  }
+  return (
+    <span
+      role="checkbox"
+      aria-checked={selected}
+      tabIndex={0}
+      onClick={(e) => {
+        e.stopPropagation()
+        onToggle()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.stopPropagation()
+          e.preventDefault()
+          onToggle()
+        }
+      }}
+      title="Отметить сетап в пачку (кнопка «Поставить отмеченные» вверху). Движок сам проверит годность на тике."
+      className={`inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded border text-[10px] transition-colors ${
+        selected
+          ? 'border-copper bg-copper/20 text-copper'
+          : 'border-line text-transparent hover:border-copper/50'
+      }`}
+    >
+      ✓
+    </span>
   )
 }
 
