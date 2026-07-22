@@ -120,6 +120,30 @@ def test_default_source_scout_uses_findings_not_placeable(tmp_path):
     assert calls == {"findings": 1, "placeable": 0}   # scout-путь: только findings
 
 
+def test_engine_gates_expensive_scan_on_cursor(tmp_path):
+    """EFFICIENCY: engine-режим гейтит ДЕШЁВЫМ last_scan_ms ДО дорогого placeable_scan.
+    Тот же scan_ms второй раз → placeable_scan НЕ гоняется (не жжём CPU/лог каждый тик)."""
+    calls = {"cursor": 0, "placeable": 0}
+
+    class _Spy:
+        def last_scan_ms(self):
+            calls["cursor"] += 1
+            return 500
+
+        def placeable_scan(self):
+            calls["placeable"] += 1
+            return (500, {})
+
+    cfg = types.SimpleNamespace(
+        dynamic_source="engine", dynamic_coins_path=str(tmp_path / "coins.json"),
+        dynamic_stack_max=3, dynamic_enter_scans=1, dynamic_exit_scans=2, dynamic_min_write_s=0.0,
+        dynamic_criteria_path="", dynamic_min_score=0, dynamic_fresh_bars=0)
+    dv = DynamicUniverse(cfg, _Spy())
+    dv.tick(1.0)                                # новый scan_ms=500 → дорогой скан 1 раз
+    dv.tick(2.0)                                # тот же 500 → гейт по курсору, placeable НЕ зовём
+    assert calls == {"cursor": 2, "placeable": 1}
+
+
 def test_scan_list_rows_reads_quality_pool(tmp_path):
     """scan_list_rows читает курированный scout_list вендора (symbol+score), не сырую вселенную."""
     r, _ = _reader(tmp_path)
