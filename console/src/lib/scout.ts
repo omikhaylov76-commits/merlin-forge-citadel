@@ -98,6 +98,31 @@ export function entryOf(s: ScoutSnapshot, key: '0.382' | '0.5' | '0.618'): numbe
 export const stopOf = (s: ScoutSnapshot): number | undefined =>
   (s.engine?.stop && s.engine.stop > 0 ? s.engine.stop : undefined) ?? levelOf(s, 'stop')
 
+// Уровни для деталь-графика: входы/стоп ЗАМЕНЕНЫ сеткой движка, когда правда есть (карточка и
+// график обязаны показывать одни цифры). A/B скаута остаются — рамка импульса, движок их не несёт.
+export function mergeEngineLevels(s: ScoutSnapshot): { role: ScoutLevelRole; price: number }[] {
+  const base = s.levels ?? []
+  const e = s.engine
+  if (!e?.entries) return base
+  const grid: Partial<Record<ScoutLevelRole, number | undefined>> = {
+    entry_0382: e.entries['0.382'],
+    entry_05: e.entries['0.5'],
+    entry_0618: e.entries['0.618'],
+    stop: e.stop,
+  }
+  const out = base.map((l) => {
+    const p = grid[l.role]
+    delete grid[l.role]
+    return p != null && p > 0 ? { ...l, price: p } : l
+  })
+  for (const [role, p] of Object.entries(grid) as [ScoutLevelRole, number | undefined][]) {
+    if (p != null && p > 0) out.push({ role, price: p }) // уровень, которого у скаута не было
+  }
+  return out
+}
+
+export const hasEngineGrid = (s: ScoutSnapshot): boolean => Boolean(s.engine?.entries)
+
 // %-до-входа: (последний close снимка − верхний вход)/вход. Производная НА ФРОНТЕ, подпись
 // «на закрытие {data_upto}» — живого тика цены в ядре НЕТ (ADR-0001). undefined, если нет данных.
 export function pctToEntry(s: ScoutSnapshot): number | undefined {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ColorType, createChart, LineStyle, type UTCTimestamp } from 'lightweight-charts'
 import { addToBasket, getBasket, removeBasketItem, type ScoutSnapshot } from '@/lib/api'
+import { hasEngineGrid, mergeEngineLevels } from '@/lib/scout'
 import { Disclaimer, MismatchBadge, StaleBadge } from './Badges'
 
 // стадии скаута → человеческий ярлык (как на доске Разведки), кладём в context элемента Набора
@@ -84,7 +85,8 @@ export function ScoutDetail({
         close: k.c,
       })),
     )
-    for (const lv of snap.levels ?? []) {
+    // входы/стоп — сеткой ДВИЖКА, когда правда есть (единая Разведка: карточка и график = одни цифры)
+    for (const lv of mergeEngineLevels(snap)) {
       const st = LEVEL_STYLE[lv.role] ?? { color: '--color-copper', style: LineStyle.Solid }
       candles.createPriceLine({
         price: lv.price,
@@ -133,7 +135,8 @@ export function ScoutDetail({
     // autoSize + fitContent + barSpacing-кап отрабатывают на новом размере (директива).
   }, [snap, expanded])
 
-  const lv = (r: string) => snap.levels?.find((l) => l.role === r)?.price
+  const merged = mergeEngineLevels(snap) // те же уровни, что на графике (сетка движка при наличии)
+  const lv = (r: string) => merged.find((l) => l.role === r)?.price
 
   // при открытии узнаём, есть ли этот сетап (symbol,tf) в Наборе — для состояния звёздочки
   useEffect(() => {
@@ -203,12 +206,12 @@ export function ScoutDetail({
               </span>
             </div>
             <div className="mt-1.5 flex flex-wrap items-center gap-2">
-              {snap.verified && (
+              {(snap.verified || hasEngineGrid(snap)) && (
                 <span
                   className="rounded-pill border border-gold/40 bg-gold/10 px-2 py-0.5 text-[11px] text-gold"
-                  title="уровни на графике — реальная сетка сделки движка (warm-реплей), не независимая оценка скаута"
+                  title="входы/стоп на графике — реальная сетка движка (warm-реплей той же функции, что ставит ордера), не независимая оценка скаута; снимок скаута, не живой тик"
                 >
-                  ✓ сетка сделки · движок
+                  ✓ сетка движка
                 </span>
               )}
               <StaleBadge snap={snap} />

@@ -79,7 +79,11 @@ export function Scout() {
     if (!selected || warmSent[s.symbol]) return
     setWarmSent((m) => ({ ...m, [s.symbol]: 'busy' }))
     try {
-      await warmApply(selected, [s.symbol])
+      // НАКОПИТЕЛЬНЫЙ список: вендор single-shot читает ПОСЛЕДНИЙ интент — одиночная монета
+      // затёрла бы прежние клики до тика (Icebox №1). Шлём все ⏳-монеты разом; уже
+      // поставленные движок не задвоит (has_active→skip).
+      const coins = [...Object.keys(warmSent).filter((c) => warmSent[c] === 'sent'), s.symbol]
+      await warmApply(selected, coins)
       setWarmSent((m) => ({ ...m, [s.symbol]: 'sent' }))
       window.setTimeout(() => {
         setWarmSent((m) => {
