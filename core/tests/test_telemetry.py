@@ -333,3 +333,53 @@ def test_scout_pydantic_covers_all_schema_required():
     required = set(schema["items"]["required"])
     model_required = {n for n, f in ScoutSnapshotIn.model_fields.items() if f.is_required()}
     assert required <= model_required, f"схема требует, модель нет: {required - model_required}"
+
+
+# ── engine (S8 единая Разведка): правда движка per-coin — зеркало + сквозняк ──
+
+_ENGINE = {
+    "kind": "PENDING", "auto_eligible": True, "reanchored": False, "in_universe": True,
+    "side": "long", "age_bars": 2, "entries": {"0.382": 103.42, "0.5": 102.75},
+    "stop": 99.9, "targets": {"0.382": 108.0}, "est_risk_pct": 3.4,
+}
+
+
+def test_scout_engine_mirror_matches_schema_properties():
+    # структурная parity: поля ScoutEngineIn == properties engine в схеме (обе стороны дрейфа)
+    from app.routes_telemetry import ScoutEngineIn
+    schema = json.loads((_CONTRACTS / "telemetry-scout.schema.json").read_text(encoding="utf-8"))
+    eng = schema["items"]["properties"]["engine"]
+    assert set(ScoutEngineIn.model_fields) == set(eng["properties"])
+    model_required = {n for n, f in ScoutEngineIn.model_fields.items() if f.is_required()}
+    assert set(eng["required"]) == model_required
+
+
+def test_scout_engine_roundtrip_to_readout(sm):
+    """Поле engine проходит сквозь приём (Pydantic) → REPLACE-хранение → операторский readout
+    без потерь — консоль строит доску-по-вердикту из этих фактов."""
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    body = [_snap("BTCUSDT", engine=_ENGINE),
+            _snap("WIFUSDT", engine={"kind": None, "auto_eligible": False,
+                                     "reanchored": False, "in_universe": False})]
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=body).status_code == 202
+    with sm() as s:
+        op = User(email=f"op-{uuid.uuid4()}@mfc.local", role="operator", password_hash="x")
+        s.add(op)
+        s.flush()
+        op_tok = issue_token(s, principal="user", subject_id=str(op.id), scope="role:operator")
+        s.commit()
+    data = c.get(f"/v1/instances/{iid}/scout", headers=_hdr(op_tok)).json()
+    by_sym = {d["symbol"]: d for d in data}
+    e = by_sym["BTCUSDT"]["engine"]
+    assert e["kind"] == "PENDING" and e["auto_eligible"] is True and e["in_universe"] is True
+    assert e["entries"]["0.382"] == 103.42 and e["stop"] == 99.9
+    assert by_sym["WIFUSDT"]["engine"]["kind"] is None      # честный вердикт «не берёт»
+
+
+def test_scout_engine_unknown_subfield_422(sm):
+    # extra=forbid зеркала: поле мимо схемы в engine → 422 (дрейф продюсера ловится на приёме)
+    iid, tok = _mk_instance_token(sm)
+    c = TestClient(create_app())
+    bad = _snap("BTCUSDT", engine={**_ENGINE, "surprise": 1})
+    assert c.post("/v1/telemetry/scout", headers=_hdr(tok), json=[bad]).status_code == 422

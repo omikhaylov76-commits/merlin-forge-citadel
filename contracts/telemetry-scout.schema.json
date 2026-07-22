@@ -92,7 +92,25 @@
         }
       },
       "producer": {"type": "string", "maxLength": 40, "description": "кто произвёл снимок (напр. pifagor-scout); в режиме представителя — чей это скаут"},
-      "verified": {"type": "boolean", "description": "уровни levels — РЕАЛЬНАЯ сетка сделки движка (warm-реплей той же функции, что ставит ордера) для символа с живой позицией/ордером, а НЕ независимая оценка скаута. Опциональное, аддитивное (S8 Веха 2, F-scout-snap)."}
+      "verified": {"type": "boolean", "description": "уровни levels — РЕАЛЬНАЯ сетка сделки движка (warm-реплей той же функции, что ставит ордера) для символа с живой позицией/ордером, а НЕ независимая оценка скаута. Опциональное, аддитивное (S8 Веха 2, F-scout-snap)."},
+      "engine": {
+        "type": ["object", "null"],
+        "additionalProperties": false,
+        "required": ["kind", "auto_eligible", "reanchored", "in_universe"],
+        "description": "ПРАВДА ДВИЖКА per-coin (S8 единая Разведка, подпись Куратора 2026-07-22): ФАКТЫ warm.classify — ТОЙ ЖЕ функции, что решает постановку (самоход/кнопка). Считается по свечам кэша скаута → СНИМОК СКАУТА, НЕ ЖИВОЙ ТИК (на границе бара может кратко разойтись с постановкой движка — та по его свечам; консоль ОБЯЗАНА нести дисклеймер). Ключ отсутствует/null = правда не посчитана (мало свечей/сбой/не-торговый ТФ) — «неизвестно», НЕ «не берёт». Лексика причин («созревает/отработан/мимо списка») — вывод консоли из фактов, не поле Контракта. Опциональное, аддитивное.",
+        "properties": {
+          "kind": {"enum": ["PENDING", "OPEN", null], "description": "класс живого сетапа: PENDING — ноги стоят лимитами; OPEN — вход по рынку ушёл (движок так не заходит, бэклог); null — активного сетапа нет (реплей закрыл / нет пробоя в окне свежести)"},
+          "auto_eligible": {"type": "boolean", "description": "true — нетронутый PENDING: самоход/горн поставит сам"},
+          "reanchored": {"type": "boolean", "description": "true — сетка сдвигалась (пере-якорь): только кнопка «Поставить» (warm_apply, ADR-0022)"},
+          "in_universe": {"type": "boolean", "description": "монета в РАБОЧЕМ наборе движка (стек динамики / enabled-вселенная фикс-бота): годный сетап вне набора движок структурно не возьмёт (F-lookahead «мимо списка»)"},
+          "side": {"type": "string", "maxLength": 8, "description": "сторона сетапа (long/short)"},
+          "age_bars": {"type": "integer", "minimum": 0, "description": "возраст пробоя в барах торгового ТФ"},
+          "entries": {"type": "object", "additionalProperties": {"type": "number", "exclusiveMinimum": 0}, "description": "уровни входа движка {\"0.382\"/\"0.5\"/\"0.618\": цена} — реальная сетка постановки"},
+          "stop": {"type": "number", "exclusiveMinimum": 0, "description": "стоп сетки движка"},
+          "targets": {"type": "object", "additionalProperties": {"type": "number", "exclusiveMinimum": 0}, "description": "цели по ногам {уровень: цена}; для PENDING — начальные, для OPEN — бегущие"},
+          "est_risk_pct": {"type": ["number", "null"], "description": "геометрический риск в % (до сайзинга по капиталу)"}
+        }
+      }
     }
   },
   "examples": [
@@ -117,14 +135,21 @@
         "position": null,
         "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
         "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:abcd1234",
-        "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout"
+        "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout",
+        "engine": {
+          "kind": "PENDING", "auto_eligible": true, "reanchored": false, "in_universe": true,
+          "side": "long", "age_bars": 3,
+          "entries": {"0.382": 70472.0, "0.5": 70000.0, "0.618": 69528.0},
+          "stop": 68000.0, "targets": {"0.382": 73000.0}, "est_risk_pct": 3.5
+        }
       },
       {
         "symbol": "WIFUSDT", "tf": "4h", "state": "forming", "score": 41,
         "levels": [], "klines_tf": "4h", "klines": [], "orders": [], "position": null,
         "scan_ts": "2026-07-16T12:00:00Z", "orders_ts": "2026-07-16T12:00:05Z", "data_upto": "2026-07-16T12:00:00Z",
         "detector_version": "v81-b75bd17", "config_fingerprint": "sha256:abcd1234",
-        "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout"
+        "config_mismatch": {"flag": false, "details": {}}, "producer": "pifagor-scout",
+        "engine": {"kind": null, "auto_eligible": false, "reanchored": false, "in_universe": true}
       }
     ],
     [
