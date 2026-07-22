@@ -73,6 +73,35 @@ def test_pushes_on_new_scan_skips_same():
     assert c.scouts[1] == []
 
 
+def test_pushes_on_content_change_same_scan_ms():
+    # RED-фикс живого бага 2026-07-22: пороги дозора сменились → скаут пересобрал НАБОР находок
+    # в ТОЙ ЖЕ 4h-границе (scan_ms не сдвинулся) → доска висла. Теперь пуш ловит смену содержимого.
+    c, sc = FakeClient(), FakeScout()
+    bot = _bot(c, sc)
+    sc.ret = (100, [{"symbol": "BTCUSDT"}])
+    bot._push_scout(1.0)
+    assert len(c.scouts) == 1
+    sc.ret = (100, [{"symbol": "ETHUSDT"}])   # ТОТ ЖЕ scan_ms, ДРУГОЙ набор → пересборка долетает
+    bot._push_scout(2.0)
+    assert len(c.scouts) == 2
+    bot._push_scout(3.0)                       # тот же набор снова → skip (не долбим ядро)
+    assert len(c.scouts) == 2
+
+
+def test_pushes_on_verdict_change_same_symbols():
+    # тот же символ и scan_ms, но вердикт движка сменился (созревал → движок ставит) → пуш
+    c, sc = FakeClient(), FakeScout()
+    bot = _bot(c, sc)
+    base = {"symbol": "BTCUSDT", "tf": "4h", "state": "tracking", "score": 70}
+    sc.ret = (100, [{**base, "engine": {"kind": None, "auto_eligible": False,
+                                        "reanchored": False, "in_universe": True}}])
+    bot._push_scout(1.0)
+    sc.ret = (100, [{**base, "engine": {"kind": "PENDING", "auto_eligible": True,
+                                        "reanchored": False, "in_universe": True}}])
+    bot._push_scout(2.0)
+    assert len(c.scouts) == 2
+
+
 def test_no_reader_noop():
     c = FakeClient()
     bot = PifagorCartridge(c, FakeWorker(), _cfg())  # scout_reader=None (флот)

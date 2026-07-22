@@ -25,6 +25,22 @@ from app.config import CONTRACT_VERSION, CartridgeConfig
 log = logging.getLogger("mfc.pifagor-cartridge")
 
 
+def _scout_sig(snaps: list[dict]) -> tuple:
+    """Подпись СОДЕРЖИМОГО набора снимков для триггера re-push — только СМЫСЛОВЫЕ поля (символ/
+    стадия/скор/вердикт движка/наличие ордеров-позиции), БЕЗ timestamp'ов (scan_ts/orders_ts
+    дрожат каждый тик — по ним пушили бы вечно). Меняется на пересборке находок / смене вердикта."""
+    out = []
+    for s in snaps:
+        e = s.get("engine") or {}
+        out.append((
+            s.get("symbol"), s.get("tf"), s.get("state"), round(float(s.get("score") or 0), 2),
+            bool(s.get("verified")), e.get("kind"), e.get("auto_eligible"),
+            e.get("reanchored"), e.get("in_universe"),
+            len(s.get("orders") or []), bool(s.get("position")),
+        ))
+    return tuple(sorted(out, key=lambda r: (str(r[0]), str(r[1]))))
+
+
 class PifagorCartridge:
     def __init__(self, client, reader, config: CartridgeConfig,
                  *, sleep: Callable[[float], None] = time.sleep, scout_reader=None,
@@ -41,6 +57,7 @@ class PifagorCartridge:
         self._last_scan_ms = 0
         self._last_held: frozenset[str] = frozenset()   # для re-push при смене held (F-scout-snap)
         self._last_universe: frozenset[str] | None = None  # re-push при смене стека (in_universe)
+        self._last_scout_sig: tuple | None = None       # re-push при смене СОДЕРЖИМОГО снимков
         self._trade_cursor = 0
         self._event_cursor = 0
 
@@ -82,9 +99,14 @@ class PifagorCartridge:
             s for s in (str(i.get("symbol") or "").strip().upper() for i in items) if s)
 
     def _push_scout(self, mono: float, held: frozenset[str] = frozenset()) -> None:
-        """Пуш scout-снимка при НОВОМ scan_ts (не каждый цикл; сканы редки). Отдельная scout.db.
+        """Пуш scout-снимка при смене СОДЕРЖИМОГО (не только scan_ts). Отдельная scout.db.
         Пустой набор → пушим (replace: сетапы исчезли → ядро чистит). scout выключен → no-op.
-        held → verified-сетка/синтез снимков для монет с живой позицией (F-scout-snap)."""
+        held → verified-сетка/синтез снимков для монет с живой позицией (F-scout-snap).
+
+        Триггер (RED-фикс живого бага 2026-07-22): раньше пушили ТОЛЬКО на новый scan_ms/held/
+        стек — но при смене порогов дозора скаут пересобирает НАБОР находок в ТОЙ ЖЕ 4h-границе
+        (scan_ms не двигается) → доска висла на старом снимке. Теперь пушим и на смену подписи
+        содержимого (символы/стадии/вердикт движка/ордера) — пересборка долетает до консоли."""
         if self._scout is None:
             return
         iv = self._cfg.scout_interval_s
@@ -99,14 +121,16 @@ class PifagorCartridge:
             return
         if scan_ms == 0:
             return                                          # скаут ещё не сканировал — нечего слать
+        sig = _scout_sig(snaps)
         if (scan_ms <= self._last_scan_ms and self._last_scan_ms != 0
-                and held == self._last_held and universe == self._last_universe):
-            return              # не новый скан И held/стек не менялись — не долбим ядро; смена held
-            #                     (позиция) → re-push verified; смена стека → re-push in_universe
+                and held == self._last_held and universe == self._last_universe
+                and sig == self._last_scout_sig):
+            return              # ни новый скан, ни смена held/стека/СОДЕРЖИМОГО — не долбим ядро
         if self._send(lambda: self._client.push_scout(snaps), "scout"):
             self._last_scan_ms = scan_ms
             self._last_held = held
             self._last_universe = universe
+            self._last_scout_sig = sig
 
     def _push_telemetry(self, monitor: dict, now: datetime) -> None:
         # equity — точка за ts=now; дедуп ядром по (instance, ts). Сбой → новая точка на след. тике.
