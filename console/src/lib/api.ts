@@ -168,11 +168,14 @@ export const getScreenerRun = (runId: string) => api<ScreenerRun>(`/v1/screener/
 export const listScreenerRuns = (instanceId: string) =>
   api<ScreenerRun[]>(`/v1/instances/${instanceId}/screener/runs`)
 
-// Разведка/Скринер показывают только разведчика (Галахад) и боевого (Персиваль); тестовые
-// болванки флота скрыты (директива Куратора, С7 микро-пункт). Фильтр по имени клиента — v1.
-const _SCOUT_VISIBLE = /Галахад|Персиваль/
+// Разведка/Скринер показывают разведчика (Галахад), боевого (Персиваль) и динамика Борса (S8);
+// тестовые болванки флота скрыты (директива Куратора, С7 микро-пункт). Фильтр — v1.
+// Борс опознаём по id-префиксу: его инстанс заведён под общим клиентом (GAWAIN), имя «Борс» не матчит.
+// Единую Разведку («чьими глазами» для всего флота) обобщим отдельно — этот whitelist временный.
+const _SCOUT_VISIBLE = /Галахад|Персиваль|Борс/
+const _SCOUT_VISIBLE_IDS = ['cd8d0534'] // Борс-динамик (S8 «Динамо-близнец»)
 export const visibleScoutInstances = (list: FleetInstance[]) =>
-  list.filter((i) => _SCOUT_VISIBLE.test(i.client))
+  list.filter((i) => _SCOUT_VISIBLE.test(i.client) || _SCOUT_VISIBLE_IDS.some((p) => i.id.startsWith(p)))
 
 // ── engine_state инстанса (карточка бота, S7) — факт-слой движка для Оператора ──────────────────
 export type EnginePosition = {
