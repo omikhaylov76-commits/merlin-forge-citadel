@@ -3,6 +3,7 @@ import {
   getEngineState,
   getInstanceScout,
   scanNow,
+  warmApply,
   type EngineStack,
   type EngineStateResp,
   type FleetInstance,
@@ -40,6 +41,8 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null) // клик по монете стека → график Разведки
   const [pickErr, setPickErr] = useState<string | null>(null)
   const [scanState, setScanState] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
+  // F-warm-button (ADR-0022): per-coin состояние кнопки «Поставить» (команда warm_apply)
+  const [warmState, setWarmState] = useState<Record<string, 'idle' | 'busy' | 'sent' | 'err'>>({})
 
   // Кнопка «Сканировать сейчас» прямо на карточке (просьба Оператора): та же команда scan_now,
   // что на Разведке — скаут пересканирует (~1-2 мин), свечи/сетапы/графики обновятся сами.
@@ -52,6 +55,20 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
     } catch {
       setScanState('err')
       setTimeout(() => setScanState('idle'), 5_000)
+    }
+  }
+
+  // F-warm-button (ADR-0022): «Поставить» валидный сетап по монете → команда warm_apply. Оператор-only.
+  // Движок валидирует и ставит валидный PENDING (вкл. reanchored) на след. тике; невалидную — молча skip.
+  const doWarm = async (symbol: string) => {
+    setWarmState((m) => ({ ...m, [symbol]: 'busy' }))
+    try {
+      await warmApply(inst.id, [symbol])
+      setWarmState((m) => ({ ...m, [symbol]: 'sent' }))
+      setTimeout(() => setWarmState((m) => ({ ...m, [symbol]: 'idle' })), 60_000)
+    } catch {
+      setWarmState((m) => ({ ...m, [symbol]: 'err' }))
+      setTimeout(() => setWarmState((m) => ({ ...m, [symbol]: 'idle' })), 5_000)
     }
   }
 
@@ -194,6 +211,8 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
                   pickErr={pickErr}
                   scanState={scanState}
                   onScan={doScan}
+                  onWarm={doWarm}
+                  warmState={warmState}
                 />
               )}
 
@@ -457,12 +476,16 @@ function StackPanel({
   pickErr,
   scanState = 'idle',
   onScan,
+  onWarm,
+  warmState = {},
 }: {
   stack: EngineStack
   onPick?: (symbol: string, tf: string | null) => void
   pickErr?: string | null
   scanState?: 'idle' | 'busy' | 'sent' | 'err'
   onScan?: () => void
+  onWarm?: (symbol: string) => void
+  warmState?: Record<string, 'idle' | 'busy' | 'sent' | 'err'>
 }) {
   const over = stack.count > stack.cap
   return (
@@ -503,7 +526,7 @@ function StackPanel({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ']} numFrom={2}>
+          <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ', onWarm ? 'Поставить' : '']} numFrom={2}>
             {stack.items.map((it, i) => (
               <tr
                 key={i}
@@ -524,6 +547,34 @@ function StackPanel({
                   {it.score ?? '—'}
                 </Td>
                 <Td num>{it.tf ?? '—'}</Td>
+                <Td num>
+                  {onWarm && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        const w = warmState[it.symbol] ?? 'idle'
+                        if (w === 'idle' || w === 'err') onWarm(it.symbol)
+                      }}
+                      disabled={warmState[it.symbol] === 'busy' || warmState[it.symbol] === 'sent'}
+                      title="Поставить этот сетап в ордера сейчас (F-warm-button). Движок валидирует: ставит только годный PENDING (вкл. пере-якорь), иначе молча пропустит."
+                      className={`rounded-pill border px-2.5 py-0.5 text-[10.5px] transition-colors ${
+                        warmState[it.symbol] === 'sent'
+                          ? 'border-ok/40 bg-ok/10 text-ok'
+                          : warmState[it.symbol] === 'err'
+                            ? 'border-danger/40 bg-danger/10 text-danger'
+                            : 'border-copper/40 text-copper hover:border-copper/70'
+                      }`}
+                    >
+                      {warmState[it.symbol] === 'sent'
+                        ? '✓ запрошено'
+                        : warmState[it.symbol] === 'busy'
+                          ? '…'
+                          : warmState[it.symbol] === 'err'
+                            ? 'ещё раз?'
+                            : 'Поставить'}
+                    </button>
+                  )}
+                </Td>
               </tr>
             ))}
           </DataTable>

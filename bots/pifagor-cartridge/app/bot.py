@@ -173,6 +173,9 @@ class PifagorCartridge:
         if cmd == "scan_now":
             self._scan_now(now, cmd_id)  # кнопка «Сканировать сейчас»
             return False
+        if cmd == "warm_apply":
+            self._warm_apply(resp.get("payload") or {}, cmd_id)  # F-warm-button (ADR-0022)
+            return False
         # неизвестная команда — ack error (это не stop_close, липкость ядра тут не держит)
         self._ack(cmd_id, "error", {"reason": f"unknown:{cmd}"})
         return False
@@ -222,6 +225,20 @@ class PifagorCartridge:
                          summary={"error": "скринер выключен на этом боте (SCREENER_ENABLED=0)"})
         except Exception as exc:
             log.warning("не смог отметить выключенный скринер в ядре (%s)", exc)
+
+    def _warm_apply(self, payload: dict, cmd_id: str) -> None:
+        """F-warm-button (ADR-0022): кладёт durable-интент WARM_APPLY (одобренные монеты) → движок
+        ставит на след. тике (`maybe_warm`→`_warm_one_button`: валидный PENDING, reanchored;
+        OPEN/has_active/cap→skip; single-shot). Оператор-only (портал не видит). Движок сам
+        валидирует — невалидную молча skip. Сбой интента → ack error (не липкая)."""
+        try:
+            coins = payload.get("coins") or []
+            self._reader.warm_apply(coins)
+            log.info("warm_apply: WARM_APPLY поставлен (%d монет: %s)", len(coins), ",".join(coins))
+            self._ack(cmd_id, "ok")
+        except Exception as exc:  # noqa: BLE001
+            log.error("warm_apply не прошёл (%s)", exc)
+            self._ack(cmd_id, "error", {"reason": str(exc)})
 
     def _apply_dozor(self, payload: dict, cmd_id: str) -> None:
         """dozor_apply: записать оверрайды дозора (whitelist+coerce, страж 2) → супервизор по смене
