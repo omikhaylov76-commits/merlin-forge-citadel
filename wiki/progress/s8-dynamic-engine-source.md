@@ -53,31 +53,31 @@ reanchored) = placeable → кандидат. Приоритет при капе
 ## Слои постройки
 
 ### Слой 1 — scout_reader: placeable-скан пула
-- [ ] `scan_list_rows()` — читалка `scout_list_all()` вендора (symbol+score; fail-soft []).
-- [ ] `placeable_scan(universe_cap)` — ОДИН проход `_classify` по монетам scan_list →
+- [x] `scan_list_rows()` — читалка `scout_list_all()` вендора (symbol+score; fail-soft []).
+- [x] `placeable_scan(universe_cap)` — ОДИН проход `_classify` по монетам scan_list →
       `{symbol: (desc, score)}` для placeable (PENDING auto|reanchored); замер длительности в лог
       (оценка: 155 × ~1.5мс ≈ 0.25с, замерено на живом 39×0.06с). Кэш прохода на scan_ms —
       пуш телеметрии (engine-поле) и провайдер ДЕЛЯТ один прогон (не дублируем CPU).
-- [ ] has_active/held НЕ трогаем — пин Вехи 2 как есть.
+- [x] has_active/held НЕ трогаем — пин Вехи 2 как есть.
 
 ### Слой 2 — dynamic_universe: источник engine
-- [ ] `cfg.dynamic_source` (env `DYNAMIC_SOURCE`, дефолт `"scout"`).
-- [ ] `_recompute_engine(placeable)` — кандидаты = placeable-монеты (auto первыми, скор вторым),
+- [x] `cfg.dynamic_source` (env `DYNAMIC_SOURCE`, дефолт `"scout"`).
+- [x] `_recompute_engine(placeable)` — кандидаты = placeable-монеты (auto первыми, скор вторым),
       существующий вход-гистерезис (enter_scans)/exit (missed)/кап N/ПОЛ-НА-ПУСТОТУ/пин held —
       ВСЁ сохраняется (предохранители не трогаем). `_recompute` (скаут-путь) — без изменений.
-- [ ] Настройки ADR-0020 в engine-режиме: `stack_max` = кап (как есть); `min_score` — к скору
+- [x] Настройки ADR-0020 в engine-режиме: `stack_max` = кап (как есть); `min_score` — к скору
       КАЧЕСТВА монеты из scan_list (не к находке); `fresh_bars` — к `age_bars` дескриптора
       (0=выкл; движок и так режет окном 72). Семантика — в README/доке канала.
-- [ ] Триггер тика прежний (новый scan_ms) — Этап B обновил свечи → пересчёт → coins.json →
+- [x] Триггер тика прежний (новый scan_ms) — Этап B обновил свечи → пересчёт → coins.json →
       мягкий рестарт движка (положения защищены: positions-flag/отложенный рестарт УЖЕ работают).
 
 ### Слой 3 — доказательства
-- [ ] Тесты vs НАСТОЯЩИЙ вендор (реальные scout.db+scout_list_put_snapshot+scout_klines,
+- [x] Тесты vs НАСТОЯЩИЙ вендор (реальные scout.db+scout_list_put_snapshot+scout_klines,
       синт-серии из test_engine_truth): auto-серия → в стек; reanchored → в стек (после auto);
       None/OPEN → мимо; кап держит; пин held держит; `DYNAMIC_SOURCE=scout` (дефолт) →
       байт-в-байт старый путь (регресс-гвоздь); порядок приоритета.
-- [ ] Замер на живом Борсе: строка лога «placeable-скан N монет за X.XXс».
-- [ ] Code-review (адверсариальный) → merge → деплой ТОЛЬКО Борса (+`DYNAMIC_SOURCE=engine`
+- [x] Замер на живом Борсе: строка лога «placeable-скан N монет за X.XXс».
+- [x] Code-review (адверсариальный) → merge → деплой ТОЛЬКО Борса (+`DYNAMIC_SOURCE=engine`
       env) → живая сверка: стек наполняется placeable (ср. с рыночным прогоном), средние колонки
       Разведки оживают, Персиваль/Галахад штампы неизменны.
 
@@ -119,4 +119,11 @@ tracking, живой скаут с КАЛИБРОВАННЫМИ mb молчит 
 решим отдельно (это уже про состав пула, не про критерий).
 
 ## SHA
-- план записан; код НЕ начат (гейт: подпись Куратора). Ветка будет `feat/dynamic-engine-source`.
+- ПОДПИСАНО+ПОСТРОЕНО: ветка `feat/dynamic-engine-source` `453b2dc` → merge **`18248b7`** (--no-ff), CI
+  SUCCESS. Картридж 216 тестов, ruff чист, страж-дрейфа=2 дельты, вендор diff пуст.
+- Адверс-ревью нашёл+закрыл mb-рассинхрон: движок REPLACE-ит coins.json на _DEFAULT_COIN (strategy.py:125),
+  а `_classify` наследовал бы статик-mb мажоров (AAVE 2.5/4.0) → форс `_DEFAULT_COIN` в placeable_scan
+  (тест `test_placeable_scan_forces_default_mb_over_static`).
+- Деплой Борса `--go --live --engine` (DYNAMIC_SOURCE=engine env-upsert, стражи целы). Живая сверка идёт.
+- FYI-хвост (Оператор, ПОСЛЕ обкатки): per-coin боевые бары движку вместо плоского _DEFAULT_COIN (scout_list
+  уже несёт mb1/mb2 volnorm/config) — QUEUE, отдельный разбор+подпись.
