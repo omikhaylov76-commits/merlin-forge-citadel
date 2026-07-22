@@ -241,15 +241,19 @@ class PifagorCartridge:
             self._ack(cmd_id, "error", {"reason": str(exc)[:120]})
 
     def _scan_now(self, now: datetime, cmd_id: str) -> None:
-        """scan_now: триггер Этапа B (scan_now_ms в scout_control). Только при живом скауте."""
+        """scan_now: Этап B скаута + ГОРН (ADR-0021) — интент WARM_AUTO_NOW движку → авто-warm
+        auto_eligible. Кнопка «Сканировать сейчас» будит скаут и движок.
+        Только при живом скауте."""
         if self._scout is None:
             self._ack(cmd_id, "error", {"reason": "scout off"})
             return
         try:
-            self._scout.scan_now(now_ms=int(now.timestamp() * 1000))
+            now_ms = int(now.timestamp() * 1000)
+            self._scout.scan_now(now_ms=now_ms)
+            self._reader.warm_now(now_ms=now_ms)   # ГОРН: разбудить авто-warm движка (ADR-0021)
             self._ack(cmd_id, "ok")
         except Exception as exc:  # noqa: BLE001
-            log.error("scan_now не записан (%s)", exc)
+            log.error("scan_now/горн не записан (%s)", exc)
             self._ack(cmd_id, "error", {"reason": str(exc)[:120]})
 
     # ── доставка с классификацией 4xx ─────────────────────────────────────────

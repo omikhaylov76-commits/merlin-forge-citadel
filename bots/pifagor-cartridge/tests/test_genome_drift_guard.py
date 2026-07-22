@@ -62,9 +62,15 @@ def test_genome_no_unsanctioned_drift():
             f"{p}: дельта изменилась — перегенерируй манифест под {meta.get('adr')}")
 
 
-def test_exactly_one_sanctioned_delta():
-    """Реестр дельт (ADR-0019): пока единственная — разъём в config/strategy.py. Появление второй
-    обязано пройти через свой ADR (правка этого ожидания = видимый триггер для ревью)."""
+def test_exactly_registered_sanctioned_deltas():
+    """Реестр дельт (ADR-0019 + ADR-0021): ровно ДВЕ — монеты (config/strategy.py, 0019) +
+    warm-ритм (app/main.py + app/cycle.py, 0021). Третья дельта обязана пройти свой ADR
+    (правка этого ожидания = видимый триггер для ревью)."""
     m = _manifest()
-    assert list(m["sanctioned"]) == ["config/strategy.py"], (
-        "новая санкционированная дельта живого генома — только отдельным ADR (закон эталона)")
+    by_adr = {}
+    for p, meta in m["sanctioned"].items():
+        by_adr.setdefault(meta["adr"], []).append(p)
+    assert {k: sorted(v) for k, v in by_adr.items()} == {
+        "ADR-0019": ["config/strategy.py"],
+        "ADR-0021": ["app/cycle.py", "app/main.py"],
+    }, "новая санкционированная дельта живого генома — только отдельным ADR (закон эталона)"

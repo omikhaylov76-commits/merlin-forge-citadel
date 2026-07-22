@@ -7,12 +7,20 @@
       "sha256": "a0f16e63fce2057fb2f856bca944926d8a2808a626b235edc61fbaa98976d05f",
       "adr": "ADR-0019",
       "delta": "разъём COINS_CONFIG_PATH"
+    },
+    "app/main.py": {
+      "sha256": "94fc2d90fe6d70de5e08c315ae15ccba687f59ccfb755acb173cae6bde005f44",
+      "adr": "ADR-0021",
+      "delta": "разъём warm-ритма (самоход + горн)"
+    },
+    "app/cycle.py": {
+      "sha256": "a43149742d9deaff78eb11156c7fbfbebc1761663f255c49fc97f5a6bf024ce4",
+      "adr": "ADR-0021",
+      "delta": "разъём warm-ритма (самоход + горн)"
     }
   },
   "frozen": {
     "app/__init__.py": "d5f4df47ee669cf9170159f51042b6da2d902df4a76709550e5d0db8ea4189dc",
-    "app/cycle.py": "3f14bd93cb694b032b4ae1bc8332487cc8c97446275f3c003cfd1596900bd0c6",
-    "app/main.py": "cf308f377a0b4f079dc07e00a551fd11a9c3b89451ab9b09f52343c06c430440",
     "broker/__init__.py": "d8a0e69d3ea9201e224509015b1c5da2ec8dda9063af97e44d1ec549e33d475d",
     "broker/bybit_client.py": "d015aca71744c3aac9243ea20e3f5341eede9946949b184179252cda7111761a",
     "broker/ws_shadow.py": "a7c579ed8f5aded8d361500533df250647c96f5d7b295ca513bba5e45ae4a9fc",
