@@ -317,7 +317,9 @@ class Command(Base):
     __tablename__ = "commands"
     __table_args__ = (
         CheckConstraint(
-            "kind IN ('pause','resume','stop_close','screener_run')", name="ck_commands_kind"
+            "kind IN ('pause','resume','stop_close','screener_run','dozor_apply','scan_now',"
+            "'warm_apply')",
+            name="ck_commands_kind",
         ),
         CheckConstraint(
             "status IN ('queued','delivered','acked','failed')", name="ck_commands_status"
