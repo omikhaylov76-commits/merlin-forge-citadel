@@ -67,6 +67,13 @@
   }
   /* табличные цифры (одинаковая ширина) для денег/таблиц */
   .tnum { font-variant-numeric: tabular-nums; }
+  /* песочные часы F-warm-button: «отправлено, ждёт 15m-тик» — переворот с паузами (песок сыпется) */
+  @keyframes hourglass-flip {
+    0%, 42% { transform: rotate(0deg); }
+    50%, 92% { transform: rotate(180deg); }
+    100% { transform: rotate(360deg); }
+  }
+  .hourglass { display: inline-block; animation: hourglass-flip 2.6s ease-in-out infinite; }
 }
 
 @layer components {

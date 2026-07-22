@@ -45,6 +45,7 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   // разберёт пачку, поставит только годные PENDING; невалидные молча skip). Список — уже в контракте.
   const [warmSel, setWarmSel] = useState<Set<string>>(new Set())
   const [warmBatch, setWarmBatch] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
+  const [warmSent, setWarmSent] = useState<Set<string>>(new Set()) // ⏳ отправлено, ждёт 15m-тик
 
   // Кнопка «Сканировать сейчас» прямо на карточке (просьба Оператора): та же команда scan_now,
   // что на Разведке — скаут пересканирует (~1-2 мин), свечи/сетапы/графики обновятся сами.
@@ -71,12 +72,22 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
     })
   const doWarmBatch = async () => {
     if (warmSel.size === 0 || warmBatch === 'busy') return
+    const sent = [...warmSel]
     setWarmBatch('busy')
     try {
-      await warmApply(inst.id, [...warmSel]) // ОДНА команда со списком → движок разберёт пачку
+      await warmApply(inst.id, sent) // ОДНА команда со списком → движок разберёт пачку
       setWarmBatch('sent')
       setWarmSel(new Set())
+      setWarmSent((s) => new Set([...s, ...sent])) // ⏳ на отправленных до тика
       setTimeout(() => setWarmBatch('idle'), 60_000)
+      // тик прошёл (~15м) — снять ⏳ (годные уже «в работе» = в ордерах, негодные движок пропустил)
+      setTimeout(() => {
+        setWarmSent((s) => {
+          const n = new Set(s)
+          sent.forEach((c) => n.delete(c))
+          return n
+        })
+      }, 16 * 60_000)
     } catch {
       setWarmBatch('err')
       setTimeout(() => setWarmBatch('idle'), 5_000)
@@ -226,6 +237,8 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
                   onToggleWarm={toggleWarm}
                   warmBatch={warmBatch}
                   onWarmBatch={doWarmBatch}
+                  warmSent={warmSent}
+                  inOrders={new Set(st.orders.map((o) => o.symbol))}
                 />
               )}
 
@@ -483,6 +496,32 @@ const SCAN_LABEL: Record<string, string> = {
   err: 'не прошло — ещё раз?',
 }
 
+// Мелкий счётчик до следующей 4h-границы (закрытие 4h-свечи = плановый автоскан: пересбор сетапов/
+// вселенной + самоход). UTC-сетка 4h (00/04/08/12/16/20), обновляется раз в 30с. Просьба Оператора —
+// «в уголочке», чтобы видеть, когда следующее плановое обновление, не гадая руками.
+function NextBoundary() {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+  const FOUR_H = 4 * 60 * 60_000
+  const next = Math.ceil((now + 1) / FOUR_H) * FOUR_H
+  const left = next - now
+  const h = Math.floor(left / 3_600_000)
+  const m = Math.floor((left % 3_600_000) / 60_000)
+  const at = new Date(next).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+  return (
+    <span
+      className="font-normal normal-case tracking-normal text-[10.5px] text-ash"
+      title="следующее закрытие 4h-свечи (UTC-сетка 00/04/08/12/16/20): плановый автоскан — пересбор сетапов и вселенной + авто-подхват (самоход). Ручной warm_apply/⏳ исполняется быстрее, на 15m-тике."
+    >
+      след. скан ~{at} · через {h > 0 ? `${h}ч ` : ''}
+      {m}м
+    </span>
+  )
+}
+
 function StackPanel({
   stack,
   onPick,
@@ -493,6 +532,8 @@ function StackPanel({
   onToggleWarm,
   warmBatch = 'idle',
   onWarmBatch,
+  warmSent,
+  inOrders,
 }: {
   stack: EngineStack
   onPick?: (symbol: string, tf: string | null) => void
@@ -503,13 +544,18 @@ function StackPanel({
   onToggleWarm?: (symbol: string) => void
   warmBatch?: 'idle' | 'busy' | 'sent' | 'err'
   onWarmBatch?: () => void
+  warmSent?: Set<string>
+  inOrders?: Set<string>
 }) {
   const over = stack.count > stack.cap
   return (
     <div className="mb-3 overflow-hidden rounded-card border border-white/[0.06] bg-[#0d1017]">
       <div className="flex items-center justify-between gap-2 px-4 py-2.5">
-        <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
-          Стек · рабочая вселенная
+        <span className="flex items-center gap-2.5">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-mist">
+            Стек · рабочая вселенная
+          </span>
+          <NextBoundary />
         </span>
         <span className="flex items-center gap-2">
           {onScan && (
@@ -587,32 +633,47 @@ function StackPanel({
                 </Td>
                 <Td num>{it.tf ?? '—'}</Td>
                 <Td num>
-                  {onToggleWarm && (
-                    <span
-                      role="checkbox"
-                      aria-checked={warmSel?.has(it.symbol) ?? false}
-                      tabIndex={0}
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onToggleWarm(it.symbol)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
+                  {onToggleWarm &&
+                    (inOrders?.has(it.symbol) ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-[10px] text-ok"
+                        title="движок ведёт этот сетап — есть живые ордера (см. раздел «Ордера» ниже)"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-ok" />в работе
+                      </span>
+                    ) : warmSent?.has(it.symbol) ? (
+                      <span
+                        className="hourglass text-[13px]"
+                        title="отправлено · ждёт ближайший 15m-тик; движок поставит, если сетап годен"
+                      >
+                        ⏳
+                      </span>
+                    ) : (
+                      <span
+                        role="checkbox"
+                        aria-checked={warmSel?.has(it.symbol) ?? false}
+                        tabIndex={0}
+                        onClick={(e) => {
                           e.stopPropagation()
-                          e.preventDefault()
                           onToggleWarm(it.symbol)
-                        }
-                      }}
-                      title="Отметить сетап в пачку (кнопка «Поставить отмеченные» вверху). Движок сам проверит годность на тике."
-                      className={`inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded border text-[10px] transition-colors ${
-                        warmSel?.has(it.symbol)
-                          ? 'border-copper bg-copper/20 text-copper'
-                          : 'border-line text-transparent hover:border-copper/50'
-                      }`}
-                    >
-                      ✓
-                    </span>
-                  )}
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            onToggleWarm(it.symbol)
+                          }
+                        }}
+                        title="Отметить сетап в пачку (кнопка «Поставить отмеченные» вверху). Движок сам проверит годность на тике."
+                        className={`inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded border text-[10px] transition-colors ${
+                          warmSel?.has(it.symbol)
+                            ? 'border-copper bg-copper/20 text-copper'
+                            : 'border-line text-transparent hover:border-copper/50'
+                        }`}
+                      >
+                        ✓
+                      </span>
+                    ))}
                 </Td>
               </tr>
             ))}
