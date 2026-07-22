@@ -266,8 +266,8 @@ def warm_auto_now(broker, state, cfg, ledger, executor, working_provider, symbol
             n += _warm_one(broker, state, executor, eff, s, cursors, logger=logger)
         except Exception as e:
             logger.warning("%s: %s пропущен по монете (%s)", s, label, e)
-    if n:
-        logger.info("%s: подхвачено %d сетап(ов)", label, n)
+    # ВСЕГДА лог (наблюдаемость самохода/горна, в т.ч. при 0 постановок — живая сверка)
+    logger.info("%s: проверено %d монет, поставлено %d", label, len(symbols), n)
     return n
 
 
