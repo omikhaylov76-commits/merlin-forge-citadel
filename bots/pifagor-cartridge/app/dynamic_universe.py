@@ -88,17 +88,21 @@ class DynamicUniverse:
         self._held = frozenset(s.strip().upper() for s in held if s)   # нормализация == ключи стека
         self._write_positions_flag()            # F-restart «а»: адаптер пишет флаг открытых позиций
         try:
-            # F-lookahead v3: источник. engine → placeable по warm.classify из scout_list;
-            # scout → прежние находки. Оба дают (scan_ms, кандидаты-под-свой-recompute).
+            # F-lookahead v3: engine-источник гоняет warm.classify по ~155 монетам — ДОРОГО. Гейтим
+            # ДЕШЁВЫМ курсором ДО скана → 155-classify только на НОВЫЙ скан. Scout-путь (findings
+            # дёшев) — как был, байт-в-байт.
             if self._source == "engine":
-                scan_ms, cand = self._scout.placeable_scan()
+                scan_ms = self._scout.last_scan_ms()
+                if scan_ms == 0 or scan_ms == self._last_scan_ms:
+                    return                      # скан не новый → дорогой placeable-скан НЕ гоняем
+                _, cand = self._scout.placeable_scan()
             else:
                 scan_ms, cand = self._scout.findings_for_universe()
+                if scan_ms == 0 or scan_ms == self._last_scan_ms:
+                    return                      # скаут не готов / скан не новый → тишина
         except Exception:  # noqa: BLE001 — печка недоступна → не роняем цикл, набор держим
             log.exception("dynamic: чтение источника (%s) упало — пропуск", self._source)
             return
-        if scan_ms == 0 or scan_ms == self._last_scan_ms:
-            return                              # скаут не готов / скан не новый → тишина
         self._last_scan_ms = scan_ms
         if self._source == "engine":
             self._recompute_engine(cand)        # F-lookahead v3: отбор по warm.classify (placeable)
