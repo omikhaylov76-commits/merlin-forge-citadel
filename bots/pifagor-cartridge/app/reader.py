@@ -78,6 +78,12 @@ class PifagorReader:
         if not ok:
             raise RuntimeError(f"resume: config.set отклонён: {err}")
 
+    def warm_now(self, *, now_ms: int) -> None:
+        """ГОРН (ADR-0021): интент WARM_AUTO_NOW в config_log воркера (action-канал, config_state
+        не трогаем) → движок на след. тике прогоняет авто-warm (auto_eligible). Движок читает
+        config_log_latest + in-memory ack (single-shot); id строки = курсор интента."""
+        self.db.config_log_append("WARM_AUTO_NOW", None, str(int(now_ms)), source="scan_now")
+
     def stop_close(self) -> None:
         """ADR-0005 stop_close: защёлкнуть kill-switch (durable). Движок гасит вход/отменяет
         незалитое, под LIVE_TRADING флэттит позиции; в dry-run — логирует. Латч sticky до clear.

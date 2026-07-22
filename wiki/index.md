@@ -84,6 +84,7 @@ updated: 2026-07-10
 - [HANDOFF_2026-07-21_session_13](handoffs/HANDOFF_2026-07-21_session_13.md) — **S8 «наведение порядка»**: verified-график сделки + кнопка скана на карточке + СВОЯ Postgres Борсу (per-bot, откл. ADR-0007) + 2 живых бага (422-журнал, scout.db-пин). main @ 398b397. Лимит Куратора исчерпан — развилки в QUEUE.
 - [progress/s8-dinamo-bliznec-v1](progress/s8-dinamo-bliznec-v1.md) — S8 Веха 1 (dry-run): разъём генома + провайдер + канал критериев + деплой Борса. Слои 1–4 ✅, закрыта вживую.
 - [progress/s8-dinamo-bliznec-v2](progress/s8-dinamo-bliznec-v2.md) — S8 Веха 2 (демо-ордера через пин позиций): план, ждёт подписи Куратора + гейт Оператор+Куратор на LIVE_TRADING=1.
+- [progress/s8-bors-gorn-samohod](progress/s8-bors-gorn-samohod.md) — S8 Борс: горн (ручной warm) + самоход (периодический warm по SIGNAL_TF); разведка+план+аудит, на подпись (развилка геном/0-vendor).
 - [ADR-0017 — Набор Оператора (НАБОР-1): витрина+хранение отмеченных сетапов](decisions/0017-basket-nabor-1.md)
 - [progress/nabor-1 — корзина сетапов: ядро+консоль, ничего не торгует](progress/nabor-1.md)
 - [0018](decisions/0018-scout-settings-from-core.md) — канал настроек дозора из ядра (scout_settings): ядро=истина, картридж boot-fetch+рестарт скаута; движко-скоуп на канал не пускаем.

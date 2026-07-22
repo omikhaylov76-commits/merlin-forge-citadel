@@ -46,11 +46,13 @@ ADR-0018 п.3 уже указал путь: «Движок/риск (…COINS_CO
 ТОЛЬКО санкционированные дельты. Каждая дельта = отдельный подписанный ADR. Реестр дельт ведётся в ADR-0019.»
 
 **Реестр санкционированных дельт живого генома:**
-1. `config/strategy.py` — разъём `COINS_CONFIG_PATH` (ADR-0019, S8). *Пока единственная.*
+1. `config/strategy.py` — разъём `COINS_CONFIG_PATH` (ADR-0019, S8).
+2. `app/main.py` + `app/cycle.py` — разъём warm-ритма (периодический `auto_eligible`-подхват по SIGNAL_TF +
+   горн `WARM_AUTO_NOW`), **ADR-0021** (S8, 2026-07-22).
 
 ## Страж-дрейфа (CI — УСЛОВИЕ подписи, не пожелание)
-`bots/pifagor-cartridge/tests/genome_manifest.json` пиннит SHA256 всех 69 файлов vendor: 68 frozen
-(== b75bd17, git-verified: против main изменён только `strategy.py`) + 1 sanctioned (`strategy.py`).
+`bots/pifagor-cartridge/tests/genome_manifest.json` пиннит SHA256 всех 68 файлов vendor: 65 frozen
+(== b75bd17) + 3 sanctioned (`config/strategy.py`→ADR-0019; `app/main.py`+`app/cycle.py`→ADR-0021).
 `test_genome_drift_guard.py` сверяет дерево: любая НЕсанкционированная правка/добавление/удаление файла
 vendor ИЛИ вторая дельта без ADR → **красный CI**. Граница «живой геном vs эталон» становится аудируемой,
 а не «на слово». Вторая дельта = осознанно: новый ADR + регенерация манифеста + правка ожидания в тесте.

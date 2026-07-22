@@ -243,10 +243,38 @@ def _warm_place(state, executor, s, desc, t4, cursors, *, logger):
     return 0
 
 
+def warm_auto_now(broker, state, cfg, ledger, executor, working_provider, symbols, cursors, *,
+                  logger, label="warm-старт"):
+    """Один проход авто-подхвата ТОЛЬКО auto_eligible (нетронутый PENDING) — БЕЗ гейта WARM_ON_START.
+    ОБЩЕЕ тело (ADR-0021): bootstrap (`warm_start_auto`, гейт WARM_ON_START) / самоход (граница SIGNAL_TF) /
+    горн (интент WARM_AUTO_NOW). Гейты `_warm_gate`(пауза/kill/equity)+`_warm_cap_ok`+`has_active` (открытую
+    позицию НЕ трогает, не задваивает — урок 18.07) сохранены в `_warm_one`. Сеть per-coin fail-soft.
+    Возврат — число поставленных."""
+    try:
+        eff = cfg.effective(strict=True)
+    except (ConfigError, KeyError, ValueError, TypeError, AttributeError) as e:
+        logger.error("%s пропущен: конфиг невалиден (%s)", label, e)
+        return 0
+    reason = _warm_gate(eff, state, ledger, broker)
+    if reason is not None:
+        logger.warning("%s: %s → прогрев блокирован", label, reason)
+        return 0
+    _configure_executor(executor, eff, ledger, working_provider)   # иначе executor.sizing=None → пустая постановка
+    n = 0
+    for s in symbols:                                     # ошибка/сеть по монете НЕ валит проход
+        try:
+            n += _warm_one(broker, state, executor, eff, s, cursors, logger=logger)
+        except Exception as e:
+            logger.warning("%s: %s пропущен по монете (%s)", s, label, e)
+    if n:
+        logger.info("%s: подхвачено %d сетап(ов)", label, n)
+    return n
+
+
 def warm_start_auto(broker, state, cfg, ledger, executor, working_provider, symbols, cursors, *, logger):
-    """Авто-подхват живых сетапов на старте (Веха 5.8 под-шаг 3b, ADR 0013): при WARM_ON_START прогреть
-    ТОЛЬКО auto_eligible (нетронутый PENDING) кандидатов. Гейты — WARM_ON_START первым + общий `_warm_gate`.
-    Идемпотентно (has_active→skip; рестарт — reconcile → has_active). Сеть per-coin fail-soft — не валит старт."""
+    """Авто-подхват живых сетапов на СТАРТЕ (Веха 5.8 под-шаг 3b, ADR 0013): при WARM_ON_START прогреть
+    ТОЛЬКО auto_eligible (нетронутый PENDING). Гейт WARM_ON_START ПЕРВЫМ (дефолт False → чистый no-op, без
+    сети — путь флота неизменен) → делегирует общему `warm_auto_now` (ADR-0021: тот же проход у самохода/горна)."""
     try:
         eff = cfg.effective(strict=True)
     except (ConfigError, KeyError, ValueError, TypeError, AttributeError) as e:
@@ -254,19 +282,8 @@ def warm_start_auto(broker, state, cfg, ledger, executor, working_provider, symb
         return
     if not eff["WARM_ON_START"]:                          # ПЕРВЫМ (дефолт False → чистый no-op, без сети)
         return
-    reason = _warm_gate(eff, state, ledger, broker)
-    if reason is not None:
-        logger.warning("warm-старт: %s → прогрев блокирован", reason)
-        return
-    _configure_executor(executor, eff, ledger, working_provider)   # иначе executor.sizing=None → пустая постановка
-    n = 0
-    for s in symbols:                                     # ошибка/сеть по монете НЕ валит старт
-        try:
-            n += _warm_one(broker, state, executor, eff, s, cursors, logger=logger)
-        except Exception as e:
-            logger.warning("%s: warm-старт пропущен по монете (%s)", s, e)
-    if n:
-        logger.info("warm-старт: подхвачено %d сетап(ов)", n)
+    warm_auto_now(broker, state, cfg, ledger, executor, working_provider, symbols, cursors,
+                  logger=logger, label="warm-старт")
 
 
 def _warm_one(broker, state, executor, eff, s, cursors, *, logger):

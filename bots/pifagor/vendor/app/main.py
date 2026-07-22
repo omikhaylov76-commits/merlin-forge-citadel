@@ -40,10 +40,25 @@ from execution import protection  # noqa: E402
 from execution.actions import PENDING  # noqa: E402
 from execution.executor import Executor, InstrumentMeta  # noqa: E402
 from app.cycle import (  # noqa: E402
-    run_4h_cycle, run_15m_tick, maybe_flatten_all, warm_start_auto, write_warm_candidates,
+    run_4h_cycle, run_15m_tick, maybe_flatten_all, warm_start_auto, warm_auto_now, write_warm_candidates,
     write_scan_snapshot, maybe_warm, journal_sync, JOURNAL_INTERVAL_MS,
 )
 from market.klines_4h import FOUR_HOUR_MS  # noqa: E402
+
+
+def _signal_tf_ms(tf):
+    """SIGNAL_TF ('4h'/'1h'/'15m'/'1d') → период в мс (ADR-0021: ритм цикла/самохода из настроек, не
+    хардкод FOUR_HOUR_MS). ИНВАРИАНТ (страж флота, тест): _signal_tf_ms('4h') == FOUR_HOUR_MS == 14_400_000."""
+    s = str(tf).strip().lower()
+    unit, num = s[-1:], s[:-1]
+    try:
+        val = int(num)
+    except ValueError:
+        raise ValueError("SIGNAL_TF=%r — не разобрать" % tf) from None
+    mult = {"m": 60_000, "h": 3_600_000, "d": 86_400_000}.get(unit)
+    if mult is None or val <= 0:
+        raise ValueError("SIGNAL_TF=%r — неизвестный ТФ" % tf)
+    return val * mult
 
 
 class PifagorApp:
@@ -182,6 +197,16 @@ class PifagorApp:
         # 10. Тёплый старт (5.8 п.3b): авто-подхват auto_eligible PENDING при WARM_ON_START. В КОНЦЕ __init__
         # (cursors/executor/state готовы). Best-effort — свой try/except внутри, сетевой сбой НЕ валит старт.
         self._maybe_warm_start()
+
+        # ADR-0021 (S8): разъём warm-ритма. Флаг самохода (env, дефолт OFF → флот/paper не задеты; проверяется
+        # ДО авто-warm в _maybe_4h_cycle, fail-closed). Курсор горна in-memory, init=latest → рестарт не
+        # повторяет уже поданный интент (≤1 повтор безопасен: has_active-skip).
+        self._warm_each_cycle = os.environ.get("WARM_EACH_CYCLE", "").strip() == "1"
+        try:
+            _wlast = self.state.db.config_log_latest("WARM_AUTO_NOW")
+            self._warm_auto_now_ack = int(_wlast["id"]) if _wlast else 0
+        except Exception:  # noqa: BLE001 — нет строки/битая БД → с нуля (горн сработает на след. интент)
+            self._warm_auto_now_ack = 0
 
         # 11. WS-тень (5.2 п6, measure-first): наблюдательный execution-стрим для замера края 5.6. В КОНЦЕ
         # __init__ — ПОСЛЕ advisory-lock (иначе overlap-передеплой = 2-я тень-писатель ws_exec; ADR 0014) и
@@ -324,6 +349,7 @@ class PifagorApp:
         self._account_snapshot(now_ms, positions)           # КЕЙСТОУН (5.4b): снимок счёта в БД — оживляет монитор
         self._maybe_flatten_all(now_ms)                     # энфорсмент «Закрыть всё» (5.3c) ДО ведения монет
         self._maybe_warm()                                  # консьюмер «Прогреть выбранные» (5.8 п.4b) ДО ведения
+        self._maybe_warm_auto_now()                         # ГОРН (ADR-0021): интент WARM_AUTO_NOW → разовый авто-warm auto_eligible
         try:
             _eff = self.cfg.effective()
             reanchor_v3 = bool(_eff.get("REANCHOR_AFTER_SCALP", False))   # v3-режим (override←env), fail-safe False
@@ -585,10 +611,29 @@ class PifagorApp:
         except Exception as e:
             self.log.warning("warm-старт: пропуск (ошибка): %s", e)
 
+    def _maybe_warm_auto_now(self):
+        """ГОРН (ADR-0021): интент WARM_AUTO_NOW (адаптер по кнопке scan_now) → РАЗОВЫЙ авто-warm auto_eligible
+        по текущей вселенной. Single-shot по in-memory курсору (init=latest на старте → рестарт не повторяет
+        старый интент; ≤1 повтор безопасен — has_active-skip). Гейты/cap/auto_eligible — внутри warm_auto_now."""
+        try:
+            latest = self.state.db.config_log_latest("WARM_AUTO_NOW")
+        except Exception as e:  # noqa: BLE001 — чтение интента не удалось → пропуск тика (не валим ведение)
+            self.log.warning("горн: чтение WARM_AUTO_NOW не удалось: %s", e)
+            return
+        if latest is None or int(latest["id"]) <= self._warm_auto_now_ack:
+            return
+        try:
+            warm_auto_now(self.broker, self.state, self.cfg, self.ledger, self.executor,
+                          self.working_provider, self.symbols, self.cursors, logger=self.log, label="горн")
+        except Exception as e:  # noqa: BLE001 — сбой прохода не валит воркер (per-coin fail-soft внутри)
+            self.log.error("горн-warm упал: %s", e)
+        self._warm_auto_now_ack = int(latest["id"])         # single-shot: интент исполнен (ack как WARM_APPLY)
+
     def _maybe_4h_cycle(self, now_ms):
-        """Раз на 4h-границу UTC (по часам, не по свече → нет 0×/10×): торговый цикл. _last_4h_boundary
-        in-memory (сброс на рестарте = no-backfill). Зовётся ПОСЛЕ 15m-тика. Сбой цикла не валит воркер."""
-        b4 = (now_ms // FOUR_HOUR_MS) * FOUR_HOUR_MS
+        """Раз на границу SIGNAL_TF UTC (по часам, не по свече → нет 0×/10×): торговый цикл + самоход-warm
+        (ADR-0021). _last_4h_boundary in-memory (сброс на рестарте = no-backfill). Зовётся ПОСЛЕ 15m-тика."""
+        step = _signal_tf_ms(config.strategy.SIGNAL_TF)     # ADR-0021: ритм из настроек; "4h"==FOUR_HOUR_MS (тождество, страж флота)
+        b4 = (now_ms // step) * step
         if b4 <= self._last_4h_boundary:
             return
         self._last_4h_boundary = b4
@@ -599,6 +644,14 @@ class PifagorApp:
             self.log.error("4h-цикл упал (не валим воркер): %s", e)
         self._write_warm_candidates()                       # снимок warm-кандидатов для превью дашборда (5.8 п.4a)
         self._write_scan_snapshot(now_ms)                   # снимок 4h-скана (bot_health 2b) — карточка «Здоровье и работа»
+        # САМОХОД (ADR-0021): авто-warm auto_eligible на границе SIGNAL_TF для монет БЕЗ активного сетапа.
+        # Гейт fail-closed — флаг OFF → warm_auto_now НЕ зовётся вообще (путь флота не меняется ни на инструкцию).
+        if self._warm_each_cycle:
+            try:
+                warm_auto_now(self.broker, self.state, self.cfg, self.ledger, self.executor,
+                              self.working_provider, self.symbols, self.cursors, logger=self.log, label="самоход")
+            except Exception as e:
+                self.log.error("самоход-warm упал (не валим воркер): %s", e)
 
     def _write_warm_candidates(self):
         """Снимок warm-кандидатов в БД на 4h-границе (5.8 п.4a) — превью дашборда (под-шаг 5). Свой try/except:
