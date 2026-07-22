@@ -68,6 +68,7 @@ def test_scout_schema_field_structure():
         "orders", "position", "scan_ts", "orders_ts", "data_upto", "detector_version",
         "config_fingerprint", "config_mismatch", "producer",
         "verified",   # S8/F-scout-snap: levels = реальная сетка сделки движка (held), опциональное
+        "engine",     # S8 единая Разведка: правда движка per-coin (факты classify), опц.
     }
     assert set(item["required"]) == {
         "symbol", "tf", "state", "score", "scan_ts", "orders_ts", "data_upto",
@@ -84,3 +85,11 @@ def test_scout_schema_field_structure():
         "order_id", "side", "type", "px", "qty", "status",
     }
     assert set(props["position"]["properties"]) == {"side", "avg_px", "size", "live_pnl"}
+    # S8 единая Разведка: правда движка — факты warm.classify (лексика причин — в консоли)
+    eng = props["engine"]
+    assert set(eng["properties"]) == {
+        "kind", "auto_eligible", "reanchored", "in_universe",
+        "side", "age_bars", "entries", "stop", "targets", "est_risk_pct",
+    }
+    assert set(eng["required"]) == {"kind", "auto_eligible", "reanchored", "in_universe"}
+    assert eng["properties"]["kind"]["enum"] == ["PENDING", "OPEN", None]

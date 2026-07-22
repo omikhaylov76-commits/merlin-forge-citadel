@@ -40,6 +40,7 @@ class PifagorCartridge:
         self._last_scout_mono: float | None = None
         self._last_scan_ms = 0
         self._last_held: frozenset[str] = frozenset()   # для re-push при смене held (F-scout-snap)
+        self._last_universe: frozenset[str] | None = None  # re-push при смене стека (in_universe)
         self._trade_cursor = 0
         self._event_cursor = 0
 
@@ -71,6 +72,15 @@ class PifagorCartridge:
         self._push_scout(mono, held)
         return self._handle_command(now, mono)
 
+    def _universe(self) -> frozenset[str] | None:
+        """Рабочий набор движка для правды движка снимков (S8 единая Разведка): символы стека
+        динамики. None — провайдера нет (фикс-бот) → адаптер возьмёт статичную вселенную."""
+        if self._provider is None:
+            return None
+        items = (self._provider.view() or {}).get("items") or []
+        return frozenset(
+            s for s in (str(i.get("symbol") or "").strip().upper() for i in items) if s)
+
     def _push_scout(self, mono: float, held: frozenset[str] = frozenset()) -> None:
         """Пуш scout-снимка при НОВОМ scan_ts (не каждый цикл; сканы редки). Отдельная scout.db.
         Пустой набор → пушим (replace: сетапы исчезли → ядро чистит). scout выключен → no-op.
@@ -81,19 +91,22 @@ class PifagorCartridge:
         if self._last_scout_mono is not None and mono - self._last_scout_mono < iv:
             return
         self._last_scout_mono = mono
+        universe = self._universe()
         try:
-            scan_ms, snaps = self._scout.build_snapshots(held=held)
+            scan_ms, snaps = self._scout.build_snapshots(held=held, universe=universe)
         except Exception:  # noqa: BLE001 — scout.db недоступна/битая → пропуск, цикл не роняем
             log.exception("scout: сбор снимков упал — пропуск")
             return
         if scan_ms == 0:
             return                                          # скаут ещё не сканировал — нечего слать
-        if scan_ms <= self._last_scan_ms and self._last_scan_ms != 0 and held == self._last_held:
-            return              # не новый скан И held не менялся — не долбим ядро; смена held
-            #                     (открылась/закрылась позиция) → re-push c verified (F-scout-snap)
+        if (scan_ms <= self._last_scan_ms and self._last_scan_ms != 0
+                and held == self._last_held and universe == self._last_universe):
+            return              # не новый скан И held/стек не менялись — не долбим ядро; смена held
+            #                     (позиция) → re-push verified; смена стека → re-push in_universe
         if self._send(lambda: self._client.push_scout(snaps), "scout"):
             self._last_scan_ms = scan_ms
             self._last_held = held
+            self._last_universe = universe
 
     def _push_telemetry(self, monitor: dict, now: datetime) -> None:
         # equity — точка за ts=now; дедуп ядром по (instance, ts). Сбой → новая точка на след. тике.

@@ -132,6 +132,23 @@ class ScoutConfigMismatchIn(BaseModel):
     details: dict[str, Any] | None = None
 
 
+class ScoutEngineIn(BaseModel):
+    """ПРАВДА ДВИЖКА per-coin (S8 единая Разведка): факты warm.classify той же функции, что
+    решает постановку. Снимок скаута, не живой тик (дисклеймер — на консоли)."""
+
+    model_config = {"extra": "forbid"}
+    kind: Literal["PENDING", "OPEN"] | None  # обязателен И nullable: null = активного сетапа нет
+    auto_eligible: bool
+    reanchored: bool
+    in_universe: bool          # монета в рабочем наборе движка (F-lookahead «мимо списка»)
+    side: str | None = Field(default=None, max_length=8)
+    age_bars: int | None = Field(default=None, ge=0)
+    entries: dict[str, float] | None = None       # {"0.382"/"0.5"/"0.618": цена}
+    stop: float | None = Field(default=None, gt=0)
+    targets: dict[str, float] | None = None
+    est_risk_pct: float | None = None
+
+
 class ScoutSnapshotIn(BaseModel):
     """Один снимок сетапа per (symbol, tf). Инстанс — из токена (SEC7), в теле его НЕТ."""
 
@@ -156,6 +173,9 @@ class ScoutSnapshotIn(BaseModel):
     # S8/F-scout-snap: levels — реальная сетка сделки движка (warm-реплей) для held-символа,
     # не оценка скаута. Аддитивное поле; None = обычный скаут-снимок.
     verified: bool | None = None
+    # S8 единая Разведка: правда движка per-coin (факты warm.classify). None = не посчитана
+    # («неизвестно», не «не берёт») — старые картриджи/не-4h находки шлют без ключа.
+    engine: ScoutEngineIn | None = None
 
 
 @router.post("/heartbeat", status_code=status.HTTP_204_NO_CONTENT)

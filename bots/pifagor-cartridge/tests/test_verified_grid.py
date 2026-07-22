@@ -79,9 +79,9 @@ def test_verified_override_for_held_finding(tmp_path, monkeypatch):
           "A": 1.0, "B": 2.0, "entries": {"0.382": 1.618, "0.5": 1.5, "0.618": 1.382},
           "stop": 1.0}],
         NOW, "4h")
-    monkeypatch.setattr(r, "_verified_grid", lambda sym: {
+    monkeypatch.setattr(r, "_classify", lambda sym: (True, {
         "A": 8.0, "B": 10.0, "stop": 8.0,
-        "entries": {0.382: 9.236, 0.5: 9.0, 0.618: 8.764}})
+        "entries": {0.382: 9.236, 0.5: 9.0, 0.618: 8.764}}))
     _, snaps = r.build_snapshots(held=frozenset({"XUSDT"}))
     (s,) = snaps
     assert s["verified"] is True

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import UTC, datetime
 
 from app import mapper
@@ -53,6 +54,14 @@ class ScoutReader:
         self._scout_stop_fib = float(getattr(_exec, "STOP_FIB", 1.0))
         self._detector = detector_version
         self._producer = producer
+        # Статичная вселенная ФИКС-бота (enabled COINS_CONFIG на буте) — для in_universe правды
+        # движка, когда провайдера динамики нет. Снимок ДО любых setdefault-засевов _classify
+        # (засев делает classify-гард проходимым для чужих монет и растёт по ходу — членством
+        # в наборе движка он НЕ является).
+        self._static_universe = frozenset(
+            str(sym).upper() for sym, c in (_vcfg.strategy.COINS_CONFIG or {}).items()
+            if isinstance(c, dict) and c.get("enabled")
+        )
 
     def _scan_cursor(self) -> int:
         """Курсор последнего СКАНА СЕТАПОВ (Этап B / кнопка) из scout_control. last_a_ms исключён
@@ -109,16 +118,20 @@ class ScoutReader:
         Вендорский `mark` (last_a_ms в whitelist; targeted UPDATE, scan_now не клоббер)."""
         self.scout_db.scout_control_mark(last_a_ms=0)
 
-    def _verified_grid(self, symbol: str) -> dict | None:
-        """Реальная сетка сделки held-символа: warm-реплей (`strategy.warm.classify` — ТА ЖЕ
-        функция, что решает постановку движком) на 4h-свечах из кэша скаута. None — свечей
-        мало / реплей не дал активного сетапа (4h-прокси; честно без сетки, не выдумываем).
-        COINS_CONFIG-гард: символ, вошедший в стек после бута адаптера, до-вписываем дефолтом
-        динамики (только in-memory этого процесса; vendor-код не трогается)."""
+    def _classify(self, symbol: str) -> tuple[bool, dict | None]:
+        """warm-реплей символа на 4h-свечах кэша скаута → (посчиталось, дескриптор|None).
+
+        Трёхзначно — правде движка нужна разница «вердикта нет» и «вердикт неизвестен»:
+          (True, dict)  — активный сетап (PENDING/OPEN, факты для engine-поля);
+          (True, None)  — ЧЕСТНЫЙ вердикт «активного сетапа нет» (реплей закрыл / нет пробоя);
+          (False, None) — посчитать не вышло (мало свечей / сбой) → снимок БЕЗ engine-поля.
+        `strategy.warm.classify` — ТА ЖЕ функция, что решает постановку движком (самоход/кнопка).
+        COINS_CONFIG-гард: символ вне конфига до-вписываем дефолтом динамики (in-memory этого
+        процесса; vendor-код не трогается) — иначе classify-гард молча даст None на чужой монете."""
         try:
             rows = self.scout_db.scout_klines_read_window(symbol, "4h", 300) or []
             if len(rows) < 60:                    # короткая серия → реплей недостоверен
-                return None
+                return False, None
             import numpy as np
             o = np.array([float(r["open"]) for r in rows])
             h = np.array([float(r["high"]) for r in rows])
@@ -127,10 +140,28 @@ class ScoutReader:
             t4 = np.array([int(r["time"]) for r in rows], dtype=np.int64)
             from app.dynamic_universe import _DEFAULT_COIN  # един. источник дефолт-блока динамики
             self._vendor_cfg.strategy.COINS_CONFIG.setdefault(symbol, dict(_DEFAULT_COIN))
-            return self._warm_classify(o, h, low, c, t4, symbol)
-        except Exception:  # noqa: BLE001 — сетка не посчиталась → снимок без verified, не роняем
-            log.exception("verified-grid %s: реплей упал — без сетки", symbol)
-            return None
+            return True, self._warm_classify(o, h, low, c, t4, symbol)
+        except Exception:  # noqa: BLE001 — реплей упал → «неизвестно», телеметрию не роняем
+            log.exception("warm-реплей %s упал — снимок без правды движка", symbol)
+            return False, None
+
+    def _verified_grid(self, symbol: str) -> dict | None:
+        """Реальная сетка сделки held-символа (F-scout-snap): дескриптор реплея либо None
+        (не посчиталось ИЛИ активного сетапа нет — честно без сетки, не выдумываем)."""
+        ok, desc = self._classify(symbol)
+        return desc if ok else None
+
+    def _truth(
+        self, symbol: str, universe: frozenset[str] | None,
+    ) -> tuple[bool, dict | None, dict | None]:
+        """(посчиталось, дескриптор, engine-поле) ОДНИМ реплеем — held-снимку нужны и сетка,
+        и правда движка; двойной прогон classify на монету был бы вдвое дороже зря.
+        universe — стек динамики (провайдер); None → статичная вселенная фикс-бота (бут-снимок)."""
+        ok, desc = self._classify(symbol)
+        if not ok:
+            return False, None, None
+        pool = universe if universe is not None else self._static_universe
+        return True, desc, mapper.engine_truth(desc, in_universe=symbol.upper() in pool)
 
     @staticmethod
     def _apply_grid(merged: dict, grid: dict) -> None:
@@ -139,13 +170,20 @@ class ScoutReader:
         merged["A"], merged["B"], merged["stop"] = grid["A"], grid["B"], grid["stop"]
         merged["entries"] = {str(k): v for k, v in (grid.get("entries") or {}).items()}
 
-    def build_snapshots(self, held: frozenset[str] = frozenset()) -> tuple[int, list[dict]]:
+    def build_snapshots(
+        self, held: frozenset[str] = frozenset(), universe: frozenset[str] | None = None,
+    ) -> tuple[int, list[dict]]:
         """(scan_ms, список контрактных снимков). Пустой список = у скаута сейчас нет находок.
 
         held (F-scout-snap, S8): символы с живой позицией/ордером. Для них: (а) уровни находки
         ЗАМЕНЯЮТСЯ реальной сеткой сделки (warm-реплей) + verified=true; (б) если скаут символ
         уже НЕ отслеживает (committed ушёл из находок) — снимок СИНТЕЗИРУЕТСЯ (сетка + живые
-        ордера/позиция + свечи из кэша), чтобы график не пропадал ровно когда позиция открыта."""
+        ордера/позиция + свечи из кэша), чтобы график не пропадал ровно когда позиция открыта.
+
+        universe (S8 единая Разведка): рабочий набор движка (стек динамики; None → статичная
+        вселенная фикс-бота). КАЖДАЯ 4h-находка получает поле `engine` (правда движка: тот же
+        warm-реплей, что решает постановку) — доска-по-вердикту консоли строится из этих фактов.
+        Реплей не посчитался → снимок без engine («неизвестно» ≠ «не берёт»)."""
         scan_ms = self._scan_cursor()          # триггер+scan_ts по scout_control, не по meta
         sv = self._build_scout(self.scout_db) or {}
         findings = sv.get("findings") or []
@@ -158,18 +196,21 @@ class ScoutReader:
         orders_iso = datetime.now(UTC).isoformat()  # orders_ts = момент чтения книги движка
         out = []
         seen_4h: set[str] = set()
+        t_truth = time.monotonic()
         for f in findings:
             sym, tf = f.get("symbol"), f.get("tf") or "4h"
             chart = self._chart(sym, tf)                          # свечи скан-ТФ + сырая находка
             raw = chart.get("finding") or {}                     # A/B/entries/stop из payload
             merged = {**f, **raw}                                 # плоский вид + сырые уровни
             verified = False
-            if sym in held and tf == "4h":
-                grid = self._verified_grid(sym)
-                if grid is not None:
-                    self._apply_grid(merged, grid)        # график = сетка сделки, не догадка
-                    verified = True
-                seen_4h.add(sym)
+            engine = None
+            if tf == "4h":                     # правда движка — только торговый ТФ (SIGNAL_TF)
+                ok, desc, engine = self._truth(sym, universe)
+                if sym in held:
+                    if ok and desc is not None:
+                        self._apply_grid(merged, desc)    # график = сетка сделки, не догадка
+                        verified = True
+                    seen_4h.add(sym)
             data_ms = self._data_upto_ms(sym, tf) or scan_ms
             out.append(mapper.scout_snapshot(
                 merged, worker_eff=worker_eff, scout_stop_fib=self._scout_stop_fib,
@@ -177,14 +218,14 @@ class ScoutReader:
                 detector_version=self._detector, producer=self._producer,
                 scan_ts_iso=scan_iso, orders_ts_iso=orders_iso, data_upto_iso=_iso_ms(data_ms),
                 candles=chart.get("candles"), klines_tf=tf,       # klines_tf = tf сетапа
-                verified=verified,
+                verified=verified, engine=engine,
             ))
         for sym in sorted(held - seen_4h):     # held без 4h-находки → синтез (график не пропадает)
-            grid = self._verified_grid(sym)
+            ok, desc, engine = self._truth(sym, universe)
             chart = self._chart(sym, "4h")
             fake: dict = {"symbol": sym, "tf": "4h", "status": "tracking", "score": 0}
-            if grid is not None:
-                self._apply_grid(fake, grid)
+            if ok and desc is not None:
+                self._apply_grid(fake, desc)
             data_ms = self._data_upto_ms(sym, "4h") or scan_ms
             out.append(mapper.scout_snapshot(
                 fake, worker_eff=worker_eff, scout_stop_fib=self._scout_stop_fib,
@@ -192,8 +233,11 @@ class ScoutReader:
                 detector_version=self._detector, producer=self._producer,
                 scan_ts_iso=scan_iso, orders_ts_iso=orders_iso, data_upto_iso=_iso_ms(data_ms),
                 candles=chart.get("candles"), klines_tf="4h",
-                verified=grid is not None,
+                verified=ok and desc is not None, engine=engine,
             ))
+        # Замер прохода правды движка (план слоя 1): десятки монет × numpy-реплей — должен быть
+        # дёшев; если на живом станет дорого, увидим в логе, не гадая.
+        log.info("scout: снимков %d, правда движка за %.2fс", len(out), time.monotonic() - t_truth)
         return scan_ms, out
 
     def _chart(self, symbol, tf) -> dict:

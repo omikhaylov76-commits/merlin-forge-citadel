@@ -116,3 +116,48 @@ def test_snapshot_with_candles():
 def test_snapshot_no_candles_omits_klines():
     s = _snap(_READY)  # candles=None → klines/klines_tf опущены (валидно)
     assert "klines" not in s and "klines_tf" not in s
+
+
+# ── engine_truth (S8 единая Разведка): дескриптор warm.classify → факты Контракта ──────────
+
+_DESC = {
+    "kind": "PENDING", "auto_eligible": True, "reanchored": False, "side": "long",
+    "age_bars": 2, "entries": {0.382: 103.423, 0.5: 102.75, 0.618: 102.077},
+    "stop": 99.9, "targets": {0.382: 108.0}, "est_risk_pct": 3.4,
+}
+
+
+def test_engine_truth_maps_descriptor_facts():
+    e = mapper.engine_truth(_DESC, in_universe=True)
+    assert e["kind"] == "PENDING" and e["auto_eligible"] is True and e["reanchored"] is False
+    assert e["in_universe"] is True and e["side"] == "long" and e["age_bars"] == 2
+    assert e["entries"]["0.382"] == 103.423 and e["stop"] == 99.9   # ключи-строки (JSON)
+    assert e["targets"]["0.382"] == 108.0 and e["est_risk_pct"] == 3.4
+
+
+def test_engine_truth_none_descriptor_is_honest_verdict():
+    """None-дескриптор = «активного сетапа нет» — поле ЕСТЬ, kind=null (не «неизвестно»)."""
+    e = mapper.engine_truth(None, in_universe=False)
+    assert e == {"kind": None, "auto_eligible": False, "reanchored": False, "in_universe": False}
+
+
+def test_engine_truth_drops_invalid_prices():
+    d = {**_DESC, "entries": {0.382: 0.0, 0.5: -1.0}, "stop": 0.0, "targets": {}}
+    e = mapper.engine_truth(d, in_universe=True)
+    assert "entries" not in e and "stop" not in e and "targets" not in e
+
+
+def test_snapshot_with_engine_schema_valid():
+    s = _snap(_READY, engine=mapper.engine_truth(_DESC, in_universe=True))
+    jsonschema.validate(s, _ITEM, format_checker=_FMT)
+    assert s["engine"]["kind"] == "PENDING"
+
+
+def test_snapshot_with_null_verdict_engine_schema_valid():
+    s = _snap(_READY, engine=mapper.engine_truth(None, in_universe=True))
+    jsonschema.validate(s, _ITEM, format_checker=_FMT)
+    assert s["engine"]["kind"] is None
+
+
+def test_snapshot_without_engine_unchanged():
+    assert "engine" not in _snap(_READY)          # аддитивность: прежние потребители чисты

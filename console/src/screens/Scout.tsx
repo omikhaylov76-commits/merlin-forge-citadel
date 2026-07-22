@@ -9,34 +9,45 @@ import {
   getBasket,
   getDozorSettings,
   removeBasketItem,
+  warmApply,
   type ScoutSnapshot,
   visibleScoutInstances,
 } from '@/lib/api'
-import { boardColumn, COLUMNS, loadScoutBoard, sortSnaps } from '@/lib/scout'
+import {
+  loadScoutBoard,
+  sortSnaps,
+  TRADING_TF,
+  VERDICT_COLUMNS,
+  verdictColumn,
+} from '@/lib/scout'
 import { ScoutCard } from './scout/ScoutCard'
 import { ScoutDetail } from './scout/ScoutDetail'
 import { ProducerLabel, StaleBadge } from './scout/Badges'
 import { DozorStrip } from './scout/DozorStrip'
 import { DozorPanel } from './scout/DozorPanel'
 
-// Экран Разведка (#53, макет kuznitsa-walkthrough Экран 1): ЖИВОЙ readout /v1/instances/{id}/scout.
-// Консоль = ДИСПЛЕЙ снимка скаута; производные (%-до-входа/свежесть) — на фронте, честно подписаны.
+// ЕДИНАЯ Разведка (S8, подпись Куратора): один экран «чьими глазами смотрим» — селектор бота
+// правит всем; доска = 4 колонки ПО ВЕРДИКТУ ДВИЖКА (факты engine из снимка: warm-реплей той же
+// функции, что ставит ордера), не по стадии скаута. «Представителя» больше нет. Торговый ТФ
+// НАСЛЕДУЕТСЯ от бота (readout, не тумблер). Всё — СНИМОК скаута, не живой тик (дисклеймер).
+const SELECTED_KEY = 'mfc.scout.selected' // последний выбранный бот переживает перезагрузку
+
 export function Scout() {
   const board = useAsync(loadScoutBoard, [])
-  const [selected, setSelected] = useState<string | null>(null)
-  const [onlyReady, setOnlyReady] = useState(false)
+  const [selected, setSelected] = useState<string | null>(
+    () => localStorage.getItem(SELECTED_KEY) || null,
+  )
   const [minScore, setMinScore] = useState(false)
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null)
-  const [tf, setTf] = useState<'4h' | '1h'>('4h') // С7-1: активный ТФ доски
-  const [panelOpen, setPanelOpen] = useState(false) // Разведка-стол: рояль настроек дозора
-  // настройки дозора выбранного инстанса (питают плашку+рояль); Набор — счётчик в плашке
+  const [panelOpen, setPanelOpen] = useState(false) // рояль настроек дозора
+  // «Поставить» на карточке (колонка «нужна кнопка», ADR-0022): per-монета idle→busy→sent(⏳);
+  // sent держим до ~16 мин (ближайший 15m-тик исполнит; движок сам валидирует).
+  const [warmSent, setWarmSent] = useState<Record<string, 'busy' | 'sent'>>({})
   const dozor = useAsync(
     () => (selected ? getDozorSettings(selected) : Promise.resolve(null)),
     [selected],
   )
   const basket = useAsync(getBasket, [])
-  // НАБОР-1 на доске: карта «symbol|tf → id» для звёздочек на карточках (фидбэк Оператора —
-  // видно без захода в деталь). Тот же паттерн, что на Скринере.
   const [starBusy, setStarBusy] = useState<string | null>(null)
   const inBasket = useMemo(() => {
     const m = new Map<string, string>()
@@ -55,7 +66,7 @@ export function Scout() {
           symbol: s.symbol,
           tf: s.tf,
           source: 'scout',
-          context: { score: s.score, stage: s.state },
+          context: { score: s.score, stage: s.state, verdict: verdictColumn(s) },
         })
       }
       basket.reload()
@@ -64,35 +75,58 @@ export function Scout() {
     }
   }
 
-  // дефолт селектора = инстанс с самыми свежими снимками (режим представителя, ADR-0016 в.6);
-  // сброс, если выбранный инстанс исчез из обновлённого флота (иначе показ пустого не того бота).
+  const doWarm = async (s: ScoutSnapshot) => {
+    if (!selected || warmSent[s.symbol]) return
+    setWarmSent((m) => ({ ...m, [s.symbol]: 'busy' }))
+    try {
+      // НАКОПИТЕЛЬНЫЙ список: вендор single-shot читает ПОСЛЕДНИЙ интент — одиночная монета
+      // затёрла бы прежние клики до тика (Icebox №1). Шлём все ⏳-монеты разом; уже
+      // поставленные движок не задвоит (has_active→skip).
+      const coins = [...Object.keys(warmSent).filter((c) => warmSent[c] === 'sent'), s.symbol]
+      await warmApply(selected, coins)
+      setWarmSent((m) => ({ ...m, [s.symbol]: 'sent' }))
+      window.setTimeout(() => {
+        setWarmSent((m) => {
+          const rest = { ...m }
+          delete rest[s.symbol]
+          return rest
+        })
+      }, 16 * 60_000) // тик прошёл: годный уже «в работе», негодный движок пропустил
+    } catch {
+      setWarmSent((m) => {
+        const rest = { ...m }
+        delete rest[s.symbol]
+        return rest
+      })
+    }
+  }
+
+  // Выбранный бот: последний сохранённый, иначе первый видимый. Сброс — если исчез из флота.
   useEffect(() => {
     if (!board.data) return
-    const vis = visibleScoutInstances(board.data.instances)
-    const ids = vis.map((i) => i.id)
+    const ids = visibleScoutInstances(board.data.instances).map((i) => i.id)
     if (selected == null || !ids.includes(selected)) {
-      // дефолт = свежайший ИЗ ВИДИМЫХ (Галахад/Персиваль), иначе первый видимый
-      const fresh = vis.some((i) => i.id === board.data!.freshest) ? board.data!.freshest : null
-      setSelected(fresh ?? vis[0]?.id ?? null)
+      setSelected(ids[0] ?? null)
     }
   }, [board.data, selected])
+  useEffect(() => {
+    if (selected) localStorage.setItem(SELECTED_KEY, selected)
+  }, [selected])
 
   const instances = board.data ? visibleScoutInstances(board.data.instances) : []
+  const selInst = instances.find((i) => i.id === selected)
   const byInstance = board.data?.byInstance ?? {}
   const hasAnyData = Object.values(byInstance).some((s) => s.length > 0)
-  const snaps = selected ? (byInstance[selected] ?? []) : [] // ВСЕ ТФ выбранного инстанса
-  // С7-1: доска tf-aware — колонки/пустые/свежесть считаем по активному ТФ; счётчики чипов — от полного snaps.
-  const count4h = snaps.filter((s) => s.tf === '4h').length
-  const count1h = snaps.filter((s) => s.tf === '1h').length
-  const tfSnaps = snaps.filter((s) => s.tf === tf)
+  const snaps = selected ? (byInstance[selected] ?? []) : []
+  // Доска — ТОЛЬКО торговый ТФ бота (наследуется, тумблера нет). Прочие ТФ — свёрнутый хвост.
+  const tfSnaps = snaps.filter((s) => s.tf === TRADING_TF)
+  const otherTfCount = snaps.length - tfSnaps.length
   const producer = tfSnaps[0]?.producer ?? snaps[0]?.producer ?? '—'
   const freshest = tfSnaps.reduce<ScoutSnapshot | null>(
     (a, s) => (!a || Date.parse(s.scan_ts) > Date.parse(a.scan_ts) ? s : a),
     null,
   )
-  // свежесть скана для плашки дозора — время ПРИЁМА свежайшего пуша ядром (received_at ≈ конец
-  // скана; фидбэк Оператора: «нажал сканировать — показывай текущее время»). scan_ts не годится:
-  // для boundary-сканов это округлённая граница ТФ (16:00), для кнопки — момент клика, не финиша.
+  // свежесть скана для плашки дозора — время ПРИЁМА свежайшего пуша ядром (received_at)
   const scanTs = snaps.reduce<string | undefined>(
     (a, s) => {
       const t = s.received_at || s.scan_ts
@@ -101,23 +135,13 @@ export function Scout() {
     undefined,
   )
 
-  // С7-1: дефолт ТФ = ТФ самого свежего снимка инстанса; пере-выводим при смене инстанса/данных
-  // (ручной клик по чипу живёт до следующей смены инстанса — эффект не зависит от tf).
-  useEffect(() => {
-    const list = selected ? (byInstance[selected] ?? []) : []
-    if (!list.length) return
-    const fresh = list.reduce((a, s) => (Date.parse(s.scan_ts) > Date.parse(a.scan_ts) ? s : a))
-    setTf(fresh.tf)
-  }, [selected, byInstance])
-
   const byCol = useMemo(() => {
-    let list = snaps.filter((s) => s.tf === tf) // С7-1: только активный ТФ
-    if (onlyReady) list = list.filter((s) => boardColumn(s) === 'ready')
+    let list = tfSnaps
     if (minScore) list = list.filter((s) => s.score >= 35)
-    const m: Record<string, ScoutSnapshot[]> = { forming: [], tracking: [], ready: [], committed: [] }
-    for (const s of sortSnaps(list)) m[boardColumn(s)].push(s)
+    const m: Record<string, ScoutSnapshot[]> = { in_work: [], auto: [], button: [], skip: [] }
+    for (const s of sortSnaps(list)) m[verdictColumn(s)].push(s)
     return m
-  }, [snaps, tf, onlyReady, minScore])
+  }, [tfSnaps, minScore])
 
   return (
     <div className="mx-auto max-w-[1880px]">
@@ -129,29 +153,32 @@ export function Scout() {
             ? 'загрузка…'
             : board.error
               ? '— · нет связи с ядром'
-              : `снимок скаута · ТФ 4h/1h · ботов: ${instances.length}`
+              : `радар и вердикт движка · глазами одного бота · ботов: ${instances.length}`
         }
         action={
           instances.length > 0 ? (
-            <select
-              value={selected ?? ''}
-              onChange={(e) => {
-                setSelected(e.target.value)
-                setDetail(null)
-              }}
-              className="rounded-pill border border-line bg-card px-3 py-1.5 text-[12px] text-fog"
-            >
-              {instances.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.client} · {i.id.slice(0, 8)}…
-                </option>
-              ))}
-            </select>
+            <label className="flex items-center gap-2 text-[12px] text-fog">
+              смотрим глазами
+              <select
+                value={selected ?? ''}
+                onChange={(e) => {
+                  setSelected(e.target.value)
+                  setDetail(null)
+                  setPanelOpen(false)
+                }}
+                className="rounded-pill border border-line bg-card px-3 py-1.5 text-[12px] text-fog"
+              >
+                {instances.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    ◆ {i.client} · {i.id.slice(0, 8)}…
+                  </option>
+                ))}
+              </select>
+            </label>
           ) : undefined
         }
       />
 
-      {/* Разведка-стол (S7): плашка дозора + рояль настроек — всегда над чипами/доской (по макету) */}
       {selected && dozor.data && (
         <>
           <DozorStrip
@@ -166,6 +193,7 @@ export function Scout() {
           />
           <DozorPanel
             instanceId={selected}
+            botName={selInst?.client ?? '—'}
             live={dozor.data.settings}
             open={panelOpen}
             onApplied={dozor.reload}
@@ -174,28 +202,21 @@ export function Scout() {
       )}
 
       <Toolbar>
-        <Chip
-          active={tf === '4h'}
-          onClick={() => {
-            setTf('4h')
-            setDetail(null)
-          }}
+        <span
+          className="self-center rounded-pill border border-line px-2.5 py-1 text-[11px] text-ash"
+          title="торговый ТФ — свойство бота (SIGNAL_TF генома), Разведка его наследует; выбор ТФ появится в Конструкторе (Ф5)"
         >
-          4h · {count4h}
-        </Chip>
-        <Chip
-          active={tf === '1h'}
-          onClick={() => {
-            setTf('1h')
-            setDetail(null)
-          }}
-        >
-          1h · {count1h}
-        </Chip>
+          торговый ТФ {TRADING_TF} · от бота
+        </span>
+        {otherTfCount > 0 && (
+          <span
+            className="self-center text-[11px] text-steel"
+            title="находки скаута на не-торговом ТФ: движок такие не торгует, доска их не показывает"
+          >
+            + {otherTfCount} на не-торговом ТФ
+          </span>
+        )}
         <span className="mx-1 self-center text-ash">·</span>
-        <Chip active={onlyReady} onClick={() => setOnlyReady((v) => !v)}>
-          Только готовые
-        </Chip>
         <Chip active={minScore} onClick={() => setMinScore((v) => !v)}>
           Скор ≥ 35
         </Chip>
@@ -211,47 +232,58 @@ export function Scout() {
         <EmptyState kind="error" msg={board.error.message} onRetry={board.reload} />
       ) : !hasAnyData ? (
         <EmptyState kind="silent" />
-      ) : snaps.length === 0 ? (
-        <EmptyState kind="quiet" />
       ) : tfSnaps.length === 0 ? (
-        <EmptyState
-          kind="tf-empty"
-          tf={tf}
-          otherHint={tf === '4h' ? `1h · ${count1h}` : `4h · ${count4h}`}
-        />
+        <EmptyState kind="quiet" />
       ) : (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {COLUMNS.map((col) => (
-            <div
-              key={col.key}
-              className={`rounded-card border bg-card p-3 ${
-                col.key === 'ready' ? 'border-gold/25' : 'border-line'
-              }`}
-            >
-              <div className="mb-3 flex items-center justify-between px-1">
-                <span className="text-[12px] font-semibold uppercase tracking-wide text-mist">
-                  {col.label}
-                </span>
-                <span className="text-[11px] text-ash">{byCol[col.key].length}</span>
+        <>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {VERDICT_COLUMNS.map((col) => (
+              <div
+                key={col.key}
+                className={`rounded-card border bg-card p-3 ${
+                  col.key === 'auto'
+                    ? 'border-gold/25'
+                    : col.key === 'button'
+                      ? 'border-copper/25'
+                      : 'border-line'
+                }`}
+              >
+                <div className="mb-3 flex items-center justify-between px-1">
+                  <span
+                    className="text-[12px] font-semibold uppercase tracking-wide text-mist"
+                    title={col.hint}
+                  >
+                    {col.label}
+                  </span>
+                  <span className="text-[11px] text-ash">{byCol[col.key].length}</span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {byCol[col.key].map((s) => (
+                    <ScoutCard
+                      key={s.symbol + s.tf}
+                      snap={s}
+                      onOpen={() => setDetail(s)}
+                      starred={inBasket.has(basketKey(s.symbol, s.tf))}
+                      starBusy={starBusy === basketKey(s.symbol, s.tf)}
+                      onStar={() => toggleStar(s)}
+                      warmState={warmSent[s.symbol] ?? 'idle'}
+                      onWarm={() => doWarm(s)}
+                    />
+                  ))}
+                  {byCol[col.key].length === 0 && (
+                    <div className="px-1 py-2 text-[11px] text-ash">пусто</div>
+                  )}
+                </div>
               </div>
-              <div className="flex flex-col gap-2">
-                {byCol[col.key].map((s) => (
-                  <ScoutCard
-                    key={s.symbol + s.tf}
-                    snap={s}
-                    onOpen={() => setDetail(s)}
-                    starred={inBasket.has(basketKey(s.symbol, s.tf))}
-                    starBusy={starBusy === basketKey(s.symbol, s.tf)}
-                    onStar={() => toggleStar(s)}
-                  />
-                ))}
-                {byCol[col.key].length === 0 && (
-                  <div className="px-1 py-2 text-[11px] text-ash">пусто</div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+          {/* дисклеймер подписи Куратора: вердикт считан по снимку скаута, не по живому тику */}
+          <p className="mt-3 px-1 text-[11px] leading-snug text-ash">
+            Вердикт движка считается по СНИМКУ скаута (свечи его кэша), не по живому тику: на
+            границе бара может кратко разойтись с постановкой. Постановка ордеров идёт по свечам
+            самого движка — «Поставить»/самоход всегда перепроверяют сетап на 15m-тике.
+          </p>
+        </>
       )}
 
       {detail && (
@@ -264,7 +296,7 @@ export function Scout() {
 function SkeletonBoard() {
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      {COLUMNS.map((c) => (
+      {VERDICT_COLUMNS.map((c) => (
         <div key={c.key} className="animate-pulse rounded-card border border-line bg-card p-3">
           <div className="mb-3 h-3 w-24 rounded bg-panel" />
           <div className="flex flex-col gap-2">
@@ -277,19 +309,15 @@ function SkeletonBoard() {
   )
 }
 
-// Три РАЗНЫХ пустых состояния (директива #53 п.7) + ошибка связи.
+// Пустые состояния (#53): ошибка связи / скаут молчит / рынок тихий.
 function EmptyState({
   kind,
   msg,
   onRetry,
-  tf,
-  otherHint,
 }: {
-  kind: 'error' | 'silent' | 'quiet' | 'tf-empty'
+  kind: 'error' | 'silent' | 'quiet'
   msg?: string
   onRetry?: () => void
-  tf?: string
-  otherHint?: string
 }) {
   if (kind === 'error') {
     return (
@@ -311,23 +339,12 @@ function EmptyState({
       </Card>
     )
   }
-  if (kind === 'tf-empty') {
-    return (
-      <Card className="flex flex-col items-center gap-2 py-12 text-center">
-        <div className="text-[15px] text-mist">На ТФ {tf} снимков нет</div>
-        <div className="max-w-md text-[12px] text-ash">
-          У этого бота сейчас нет сетапов на выбранном таймфрейме. Переключись на другой ТФ
-          {otherHint ? ` (${otherHint})` : ''}.
-        </div>
-      </Card>
-    )
-  }
   return (
     <Card className="flex flex-col items-center gap-2 py-12 text-center">
       <div className="text-[15px] text-mist">Рынок тихий — сетапов нет</div>
       <div className="max-w-md text-[12px] text-ash">
-        Скаут этого бота на связи, но сейчас подходящих сетапов не нашёл. Это норма — сетапы
-        бывают не каждый бар.
+        Скаут этого бота на связи, но сейчас подходящих сетапов на торговом ТФ не нашёл. Это
+        норма — сетапы бывают не каждый бар.
       </div>
     </Card>
   )

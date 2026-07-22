@@ -251,16 +251,66 @@ def scout_position(pos: dict | None) -> dict | None:
     }
 
 
+def _price_map(raw: dict | None) -> dict:
+    """{уровень: цена} с валидными ценами (>0); ключи — строки (после JSON '0.382'). Пусто → {}."""
+    out = {}
+    for k, v in (raw or {}).items():
+        price = _num(v)
+        if price > 0:
+            out[str(k)] = price
+    return out
+
+
+def engine_truth(desc: dict | None, *, in_universe: bool) -> dict:
+    """ПРАВДА ДВИЖКА per-coin (S8 единая Разведка) → контрактное поле `engine`.
+
+    desc — дескриптор `warm.classify` (ТА ЖЕ функция, что решает постановку самоходом/кнопкой)
+    либо None = честный вердикт «активного сетапа нет» (реплей закрыл / нет пробоя в окне).
+    Несём ФАКТЫ (kind/auto_eligible/reanchored/in_universe/сетка) — русская лексика причин
+    («созревает/отработан/мимо списка») выводится КОНСОЛЬЮ из фактов, Контракт остаётся чистым.
+    in_universe — монета в рабочем наборе движка (стек динамики / enabled COINS_CONFIG): годный
+    сетап вне набора движок структурно не возьмёт (F-lookahead «мимо списка»)."""
+    out = {
+        "kind": None, "auto_eligible": False, "reanchored": False,
+        "in_universe": bool(in_universe),
+    }
+    if not desc:
+        return out
+    kind = str(desc.get("kind") or "")
+    out["kind"] = kind if kind in ("PENDING", "OPEN") else None
+    out["auto_eligible"] = bool(desc.get("auto_eligible"))
+    out["reanchored"] = bool(desc.get("reanchored"))
+    if desc.get("side"):
+        out["side"] = str(desc["side"])[:8]
+    if desc.get("age_bars") is not None:
+        out["age_bars"] = max(0, int(desc["age_bars"]))
+    entries = _price_map(desc.get("entries"))
+    if entries:
+        out["entries"] = entries
+    stop = _num(desc.get("stop"))
+    if stop > 0:
+        out["stop"] = stop
+    targets = _price_map(desc.get("targets"))
+    if targets:
+        out["targets"] = targets
+    if desc.get("est_risk_pct") is not None:
+        out["est_risk_pct"] = _num(desc["est_risk_pct"])
+    return out
+
+
 def scout_snapshot(
     finding: dict, *, worker_eff: dict, scout_stop_fib: float, orders_raw: list | None,
     position: dict | None, detector_version: str, producer: str,
     scan_ts_iso: str, orders_ts_iso: str, data_upto_iso: str,
     candles: list | None = None, klines_tf: str | None = None, verified: bool = False,
+    engine: dict | None = None,
 ) -> dict:
     """Одна находка скаута → контрактный снимок. Несёт ВСЕ required схемы (вкл. data_upto).
     Свечи скан-ТФ (klines_tf = tf сетапа) — из кэша; младший ТФ прорисовки — задел (ADR-0016 д).
     verified=True: сетка (A/B/levels) — из warm.classify() (та же функция, что реально решает
-    вход) для held-символа, а НЕ независимая оценка скаута — честно, «это подтверждённая сделка»."""
+    вход) для held-символа, а НЕ независимая оценка скаута — честно, «это подтверждённая сделка».
+    engine (S8 единая Разведка): факты правды движка (engine_truth); None → ключа НЕТ (реплей не
+    посчитался / не-4h находка) — аддитивно, прежние потребители чисты."""
     snap = {
         "symbol": str(finding.get("symbol") or "")[:40],
         "tf": finding.get("tf") or "4h",
@@ -274,6 +324,8 @@ def scout_snapshot(
     }
     if verified:
         snap["verified"] = True
+    if engine is not None:
+        snap["engine"] = engine
     levels = scout_levels(finding)
     if levels:
         snap["levels"] = levels

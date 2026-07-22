@@ -21,15 +21,18 @@ import {
 } from '@/lib/dozor'
 
 // Рояль настроек дозора (макет dozor-knobs-mockup «Кого отбираем», группа 1). Выезжает гармошкой под
-// плашкой. Пресеты + 7 крутилок (возраст/оборот/спред/скор/история/вселенная/список) → «Применить»
-// (PUT desired в ядро → команда dozor_apply → мягкий рестарт скаута ~6 мин) + журнал изменений.
+// плашкой. Пресеты + 7 крутилок (возраст/оборот/спред/скор/история/вселенная/список) → кнопка
+// «Подтвердить для <бот>» (вариант А единой Разведки: называет бота — защита от правки не того
+// инстанса; PUT desired в ядро → команда dozor_apply → мягкий рестарт скаута ~6 мин) + журнал.
 export function DozorPanel({
   instanceId,
+  botName,
   live,
   open,
   onApplied,
 }: {
   instanceId: string
+  botName: string
   live: DozorSettings
   open: boolean
   onApplied: () => void
@@ -221,7 +224,7 @@ export function DozorPanel({
 
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <Button variant="primary" onClick={apply} disabled={diff === 0 || busy}>
-            {busy ? 'Применяю…' : 'Применить · перезапуск дозора ~6 мин'}
+            {busy ? 'Применяю…' : `Подтвердить для ${botName} · пересбор ~6 мин`}
           </Button>
           <span className="text-[11.5px] text-ash">
             {diff === 0
