@@ -41,8 +41,10 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   const [detail, setDetail] = useState<ScoutSnapshot | null>(null) // клик по монете стека → график Разведки
   const [pickErr, setPickErr] = useState<string | null>(null)
   const [scanState, setScanState] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
-  // F-warm-button (ADR-0022): per-coin состояние кнопки «Поставить» (команда warm_apply)
-  const [warmState, setWarmState] = useState<Record<string, 'idle' | 'busy' | 'sent' | 'err'>>({})
+  // F-warm-button (ADR-0022): мультивыбор сетапов → ОДНА команда warm_apply (движок за один тик
+  // разберёт пачку, поставит только годные PENDING; невалидные молча skip). Список — уже в контракте.
+  const [warmSel, setWarmSel] = useState<Set<string>>(new Set())
+  const [warmBatch, setWarmBatch] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
 
   // Кнопка «Сканировать сейчас» прямо на карточке (просьба Оператора): та же команда scan_now,
   // что на Разведке — скаут пересканирует (~1-2 мин), свечи/сетапы/графики обновятся сами.
@@ -58,17 +60,26 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
     }
   }
 
-  // F-warm-button (ADR-0022): «Поставить» валидный сетап по монете → команда warm_apply. Оператор-only.
-  // Движок валидирует и ставит валидный PENDING (вкл. reanchored) на след. тике; невалидную — молча skip.
-  const doWarm = async (symbol: string) => {
-    setWarmState((m) => ({ ...m, [symbol]: 'busy' }))
+  // F-warm-button (ADR-0022): отметить/снять сетап в пачке; «Поставить отмеченные» шлёт ВСЕ разом —
+  // движок сам разберёт, какие годны (валидный PENDING вкл. reanchored), невалидные молча пропустит.
+  const toggleWarm = (symbol: string) =>
+    setWarmSel((s) => {
+      const n = new Set(s)
+      if (n.has(symbol)) n.delete(symbol)
+      else n.add(symbol)
+      return n
+    })
+  const doWarmBatch = async () => {
+    if (warmSel.size === 0 || warmBatch === 'busy') return
+    setWarmBatch('busy')
     try {
-      await warmApply(inst.id, [symbol])
-      setWarmState((m) => ({ ...m, [symbol]: 'sent' }))
-      setTimeout(() => setWarmState((m) => ({ ...m, [symbol]: 'idle' })), 60_000)
+      await warmApply(inst.id, [...warmSel]) // ОДНА команда со списком → движок разберёт пачку
+      setWarmBatch('sent')
+      setWarmSel(new Set())
+      setTimeout(() => setWarmBatch('idle'), 60_000)
     } catch {
-      setWarmState((m) => ({ ...m, [symbol]: 'err' }))
-      setTimeout(() => setWarmState((m) => ({ ...m, [symbol]: 'idle' })), 5_000)
+      setWarmBatch('err')
+      setTimeout(() => setWarmBatch('idle'), 5_000)
     }
   }
 
@@ -211,8 +222,10 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
                   pickErr={pickErr}
                   scanState={scanState}
                   onScan={doScan}
-                  onWarm={doWarm}
-                  warmState={warmState}
+                  warmSel={warmSel}
+                  onToggleWarm={toggleWarm}
+                  warmBatch={warmBatch}
+                  onWarmBatch={doWarmBatch}
                 />
               )}
 
@@ -476,16 +489,20 @@ function StackPanel({
   pickErr,
   scanState = 'idle',
   onScan,
-  onWarm,
-  warmState = {},
+  warmSel,
+  onToggleWarm,
+  warmBatch = 'idle',
+  onWarmBatch,
 }: {
   stack: EngineStack
   onPick?: (symbol: string, tf: string | null) => void
   pickErr?: string | null
   scanState?: 'idle' | 'busy' | 'sent' | 'err'
   onScan?: () => void
-  onWarm?: (symbol: string) => void
-  warmState?: Record<string, 'idle' | 'busy' | 'sent' | 'err'>
+  warmSel?: Set<string>
+  onToggleWarm?: (symbol: string) => void
+  warmBatch?: 'idle' | 'busy' | 'sent' | 'err'
+  onWarmBatch?: () => void
 }) {
   const over = stack.count > stack.cap
   return (
@@ -511,6 +528,28 @@ function StackPanel({
               {SCAN_LABEL[scanState]}
             </button>
           )}
+          {onWarmBatch && ((warmSel?.size ?? 0) > 0 || warmBatch !== 'idle') && (
+            <button
+              onClick={onWarmBatch}
+              disabled={warmBatch === 'busy' || warmBatch === 'sent'}
+              title="Поставить в ордера все отмеченные сетапы разом. Движок сам разберёт: ставит только годные (валидный PENDING, вкл. пере-якорь), невалидные молча пропустит. Исполнение — на ближайшем 15m-тике."
+              className={`rounded-pill border px-2.5 py-0.5 text-[11px] transition-colors ${
+                warmBatch === 'sent'
+                  ? 'border-ok/40 bg-ok/10 text-ok'
+                  : warmBatch === 'err'
+                    ? 'border-danger/40 bg-danger/10 text-danger'
+                    : 'border-copper/45 bg-copper/10 text-copper hover:border-copper/70'
+              }`}
+            >
+              {warmBatch === 'sent'
+                ? '✓ запрошено'
+                : warmBatch === 'busy'
+                  ? '…отправляю'
+                  : warmBatch === 'err'
+                    ? 'не прошло — ещё раз?'
+                    : `Поставить отмеченные · ${warmSel?.size ?? 0}`}
+            </button>
+          )}
           <span
             className={`rounded-pill border px-2 py-0.5 text-[11px] tnum ${
               over ? 'border-copper/45 bg-copper/10 text-copper' : 'border-line text-ash'
@@ -526,7 +565,7 @@ function StackPanel({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ', onWarm ? 'Поставить' : '']} numFrom={2}>
+          <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ', onToggleWarm ? 'В пачку' : '']} numFrom={2}>
             {stack.items.map((it, i) => (
               <tr
                 key={i}
@@ -548,31 +587,31 @@ function StackPanel({
                 </Td>
                 <Td num>{it.tf ?? '—'}</Td>
                 <Td num>
-                  {onWarm && (
-                    <button
+                  {onToggleWarm && (
+                    <span
+                      role="checkbox"
+                      aria-checked={warmSel?.has(it.symbol) ?? false}
+                      tabIndex={0}
                       onClick={(e) => {
                         e.stopPropagation()
-                        const w = warmState[it.symbol] ?? 'idle'
-                        if (w === 'idle' || w === 'err') onWarm(it.symbol)
+                        onToggleWarm(it.symbol)
                       }}
-                      disabled={warmState[it.symbol] === 'busy' || warmState[it.symbol] === 'sent'}
-                      title="Поставить этот сетап в ордера сейчас (F-warm-button). Движок валидирует: ставит только годный PENDING (вкл. пере-якорь), иначе молча пропустит."
-                      className={`rounded-pill border px-2.5 py-0.5 text-[10.5px] transition-colors ${
-                        warmState[it.symbol] === 'sent'
-                          ? 'border-ok/40 bg-ok/10 text-ok'
-                          : warmState[it.symbol] === 'err'
-                            ? 'border-danger/40 bg-danger/10 text-danger'
-                            : 'border-copper/40 text-copper hover:border-copper/70'
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.stopPropagation()
+                          e.preventDefault()
+                          onToggleWarm(it.symbol)
+                        }
+                      }}
+                      title="Отметить сетап в пачку (кнопка «Поставить отмеченные» вверху). Движок сам проверит годность на тике."
+                      className={`inline-flex h-4 w-4 cursor-pointer items-center justify-center rounded border text-[10px] transition-colors ${
+                        warmSel?.has(it.symbol)
+                          ? 'border-copper bg-copper/20 text-copper'
+                          : 'border-line text-transparent hover:border-copper/50'
                       }`}
                     >
-                      {warmState[it.symbol] === 'sent'
-                        ? '✓ запрошено'
-                        : warmState[it.symbol] === 'busy'
-                          ? '…'
-                          : warmState[it.symbol] === 'err'
-                            ? 'ещё раз?'
-                            : 'Поставить'}
-                    </button>
+                      ✓
+                    </span>
                   )}
                 </Td>
               </tr>
