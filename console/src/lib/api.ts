@@ -107,6 +107,21 @@ export type ScoutOrder = {
 }
 export type ScoutPosition = { side: string; avg_px: number; size: number; live_pnl: number }
 export type ScoutConfigMismatch = { flag: boolean; details?: Record<string, unknown> }
+// S8 единая Разведка: ПРАВДА ДВИЖКА per-coin — факты warm.classify (та же функция, что решает
+// постановку). kind=null — активного сетапа нет; поля НЕТ — правда не посчитана («неизвестно»).
+// Русская лексика причин выводится на фронте из фактов (лексики в Контракте нет).
+export type ScoutEngine = {
+  kind: 'PENDING' | 'OPEN' | null
+  auto_eligible: boolean
+  reanchored: boolean
+  in_universe: boolean // монета в рабочем наборе движка (нет → F-lookahead «мимо списка»)
+  side?: string
+  age_bars?: number
+  entries?: Record<string, number> // {'0.382'/'0.5'/'0.618': цена} — реальная сетка постановки
+  stop?: number
+  targets?: Record<string, number>
+  est_risk_pct?: number | null
+}
 export type ScoutSnapshot = {
   symbol: string
   tf: '4h' | '1h'
@@ -126,6 +141,7 @@ export type ScoutSnapshot = {
   config_mismatch: ScoutConfigMismatch
   producer: string
   verified?: boolean // S8/F-scout-snap: levels = РЕАЛЬНАЯ сетка сделки движка (held-символ), не оценка скаута
+  engine?: ScoutEngine | null // S8 единая Разведка: правда движка (нет/null = не посчитана)
   received_at: string // добавляет readout ядра
 }
 export const getInstanceScout = (instanceId: string) =>

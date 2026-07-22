@@ -13,13 +13,15 @@ export const NAV: NavGroup[] = [
   },
   { title: 'Клиенты', items: [{ path: '/clients', label: 'Клиенты', icon: '◑', badge: 12 }] },
   {
+    // Конструктор ПЕРВЫМ (дизайн единой Разведки, подпись Куратора): «сначала конструирую бота →
+    // потом смотрю его глазами» (Разведка рядом). Пересмотр — когда флот встанет (3-5 ботов).
     title: 'Кузница',
     items: [
+      { path: '/constructor', label: 'Конструктор', icon: '✦' },
       { path: '/scout', label: 'Разведка', icon: '◎' },
       { path: '/screener', label: 'Скринер', icon: '⌕' },
       { path: '/basket', label: 'Набор', icon: '★' },
       { path: '/profiles', label: 'Профили', icon: '▤' },
-      { path: '/constructor', label: 'Конструктор', icon: '✦' },
     ],
   },
   {
