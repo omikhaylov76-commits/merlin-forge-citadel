@@ -290,6 +290,14 @@ export const scanNow = (instanceId: string) =>
     `/v1/instances/${instanceId}/scout/scan-now`,
     { method: 'POST' },
   )
+// F-warm-button (ADR-0022): «Поставить» валидный сетап по команде. Оператор-only — портал НЕ видит.
+// Команда warm_apply → картридж кладёт WARM_APPLY-интент → движок ставит (maybe_warm→_warm_one_button:
+// валидный PENDING, вкл. reanchored; OPEN/has_active/cap→skip; single-shot). Движок сам валидирует.
+export const warmApply = (instanceId: string, coins: string[]) =>
+  api<{ status: string; command_id: string }>(
+    `/v1/instances/${instanceId}/scout/warm-apply`,
+    { method: 'POST', body: JSON.stringify({ coins }) },
+  )
 export type DozorJournalEntry = {
   ts: string | null
   actor: string

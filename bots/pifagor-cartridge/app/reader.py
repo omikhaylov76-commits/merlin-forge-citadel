@@ -84,6 +84,14 @@ class PifagorReader:
         config_log_latest + in-memory ack (single-shot); id строки = курсор интента."""
         self.db.config_log_append("WARM_AUTO_NOW", None, str(int(now_ms)), source="scan_now")
 
+    def warm_apply(self, coins: list[str]) -> None:
+        """F-warm-button (ADR-0022): durable-интент WARM_APPLY в config_log воркера. Движок
+        (`maybe_warm`) на след. 15m-тике ставит одобренные монеты — валидный PENDING, вкл.
+        reanchored; OPEN/has_active/cap→skip; single-shot по warm-ack. Поле `new` = CSV монет
+        (контракт `_parse_warm_approved` вендора). Невалидную монету движок молча skip."""
+        csv = ",".join(s.strip().upper() for s in coins if s and s.strip())
+        self.db.config_log_append("WARM_APPLY", None, csv, source="button")
+
     def stop_close(self) -> None:
         """ADR-0005 stop_close: защёлкнуть kill-switch (durable). Движок гасит вход/отменяет
         незалитое, под LIVE_TRADING флэттит позиции; в dry-run — логирует. Латч sticky до clear.

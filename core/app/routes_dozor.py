@@ -194,6 +194,39 @@ def scan_now(
     return {"status": "queued", "command_id": str(cmd.id)}
 
 
+class WarmApplyBody(BaseModel):
+    """Тело F-warm-button: монеты, которые Оператор ставит по кнопке (валидный PENDING)."""
+
+    coins: list[str] = Field(..., min_length=1)
+
+
+@router.post("/instances/{instance_id}/scout/warm-apply", status_code=status.HTTP_201_CREATED)
+def warm_apply(
+    instance_id: uuid.UUID,
+    body: WarmApplyBody,
+    operator: User = Depends(require_role("operator")),
+    session: Session = Depends(get_session),
+) -> dict:
+    """F-warm-button (ADR-0022): «Поставить» валидный сетап по команде Оператора. ТОЛЬКО оператор
+    (портал НЕ видит, Закон 5; прецедент PAUSE/STOP_CLOSE, но торговая). Команда warm_apply →
+    картридж кладёт интент WARM_APPLY → движок ставит `maybe_warm`→`_warm_one_button` (валидный
+    PENDING, reanchored; OPEN/has_active/cap→skip; single-shot). Невалидную движок skip. Демо."""
+    _require_instance(session, instance_id)
+    coins = [c.strip().upper() for c in body.coins if c and c.strip()]
+    if not coins:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="coins пуст")
+    cmd = Command(
+        instance_id=instance_id, kind="warm_apply", status="queued", payload={"coins": coins}
+    )
+    session.add(cmd)
+    session.flush()  # cmd.id для ответа
+    write_audit(
+        session, actor=str(operator.id), action="warm_apply_button", entity=str(instance_id),
+        after={"coins": coins},
+    )
+    return {"status": "queued", "command_id": str(cmd.id)}
+
+
 @router.get("/instances/{instance_id}/scout/settings/journal")
 def scout_settings_journal(
     instance_id: uuid.UUID,

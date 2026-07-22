@@ -139,6 +139,38 @@ def test_scan_now_enqueues_command(clean, users):
         assert cmd.status == "queued"
 
 
+def test_warm_apply_enqueues_command(clean, users):
+    """F-warm-button (ADR-0022): оператор → команда warm_apply с нормализованными монетами."""
+    c = TestClient(create_app())
+    op = _login(c, "op@mfc.local", "op-pass")
+    iid = str(_mk_instance())
+    r = c.post(f"/v1/instances/{iid}/scout/warm-apply", headers=op,
+               json={"coins": ["1inchusdt", "epicusdt"]})
+    assert r.status_code == 201, r.text
+    assert r.json()["status"] == "queued"
+    with get_sessionmaker()() as s:
+        cmd = s.query(Command).filter_by(instance_id=uuid.UUID(iid), kind="warm_apply").one()
+        assert cmd.status == "queued"
+        assert cmd.payload["coins"] == ["1INCHUSDT", "EPICUSDT"]  # upper/strip нормализация
+
+
+def test_warm_apply_empty_coins_422(clean, users):
+    c = TestClient(create_app())
+    op = _login(c, "op@mfc.local", "op-pass")
+    iid = str(_mk_instance())
+    r = c.post(f"/v1/instances/{iid}/scout/warm-apply", headers=op, json={"coins": []})
+    assert r.status_code == 422
+
+
+def test_warm_apply_rbac_client_forbidden(clean, users):
+    """F-warm-button — портал клиента команду НЕ видит (Закон 5): client → 403."""
+    c = TestClient(create_app())
+    cli = _login(c, "a@mfc.local", "a-pass")
+    iid = str(_mk_instance())
+    r = c.post(f"/v1/instances/{iid}/scout/warm-apply", headers=cli, json={"coins": ["BTCUSDT"]})
+    assert r.status_code == 403
+
+
 def test_scout_settings_rbac_client_forbidden(clean, users):
     c = TestClient(create_app())
     cli = _login(c, "a@mfc.local", "a-pass")
