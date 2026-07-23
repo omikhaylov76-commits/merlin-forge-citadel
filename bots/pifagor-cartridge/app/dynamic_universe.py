@@ -44,6 +44,40 @@ def coin_block(mb1=None, mb2=None) -> dict:
     return block
 
 
+def _write_coins_atomic(coins_path: str, coins: dict, gen_value: str) -> None:
+    """coins.json атомарно (tmp+os.replace) + .gen для супервизора. ЕДИНЫЙ писатель провайдера
+    (`_write_atomic`) и прогрева held (`prewarm_coins_from_held`)."""
+    d = os.path.dirname(coins_path) or "."
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".coins.", suffix=".json")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(coins, fh, ensure_ascii=False, separators=(",", ":"))
+        os.replace(tmp, coins_path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+    # .gen тоже атомарно (tmp+os.replace): иначе рваное чтение cat'ом → спурьёзный рестарт
+    gen_tmp = coins_path + ".gen.tmp"
+    with open(gen_tmp, "w", encoding="utf-8") as fh:
+        fh.write(gen_value)
+    os.replace(gen_tmp, coins_path + ".gen")
+
+
+def prewarm_coins_from_held(coins_path: str, held) -> int:
+    """Порция №2: пишет coins.json из held с ДЕФОЛТ-барами (per-coin mb приедут со сканом) + gen=0,
+    атомарно. Возвращает число монет (0 = held пуст → НЕ пишем, пол-на-пустоту). boot-шаг ДО старта
+    движка → движок читает вселенную и ведёт held-позиции с 1-й минуты после редеплоя (не ждать
+    первого скана печки). 0-vendor."""
+    held = frozenset(u for u in (s.strip().upper() for s in (held or ())) if u)  # без пустых
+    if not held or not coins_path:
+        return 0
+    coins = {s: coin_block() for s in held}       # дефолт-бары: своих mb у held на старте нет
+    _write_coins_atomic(coins_path, coins, "0")   # gen=0: первый скан (scan_ms≠0) перезапишет
+    log.info("dynamic: прогрев held ДО движка (%d монет): %s", len(coins), ",".join(sorted(coins)))
+    return len(coins)
+
+
 # Решение Оператора (живая сверка Вехи 2): БЕЗ "forming" — сетап ещё зарождается, не факт что
 # родится (не кандидат в торговую вселенную); committed — производная UI, не стадия печки.
 _ACTIVE_STAGES = ("tracking", "ready")
@@ -252,23 +286,9 @@ class DynamicUniverse:
         self._last_write_mono = now_mono
 
     def _write_atomic(self, coins: dict) -> None:
-        """coins.json атомарно (tmp+os.replace: разъём читает целый файл) + gen для супервизора."""
-        path = self._coins_path
-        d = os.path.dirname(path) or "."
-        os.makedirs(d, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(dir=d, prefix=".coins.", suffix=".json")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(coins, fh, ensure_ascii=False, separators=(",", ":"))
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        # .gen тоже атомарно (tmp+os.replace): иначе рваное чтение cat'ом → спурьёзный рестарт
-        gen_tmp = path + ".gen.tmp"
-        with open(gen_tmp, "w", encoding="utf-8") as fh:
-            fh.write(str(self._last_scan_ms))   # супервизор сверяет gen → рестарт ТОЛЬКО движка
-        os.replace(gen_tmp, path + ".gen")
+        """coins.json + .gen атомарно (общий писатель `_write_coins_atomic`); gen = scan_ms →
+        супервизор сверяет .gen и рестартит ТОЛЬКО движок на смену вселенной."""
+        _write_coins_atomic(self._coins_path, coins, str(self._last_scan_ms))
         log.info("dynamic: вселенная (%d монет): %s", len(coins), ",".join(sorted(coins)))
 
     def _write_positions_flag(self) -> None:
