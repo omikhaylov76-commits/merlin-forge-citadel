@@ -13,6 +13,7 @@ import { Scout } from '@/screens/Scout'
 import { Screener } from '@/screens/Screener'
 import { Basket } from '@/screens/Basket'
 import { Profiles } from '@/screens/Profiles'
+import { Signals } from '@/screens/Signals'
 import { Reports } from '@/screens/Reports'
 import { Alerts } from '@/screens/Alerts'
 import { Settings } from '@/screens/Settings'
@@ -44,6 +45,7 @@ export const router = createBrowserRouter([
       { path: 'basket', element: <Basket /> },
       { path: 'profiles', element: <Profiles /> },
       { path: 'constructor', element: <Constructor /> },
+      { path: 'signals', element: <Signals /> },
       { path: 'reports', element: <Reports /> },
       { path: 'alerts', element: <Alerts /> },
       { path: 'settings', element: <Settings /> },

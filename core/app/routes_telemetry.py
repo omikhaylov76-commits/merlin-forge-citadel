@@ -15,14 +15,22 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.auth import current_instance
 from app.config import Settings, get_settings
 from app.db import get_session
-from app.models import EngineState, EquityPoint, Event, Instance, ScoutSnapshot, Trade
+from app.models import (
+    EngineState,
+    EquityPoint,
+    Event,
+    Instance,
+    ScoutSnapshot,
+    SignalJournalEvent,
+    Trade,
+)
 
 router = APIRouter(prefix="/v1/telemetry")
 
@@ -87,6 +95,34 @@ class EventIn(BaseModel):
     ts: datetime
     kind: str = Field(max_length=40)
     detail: dict[str, Any] | None = None
+
+
+class SignalJournalSrcIn(BaseModel):
+    """Натуральный ключ+провенанс: строка worker-БД движка (ключ дедупа)."""
+
+    model_config = {"extra": "forbid"}
+    # adapter — синтетика адаптера (journal_epoch_reset; id=unix-ms детекта, вне строк движка)
+    table: Literal["signals", "fills", "events", "closed_trades", "adapter"]
+    id: int = Field(ge=1)
+
+
+class SignalJournalIn(BaseModel):
+    """Событие Сигнального журнала (порция №3) — зеркало
+    contracts/telemetry-signal-journal.schema.json (sync-гвоздь extra=forbid). Инстанс из токена
+    (SEC7). Дедуп по натур. ключу src (instance, src.table, src.id); seq — порядок повтора."""
+
+    model_config = {"extra": "forbid"}
+    schema_version: int = Field(ge=1)
+    core: str = Field(max_length=40)  # метка ядра (недоверенный ввод)
+    seq: int = Field(ge=0)  # per-core порядок повтора (не ключ дедупа)
+    ts: datetime
+    setup_id: str = Field(max_length=80)  # {symbol}:{bar_time}
+    kind: Literal[
+        "setup_detected", "setup_placed", "leg_filled",
+        "leg_exit", "setup_ended", "trade_closed", "service",
+    ]
+    src: SignalJournalSrcIn
+    data: dict[str, Any] | None = None
 
 
 # ── scout-снимок (5-й канал, ADR-0016): ПОЛНОЕ Pydantic-зеркало scout-схемы.
@@ -290,6 +326,58 @@ def events(
             )
         )
     return {"received": len(rows)}
+
+
+@router.post("/signal-journal", status_code=status.HTTP_202_ACCEPTED)
+def signal_journal(
+    body: list[SignalJournalIn],
+    inst: Instance = Depends(current_instance),
+    session: Session = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Приём Сигнального журнала (порция №3). Append-only, dedup по НАТУРАЛЬНОМУ ключу движка
+    (instance, src.table, src.id) — id строк worker-БД стабильны, пере-дерив идемпотентен (вар. A).
+    Прошлое ts легально (бэкфилл), запрещаем только будущее. data — недоверенный."""
+    _guard_batch(len(body))
+    now = datetime.now(UTC)
+    rows = []
+    for e in body:
+        _check_future_skew(e.ts, now, settings.telemetry_max_skew_seconds)
+        rows.append({
+            "instance_id": inst.id, "src_table": e.src.table, "src_id": e.src.id,
+            "seq": e.seq, "core": e.core, "ts": _norm(e.ts), "setup_id": e.setup_id,
+            "kind": e.kind, "schema_version": e.schema_version, "data": e.data,
+        })
+    if rows:  # dedup по натур. ключу движка (instance, src_table, src_id) — воспроизводимо
+        session.execute(
+            pg_insert(SignalJournalEvent).values(rows).on_conflict_do_nothing(
+                constraint="uq_signal_journal_instance_src"
+            )
+        )
+    return {"received": len(rows)}
+
+
+@router.get("/signal-journal/cursor")
+def signal_journal_cursor(
+    inst: Instance = Depends(current_instance),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Курсор журнала инстанса (guard эпохи БД + резюм seq адаптера): per-table последний
+    (src_id, ts) — fingerprint эпохи; + max(seq). Адаптер на бооте сверяет ts с worker-БД,
+    расхождение → эпоха сменилась → journal_epoch_reset. Инстанс из токена (SEC7)."""
+    rows = session.execute(
+        select(SignalJournalEvent.src_table, SignalJournalEvent.src_id, SignalJournalEvent.ts)
+        .where(SignalJournalEvent.instance_id == inst.id)
+        .distinct(SignalJournalEvent.src_table)
+        .order_by(SignalJournalEvent.src_table, SignalJournalEvent.src_id.desc())
+    ).all()
+    max_seq = session.execute(
+        select(func.max(SignalJournalEvent.seq)).where(SignalJournalEvent.instance_id == inst.id)
+    ).scalar()
+    return {
+        "max_seq": int(max_seq) if max_seq is not None else 0,
+        "tables": {r.src_table: {"src_id": r.src_id, "ts": r.ts.isoformat()} for r in rows},
+    }
 
 
 @router.post("/scout", status_code=status.HTTP_202_ACCEPTED)

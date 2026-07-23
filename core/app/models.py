@@ -9,6 +9,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -279,6 +280,40 @@ class Event(Base):
     )
     kind: Mapped[str] = mapped_column(String(40), nullable=False)
     detail: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class SignalJournalEvent(Base):
+    """Событие Сигнального журнала (Этап 1 переката 1-to-N, порция №3). Товарная запись решения
+    ядра-характера для повтора на клиентском счёте (диспетчер Этапа 2 читает и повторяет; сам
+    журнал торговлю НЕ меняет — наблюдатель). Append-only; dedup по натуральному ключу движка
+    (instance, src_table, src_id) — см. UniqueConstraint ниже; seq — порядок повтора, НЕ ключ.
+    core/setup_id/kind — конверт; data — поля по kind (недоверенный JSON). Ведение-детали
+    (reanchor/…) — вариант C (ADR-0024)."""
+
+    __tablename__ = "signal_journal"
+    __table_args__ = (
+        UniqueConstraint(
+            "instance_id", "src_table", "src_id", name="uq_signal_journal_instance_src",
+        ),
+        {"comment": "Сигнальный журнал (порция №3); append-only; dedup по натур. ключу движка "
+                    "(instance, src_table, src_id); data — недоверенный JSON."},
+    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    instance_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False, index=True
+    )
+    src_table: Mapped[str] = mapped_column(String(24), nullable=False)  # натуральный ключ движка
+    src_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # id строки worker-БД
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)  # порядок повтора (не дедуп)
+    core: Mapped[str] = mapped_column(String(40), nullable=False)  # метка ядра (BORS/...)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    setup_id: Mapped[str] = mapped_column(String(80), nullable=False)   # {symbol}:{bar_time}
+    kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    schema_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
 
 class ScoutSnapshot(Base):

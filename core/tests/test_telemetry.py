@@ -6,6 +6,7 @@ import json
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import get_args
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +16,15 @@ from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Instance, User
-from app.routes_telemetry import EquityIn, EventIn, HeartbeatIn, ScoutSnapshotIn, TradeIn
+from app.routes_telemetry import (
+    EquityIn,
+    EventIn,
+    HeartbeatIn,
+    ScoutSnapshotIn,
+    SignalJournalIn,
+    SignalJournalSrcIn,
+    TradeIn,
+)
 from tests.crm_helpers import ensure_parents
 
 _CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
@@ -197,6 +206,7 @@ def test_unknown_instance_404(sm):
         ("telemetry-trades", TradeIn, True),
         ("telemetry-events", EventIn, True),
         ("telemetry-scout", ScoutSnapshotIn, True),  # #52: зеркало (extra=forbid ловит дрейф)
+        ("telemetry-signal-journal", SignalJournalIn, True),  # порция №3: журнал (extra=forbid)
     ],
 )
 def test_schema_examples_accepted_by_pydantic(schema_name, model, is_array):
@@ -333,6 +343,30 @@ def test_scout_pydantic_covers_all_schema_required():
     required = set(schema["items"]["required"])
     model_required = {n for n, f in ScoutSnapshotIn.model_fields.items() if f.is_required()}
     assert required <= model_required, f"схема требует, модель нет: {required - model_required}"
+
+
+def test_signal_journal_pydantic_parity():
+    """Parity схема↔модель журнала СИЛЬНЕЕ examples (аудит B): поля + required + enum'ы `kind`/
+    `src.table` прибиты к ОБЕИМ сторонам → дрейф значения, не задействованного в examples, роняет
+    тест (у examples-гвоздя такой дыры нет). Зеркалит scout-parity."""
+    schema = json.loads(
+        (_CONTRACTS / "telemetry-signal-journal.schema.json").read_text(encoding="utf-8")
+    )
+    items = schema["items"]
+    # набор полей события == properties схемы (обе стороны дрейфа)
+    assert set(SignalJournalIn.model_fields) == set(items["properties"])
+    # required схемы обязаны быть required в модели
+    required = set(items["required"])
+    model_required = {n for n, f in SignalJournalIn.model_fields.items() if f.is_required()}
+    assert required <= model_required, f"схема требует, модель нет: {required - model_required}"
+    # enum kind — множества значений схемы и Literal модели совпадают
+    kind_schema = set(items["properties"]["kind"]["enum"])
+    kind_model = set(get_args(SignalJournalIn.model_fields["kind"].annotation))
+    assert kind_schema == kind_model, f"kind разошёлся: {kind_schema ^ kind_model}"
+    # enum src.table — то же для вложенной модели src (включая синтетику adapter)
+    tbl_schema = set(items["properties"]["src"]["properties"]["table"]["enum"])
+    tbl_model = set(get_args(SignalJournalSrcIn.model_fields["table"].annotation))
+    assert tbl_schema == tbl_model, f"src.table разошёлся: {tbl_schema ^ tbl_model}"
 
 
 # ── engine (S8 единая Разведка): правда движка per-coin — зеркало + сквозняк ──
