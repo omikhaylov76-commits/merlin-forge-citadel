@@ -91,33 +91,33 @@ LIVE_TRADING). Читатель `db.query(sql, params)` — общий (курс
 - (d3) Подпись поля Контракта `signal_journal` (новый канал телеметрии) — его домен.
 - (d4) `signals` включает cap-фильтрованные/dry-run (детект ≠ постановка) — журналить оба (detected+placed) или только placed?
 
-## ✍️ ФИНАЛЬНАЯ СХЕМА СОБЫТИЙ — подписи Куратора учтены (QUEUE 2026-07-23), на финальную сверку → код
-Куратор подписал: d1 = **B костяк сейчас** (дискретные события) + **C ведение потом** (ADR-0024; вар. A инференс НЕ берём); d3 — поле Контракта `signal_journal` ✅; d4 = **detected И placed, раздельно типизированы**; setup_id/seq — конструирует адаптер.
+## ✍️ ФИНАЛЬНАЯ СХЕМА СОБЫТИЙ — ПОДПИСАНО + поправки Куратора (сверка по вендор-коду, QUEUE 2026-07-23)
+Куратор подписал: d1 = **B костяк** + **C ведение потом** (ADR-0024; вар. A инференс НЕ берём); d3 поле Контракта ✅; d4 = detected И placed раздельно; **идемпотентность = вариант A (натуральный ключ движка)**; + 4 поправки схемы по сверке вендора (П1–П4) + guard эпохи БД.
 
 **Конверт (все события; schema_version с 1-го дня):**
-`schema_version` · `core` (BORS/PERCEVAL/…) · `instance_id` · `seq` (per-core монотонный, адаптер) · `ts` (RFC3339 UTC) · `setup_id` (`{symbol}:{bar_time}`) · `kind`.
+`schema_version` · `core` · `instance_id` · `seq` (per-core, ПОРЯДОК повтора — НЕ ключ) · `ts` · `setup_id` (`{symbol}:{bar_time}`) · `kind` · **`src`{table,id}** (натур. ключ движка = дедуп+провенанс).
 
 **Семейство ВХОД:**
-- `setup_detected` ← `signals` (вкл. cap-фильтр/dry-run): symbol, side, tf, A, B, entries{0.382/0.5/0.618}, stop, targets{…}, min_bar_pct, bar_time. (детект ≠ постановка.)
+- `setup_detected` ← `signals` (вкл. cap-фильтр/dry-run): symbol, side, A, B, entries{0.382/0.5/0.618}, stop, targets{…}, bar_time. **mb+tf движок НЕ пишет (П4) → адаптер обогащает (provenance:adapter):** mb из coin_block, tf из SIGNAL_TF.
 - `setup_placed` ← `events:setup_placed`: реальная постановка на биржу (сетка — из `signals` того же setup_id). **Диспетчер Этапа 2 повторяет ТОЛЬКО это.**
 
 **Семейство ВЕДЕНИЕ (B-костяк — что движок пишет дискретно):**
-- `leg_filled` ← `fills` (ТОЛЬКО входы, exec_type=entry): entry_level, exec_price, exec_qty, requested_price/qty, risk_pct, nominal_usd, leverage_eff, partial, order_id, order_link_id.
+- `leg_filled` ← `fills` (ТОЛЬКО входы): entry_level, **requested_price/requested_qty** (П3: exec_price/slip/fee/risk/nominal/leverage = NULL, опросный путь → НЕ обещаем exec; реальные — ws_exec_log, инкремент позже), order_id, order_link_id.
 - `leg_exit` ← `events:leg_exit`: role(tgt/stp), lv, qty, exit_link, order_id.
-- `setup_ended` ← `events:setup_closed|timeout|close_all`: reason.
-- `trade_closed` ← `closed_trades`: symbol, side, qty, avg_entry, avg_exit, closed_pnl, dedup_key.
-- `service` ← `events:kill_switch_stop` (+ pause): kind.
+- `setup_ended` ← `events:setup_closed` (reason=complete|timeout из detail) + `close_all` (П2: timeout — reason, НЕ отдельное событие).
+- `trade_closed` ← `closed_trades`: symbol, side, qty, avg_entry, avg_exit, closed_pnl (реальный P&L Bybit).
+- `service` (catch-all, П1) ← прочие `events`: kill_switch_stop/warm_apply/idle_gap/worker_boot/orphan_position/orphan_naked/ws_shadow_*, raw-имя в data. **Ничего не дропаем** (курсор мимо = потеря). orphan_* = аудит сирот.
 
 **НЕ в B (→ C, ADR-0024, следующий шаг):** `stop_moved`(трейлинг) · `reanchor`(пере-якорь) · `scalp_removed` — движок дискретно не пишет; ground-truth через мини-дельту `_log_event`.
 
-**Правила адаптера (детерминизм, на подпись):**
-- `setup_id = {symbol}:{bar_time}` (bar_time пробоя из signals). ⚠️ пере-якорь сменит bar_time → уточнение в C; для B (до commit-freeze) стабилен.
-- `seq` — per-core монотонный: мерж новых строк всех таблиц по `ts` → инкремент при пуше.
-- `fills`/`leg_exit`/`trade_closed` привязываются к АКТИВНОМУ setup_id символа (последний `setup_placed`, ещё не `setup_ended`/`trade_closed`).
-- Курсоры per-table (signals.id / fills.id / events.id / closed_trades.id) — персистятся, возобновление без потерь/дублей.
+**Правила адаптера (ПОДПИСАНО, сверено по вендор-коду):**
+- **Дедуп = натур. ключ `(instance, src.table, src.id)`** (id worker-БД стабильны/монотонны — MAX(id)+1, не прунятся) → пере-дерив идемпотентен БЕЗ durable-состояния (вар. A). `seq` — лишь порядок повтора.
+- **Guard эпохи БД (fingerprint, ОБЯЗАТЕЛЕН):** персист `(last_id,last_ts)` per-table; на бооте перечитать `id=last_id` — нет строки ИЛИ ts≠сохр. → эпоха сменилась (SQLite-фолбэк / ре-провижн) → событие `journal_epoch_reset` + алярм, курсор НЕ двигать. + ассерт: прод + `DATABASE_URL`≠postgres → громкий алярм.
+- `setup_id = {symbol}:{bar_time}` (bar_time из signals). Пере-якорь (C) родит новый `setup_detected`/setup_id; fills/exits остаются на ИСХОДНОМ активном setup_id — консистентно для B.
+- Курсоры per-table — ОПТИМИЗАЦИЯ (корректность даёт натур. ключ, не курсор).
 
 **Источник (0-vendor):** курсорный direct-read worker-БД по `id` (`db.query("SELECT * FROM {tbl} WHERE id>%s ORDER BY id", (cur,))`, owner=False). Вендор не трогаем, страж-дрейфа=3.
-**Ядро:** таблица `signal_journal` (миграция 0016, append-only), идемпотент по `(instance_id, seq)` [core в теле], аддитивная. Маршрут `POST /v1/telemetry/signal-journal` + Pydantic-зеркало (schema-first) + readout. Зеркало scout/engine-state (Закон 3).
+**Ядро:** таблица `signal_journal` (миграция 0016, append-only), идемпотент по `(instance_id, src_table, src_id)`, аддитивная. Маршрут `POST /v1/telemetry/signal-journal` + Pydantic-зеркало (schema-first) + readout. Зеркало scout/engine-state (Закон 3).
 **Витрина:** мини-вкладка «Журнал» (Сигналы) в группе «Журналы» консоли (read-only лента).
 
 ## Код — под-шаги (ветка `task/s8-signal-journal`)

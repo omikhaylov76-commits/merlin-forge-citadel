@@ -291,15 +291,19 @@ class SignalJournalEvent(Base):
 
     __tablename__ = "signal_journal"
     __table_args__ = (
-        UniqueConstraint("instance_id", "seq", name="uq_signal_journal_instance_seq"),
-        {"comment": "Сигнальный журнал (Этап 1 1-to-N, порция №3); append-only; dedup (instance, "
-                    "seq); data — недоверенный JSON, экранируется на выводе."},
+        UniqueConstraint(
+            "instance_id", "src_table", "src_id", name="uq_signal_journal_instance_src",
+        ),
+        {"comment": "Сигнальный журнал (порция №3); append-only; dedup по натур. ключу движка "
+                    "(instance, src_table, src_id); data — недоверенный JSON."},
     )
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     instance_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("instances.id"), nullable=False, index=True
     )
-    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)  # per-core курсор (ключ дедупа)
+    src_table: Mapped[str] = mapped_column(String(24), nullable=False)  # натуральный ключ движка
+    src_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # id строки worker-БД
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)  # порядок повтора (не дедуп)
     core: Mapped[str] = mapped_column(String(40), nullable=False)  # метка ядра (BORS/...)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     received_at: Mapped[datetime] = mapped_column(

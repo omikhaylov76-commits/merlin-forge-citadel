@@ -97,21 +97,30 @@ class EventIn(BaseModel):
     detail: dict[str, Any] | None = None
 
 
+class SignalJournalSrcIn(BaseModel):
+    """Натуральный ключ+провенанс: строка worker-БД движка (ключ дедупа)."""
+
+    model_config = {"extra": "forbid"}
+    table: Literal["signals", "fills", "events", "closed_trades"]
+    id: int = Field(ge=1)
+
+
 class SignalJournalIn(BaseModel):
     """Событие Сигнального журнала (порция №3) — зеркало
     contracts/telemetry-signal-journal.schema.json (sync-гвоздь extra=forbid). Инстанс из токена
-    (SEC7). Конверт + kind + data (поля по kind, недоверенный ввод, экранируется на выводе)."""
+    (SEC7). Дедуп по натур. ключу src (instance, src.table, src.id); seq — порядок повтора."""
 
     model_config = {"extra": "forbid"}
     schema_version: int = Field(ge=1)
     core: str = Field(max_length=40)  # метка ядра (недоверенный ввод)
-    seq: int = Field(ge=0)  # per-core курсор (ключ идемпотентности)
+    seq: int = Field(ge=0)  # per-core порядок повтора (не ключ дедупа)
     ts: datetime
     setup_id: str = Field(max_length=80)  # {symbol}:{bar_time}
     kind: Literal[
         "setup_detected", "setup_placed", "leg_filled",
         "leg_exit", "setup_ended", "trade_closed", "service",
     ]
+    src: SignalJournalSrcIn
     data: dict[str, Any] | None = None
 
 
@@ -325,23 +334,23 @@ def signal_journal(
     session: Session = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> dict:
-    """Приём Сигнального журнала (порция №3, Этап 1 1-to-N). Append-only, dedup по (instance, seq) —
-    per-core курсор адаптера, повтор идемпотентен. Прошлое ts легально (журнал: бэкфилл из worker-БД
-    движка), запрещаем только будущее. data — недоверенный, экранируется на выводе."""
+    """Приём Сигнального журнала (порция №3). Append-only, dedup по НАТУРАЛЬНОМУ ключу движка
+    (instance, src.table, src.id) — id строк worker-БД стабильны, пере-дерив идемпотентен (вар. A).
+    Прошлое ts легально (бэкфилл), запрещаем только будущее. data — недоверенный."""
     _guard_batch(len(body))
     now = datetime.now(UTC)
     rows = []
     for e in body:
         _check_future_skew(e.ts, now, settings.telemetry_max_skew_seconds)
         rows.append({
-            "instance_id": inst.id, "seq": e.seq, "core": e.core, "ts": _norm(e.ts),
-            "setup_id": e.setup_id, "kind": e.kind, "schema_version": e.schema_version,
-            "data": e.data,
+            "instance_id": inst.id, "src_table": e.src.table, "src_id": e.src.id,
+            "seq": e.seq, "core": e.core, "ts": _norm(e.ts), "setup_id": e.setup_id,
+            "kind": e.kind, "schema_version": e.schema_version, "data": e.data,
         })
-    if rows:  # dedup по (instance, seq) — идемпотентный per-core курсор
+    if rows:  # dedup по натур. ключу движка (instance, src_table, src_id) — воспроизводимо
         session.execute(
             pg_insert(SignalJournalEvent).values(rows).on_conflict_do_nothing(
-                constraint="uq_signal_journal_instance_seq"
+                constraint="uq_signal_journal_instance_src"
             )
         )
     return {"received": len(rows)}
