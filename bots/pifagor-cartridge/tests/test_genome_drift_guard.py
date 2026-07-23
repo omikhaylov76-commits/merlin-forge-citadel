@@ -63,9 +63,9 @@ def test_genome_no_unsanctioned_drift():
 
 
 def test_exactly_registered_sanctioned_deltas():
-    """Реестр дельт (ADR-0019 + ADR-0021): ровно ДВЕ — монеты (config/strategy.py, 0019) +
-    warm-ритм (app/main.py + app/cycle.py, 0021). Третья дельта обязана пройти свой ADR
-    (правка этого ожидания = видимый триггер для ревью)."""
+    """Реестр санкц-дельт живого генома: ровно ТРИ — config/strategy.py (ADR-0019),
+    app/main.py + app/cycle.py (ADR-0021), config/knobs.py (ADR-0023). Четвёртая дельта —
+    только через свой ADR (правка этого ожидания = видимый триггер для ревью)."""
     m = _manifest()
     by_adr = {}
     for p, meta in m["sanctioned"].items():
@@ -73,4 +73,5 @@ def test_exactly_registered_sanctioned_deltas():
     assert {k: sorted(v) for k, v in by_adr.items()} == {
         "ADR-0019": ["config/strategy.py"],
         "ADR-0021": ["app/cycle.py", "app/main.py"],
+        "ADR-0023": ["config/knobs.py"],
     }, "новая санкционированная дельта живого генома — только отдельным ADR (закон эталона)"

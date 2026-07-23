@@ -17,7 +17,7 @@ KNOB_SPECS = {
     "RISK_PCT_ALARM":   {"t": "num", "py": float, "lo": 0.0, "hi": 10.0, "lo_inc": False},
     "KILLSWITCH_DD":    {"t": "num", "py": float, "lo": 0.0, "hi": 1.0, "lo_inc": False, "hi_inc": False},
     "ALARM_DD":         {"t": "num", "py": float, "lo": 0.0, "hi": 1.0, "lo_inc": False, "hi_inc": False},
-    "CONCURRENCY_CAP":  {"t": "num", "py": int, "lo": 1, "hi": 16},
+    "CONCURRENCY_CAP":  {"t": "num", "py": int, "lo": 1, "hi": 24},   # ADR-0023: потолок 24 (динамик-характер Борса, демо) — вне боевого OOS-конверта эталона; паспорт правдив только внутри 16, до реальных денег ре-бэктест ИЛИ явная пометка витрины
     "MAX_LEVERAGE":     {"t": "num", "py": int, "lo": 1, "hi": 5},   # parity-cap: движок жёстко min(5.0,…) (port_lib.py:128); >5 = вне честных OOS-чисел → отдельный ADR + ре-бэктест
     "REFINANCE_SPLIT":  {"t": "num", "py": float, "lo": 0.0, "hi": 1.0, "lo_inc": False, "hi_inc": False},
     "WORKING_START":    {"t": "num", "py": float, "lo": 0.0, "lo_inc": False},

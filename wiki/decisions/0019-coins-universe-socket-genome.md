@@ -49,10 +49,13 @@ ADR-0018 п.3 уже указал путь: «Движок/риск (…COINS_CO
 1. `config/strategy.py` — разъём `COINS_CONFIG_PATH` (ADR-0019, S8).
 2. `app/main.py` + `app/cycle.py` — разъём warm-ритма (периодический `auto_eligible`-подхват по SIGNAL_TF +
    горн `WARM_AUTO_NOW`), **ADR-0021** (S8, 2026-07-22).
+3. `config/knobs.py` — потолок `CONCURRENCY_CAP` `hi:16→24` (динамик-характер Борса, демо; сдвиг границы,
+   логика/движок не тронуты), **ADR-0023** (S8, 2026-07-23).
 
 ## Страж-дрейфа (CI — УСЛОВИЕ подписи, не пожелание)
-`bots/pifagor-cartridge/tests/genome_manifest.json` пиннит SHA256 всех 68 файлов vendor: 65 frozen
-(== b75bd17) + 3 sanctioned (`config/strategy.py`→ADR-0019; `app/main.py`+`app/cycle.py`→ADR-0021).
+`bots/pifagor-cartridge/tests/genome_manifest.json` пиннит SHA256 всех 68 файлов vendor: 64 frozen
+(== b75bd17) + 4 sanctioned (`config/strategy.py`→ADR-0019; `app/main.py`+`app/cycle.py`→ADR-0021;
+`config/knobs.py`→ADR-0023).
 `test_genome_drift_guard.py` сверяет дерево: любая НЕсанкционированная правка/добавление/удаление файла
 vendor ИЛИ вторая дельта без ADR → **красный CI**. Граница «живой геном vs эталон» становится аудируемой,
 а не «на слово». Вторая дельта = осознанно: новый ADR + регенерация манифеста + правка ожидания в тесте.
