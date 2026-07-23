@@ -184,6 +184,12 @@ main() {
     # (провайдер-адаптер пишет coins.json, разъём strategy.py читает); скаут/скринер стрижём (env -u).
     export COINS_CONFIG_PATH="${COINS_CONFIG_PATH:-$PIFAGOR_HOME/coins.json}"
     echo "[cartridge] динамика ВКЛ (DYNAMIC_ENABLED=1): COINS_CONFIG_PATH=$COINS_CONFIG_PATH → супервизор движка"
+    # Порция №2 «прогрев held» (S8): ДО движка пишем coins.json из held (позиции/ордера из персист-БД)
+    # → движок стартует с held-вселенной и ведёт позиции с 1-й минуты (не ждать ~18мин первого скана
+    # печки). owner=False (лок движка не берём). Best-effort (timeout+||): БД недоступна/пусто/долго →
+    # боот продолжается, движок на дефолте (как раньше — регресс нулевой).
+    timeout "${PREWARM_HELD_TIMEOUT_S:-20}" python -m app.prewarm_held \
+      || echo "[cartridge] prewarm-held: пропуск (таймаут/сбой) — движок на дефолте до первого скана"
     engine_supervise &
   else
     start_engine                 # флот/Персиваль: путь БАЙТ-В-БАЙТ прежний (COINS_CONFIG_PATH не задан)
