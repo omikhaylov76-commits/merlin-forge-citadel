@@ -91,5 +91,35 @@ LIVE_TRADING). Читатель `db.query(sql, params)` — общий (курс
 - (d3) Подпись поля Контракта `signal_journal` (новый канал телеметрии) — его домен.
 - (d4) `signals` включает cap-фильтрованные/dry-run (детект ≠ постановка) — журналить оба (detected+placed) или только placed?
 
+## ✍️ ФИНАЛЬНАЯ СХЕМА СОБЫТИЙ — подписи Куратора учтены (QUEUE 2026-07-23), на финальную сверку → код
+Куратор подписал: d1 = **B костяк сейчас** (дискретные события) + **C ведение потом** (ADR-0024; вар. A инференс НЕ берём); d3 — поле Контракта `signal_journal` ✅; d4 = **detected И placed, раздельно типизированы**; setup_id/seq — конструирует адаптер.
+
+**Конверт (все события; schema_version с 1-го дня):**
+`schema_version` · `core` (BORS/PERCEVAL/…) · `instance_id` · `seq` (per-core монотонный, адаптер) · `ts` (RFC3339 UTC) · `setup_id` (`{symbol}:{bar_time}`) · `kind`.
+
+**Семейство ВХОД:**
+- `setup_detected` ← `signals` (вкл. cap-фильтр/dry-run): symbol, side, tf, A, B, entries{0.382/0.5/0.618}, stop, targets{…}, min_bar_pct, bar_time. (детект ≠ постановка.)
+- `setup_placed` ← `events:setup_placed`: реальная постановка на биржу (сетка — из `signals` того же setup_id). **Диспетчер Этапа 2 повторяет ТОЛЬКО это.**
+
+**Семейство ВЕДЕНИЕ (B-костяк — что движок пишет дискретно):**
+- `leg_filled` ← `fills` (ТОЛЬКО входы, exec_type=entry): entry_level, exec_price, exec_qty, requested_price/qty, risk_pct, nominal_usd, leverage_eff, partial, order_id, order_link_id.
+- `leg_exit` ← `events:leg_exit`: role(tgt/stp), lv, qty, exit_link, order_id.
+- `setup_ended` ← `events:setup_closed|timeout|close_all`: reason.
+- `trade_closed` ← `closed_trades`: symbol, side, qty, avg_entry, avg_exit, closed_pnl, dedup_key.
+- `service` ← `events:kill_switch_stop` (+ pause): kind.
+
+**НЕ в B (→ C, ADR-0024, следующий шаг):** `stop_moved`(трейлинг) · `reanchor`(пере-якорь) · `scalp_removed` — движок дискретно не пишет; ground-truth через мини-дельту `_log_event`.
+
+**Правила адаптера (детерминизм, на подпись):**
+- `setup_id = {symbol}:{bar_time}` (bar_time пробоя из signals). ⚠️ пере-якорь сменит bar_time → уточнение в C; для B (до commit-freeze) стабилен.
+- `seq` — per-core монотонный: мерж новых строк всех таблиц по `ts` → инкремент при пуше.
+- `fills`/`leg_exit`/`trade_closed` привязываются к АКТИВНОМУ setup_id символа (последний `setup_placed`, ещё не `setup_ended`/`trade_closed`).
+- Курсоры per-table (signals.id / fills.id / events.id / closed_trades.id) — персистятся, возобновление без потерь/дублей.
+
+**Источник (0-vendor):** курсорный direct-read worker-БД по `id` (`db.query("SELECT * FROM {tbl} WHERE id>%s ORDER BY id", (cur,))`, owner=False). Вендор не трогаем, страж-дрейфа=3.
+**Ядро:** таблица `signal_journal` (миграция 0016, append-only), идемпотент по `(instance_id, seq)` [core в теле], аддитивная. Маршрут `POST /v1/telemetry/signal-journal` + Pydantic-зеркало (schema-first) + readout. Зеркало scout/engine-state (Закон 3).
+**Витрина:** мини-вкладка «Журнал» (Сигналы) в группе «Журналы» консоли (read-only лента).
+
 ## SHA
-- Разведка: 2026-07-23 (эта сессия). Кода нет. Ждёт подписи схемы Куратором.
+- Разведка + финальная схема: 2026-07-23 (эта сессия). Куратор подписал d1(B+C)/d3/d4 + setup_id/seq.
+  Кода нет. Ждёт ФИНАЛЬНОЙ сверки схемы Куратором → затем код (адаптер курсор-read + ядро 0016 + вкладка).
