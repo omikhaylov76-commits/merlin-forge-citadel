@@ -59,6 +59,27 @@ def _make_dynamic_provider(cfg, scout_reader):
         return None
 
 
+def _make_journal(cfg, reader, client):
+    """SignalJournalDeriver при journal_enabled=1 (порция №3; Борс первым — Куратор). Флот/эталон:
+    дефолт ВЫКЛ → None, поведение байт-в-байт. Чистый наблюдатель. Сбой init не роняет картридж.
+    Ассерт Куратора: прод (LIVE/DYNAMIC) без Postgres в DATABASE_URL — worker-БД эфемерна (SQLite,
+    стирается редеплоем) → журнал теряет эпохи → ГРОМКИЙ алярм (журнал всё равно поднимем —
+    guard эпохи поймает сброс fail-closed)."""
+    if not cfg.journal_enabled:
+        return None
+    try:
+        db_url = os.environ.get("DATABASE_URL", "")
+        live = os.environ.get("LIVE_TRADING_ENABLED") == "1" or cfg.dynamic_enabled
+        if live and not db_url.startswith(("postgres://", "postgresql://")):
+            log.error("журнал: ⚠️ прод-режим БЕЗ Postgres (DATABASE_URL) — worker-БД эфемерна, "
+                      "эпохи будут теряться (guard поймает, но персист обязателен)")
+        from app.signal_journal import SignalJournalDeriver
+        return SignalJournalDeriver(reader, client, core_label=cfg.journal_core)
+    except Exception:  # noqa: BLE001
+        log.exception("журнал: init упал — сигнальный журнал выключен")
+        return None
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     cfg = from_env()
@@ -87,9 +108,11 @@ def main() -> None:
                 kwargs={"interval": cfg.dynamic_refetch_s},
                 name="dynamic-refetch", daemon=True,
             ).start()
+    client = CoreClient(base_url=cfg.core_url, token=cfg.instance_token)
+    journal = _make_journal(cfg, reader, client)
     bot = PifagorCartridge(
-        CoreClient(base_url=cfg.core_url, token=cfg.instance_token), reader, cfg,
-        scout_reader=scout_reader, provider=provider,
+        client, reader, cfg,
+        scout_reader=scout_reader, provider=provider, journal=journal,
     )
 
     stop = threading.Event()

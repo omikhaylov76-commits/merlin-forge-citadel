@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import tuple_
+from sqlalchemy import func, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
@@ -101,7 +101,8 @@ class SignalJournalSrcIn(BaseModel):
     """Натуральный ключ+провенанс: строка worker-БД движка (ключ дедупа)."""
 
     model_config = {"extra": "forbid"}
-    table: Literal["signals", "fills", "events", "closed_trades"]
+    # adapter — синтетика адаптера (journal_epoch_reset; id=unix-ms детекта, вне строк движка)
+    table: Literal["signals", "fills", "events", "closed_trades", "adapter"]
     id: int = Field(ge=1)
 
 
@@ -354,6 +355,29 @@ def signal_journal(
             )
         )
     return {"received": len(rows)}
+
+
+@router.get("/signal-journal/cursor")
+def signal_journal_cursor(
+    inst: Instance = Depends(current_instance),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Курсор журнала инстанса (guard эпохи БД + резюм seq адаптера): per-table последний
+    (src_id, ts) — fingerprint эпохи; + max(seq). Адаптер на бооте сверяет ts с worker-БД,
+    расхождение → эпоха сменилась → journal_epoch_reset. Инстанс из токена (SEC7)."""
+    rows = session.execute(
+        select(SignalJournalEvent.src_table, SignalJournalEvent.src_id, SignalJournalEvent.ts)
+        .where(SignalJournalEvent.instance_id == inst.id)
+        .distinct(SignalJournalEvent.src_table)
+        .order_by(SignalJournalEvent.src_table, SignalJournalEvent.src_id.desc())
+    ).all()
+    max_seq = session.execute(
+        select(func.max(SignalJournalEvent.seq)).where(SignalJournalEvent.instance_id == inst.id)
+    ).scalar()
+    return {
+        "max_seq": int(max_seq) if max_seq is not None else 0,
+        "tables": {r.src_table: {"src_id": r.src_id, "ts": r.ts.isoformat()} for r in rows},
+    }
 
 
 @router.post("/scout", status_code=status.HTTP_202_ACCEPTED)

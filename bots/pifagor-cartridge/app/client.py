@@ -112,6 +112,14 @@ class CoreClient:
         # Шлём ВСЕГДА (в т.ч. []): пустой набор = сетапы исчезли → ядро очистит (replace).
         self._post("/v1/telemetry/scout", snapshots)
 
+    def push_signal_journal(self, events: list[dict]) -> None:
+        if events:  # порция №3: append-only журнал, дедуп ядром по (instance, src.table, src.id)
+            self._post("/v1/telemetry/signal-journal", events)
+
+    def get_signal_journal_cursor(self) -> dict:
+        """Курсор журнала (порция №3): max_seq + per-table (src_id, ts) — резюм + guard эпохи."""
+        return self._request("GET", "/v1/telemetry/signal-journal/cursor").json()
+
     # ── команды (S4←) ─────────────────────────────────────────────────────────
 
     def next_command(self, *, wait: int = 25) -> dict:

@@ -125,12 +125,19 @@ LIVE_TRADING). Читатель `db.query(sql, params)` — общий (курс
 - [x] 2. Ядро-приём: модель `SignalJournalEvent` + миграция `0016_signal_journal` (append-only, uq(instance,seq))
       + Pydantic `SignalJournalIn` + маршрут `POST /v1/telemetry/signal-journal` (dedup, `_check_future_skew`)
       + sync-гвоздь тест. ruff чист, core **34 passed**.
-- [ ] 3. Адаптер: `app/signal_journal.py` (курсор-read worker-БД signals/fills/events/closed_trades по `id`
-      → деривация типизированных событий + конверт + setup_id/seq) + `client.push_signal_journal` +
-      интеграция в `bot.tick` + config (курсоры/интервал). Тесты vs НАСТОЯЩИЙ вендор.
-- [ ] 4. Readout ядра `GET /v1/instances/{id}/signal-journal` (для консоли).
+- [x] 3. Адаптер: `app/signal_journal.py` — SignalJournalDeriver (курсор-read 4 таблиц по `id` →
+      деривация по подписям П1–П4 + fingerprint-guard эпохи fail-closed + посев active из setup_state
+      + seq-резюм из ядра) + `client.push_signal_journal`/`get_signal_journal_cursor` + гейт
+      `SIGNAL_JOURNAL_ENABLED` (дефолт ВЫКЛ — флот байт-в-байт) + hook в `bot.tick` (best-effort) +
+      обвязка `main._make_journal` (+ассерт Куратора про Postgres). **Тесты vs НАСТОЯЩИЙ вендор: 13**
+      (жизнь сетапа 6 событий · П2/П3/П4 · service catch-all П1 · курсор no-dup/no-loss · пере-дерив
+      те же ключи · seq-резюм · эпоха: строка исчезла/ts разошёлся → parked+reset · unknown-фоллбэк ·
+      close_all[ALL]→service). Картридж **252 passed**, ruff чист.
+- [x] 4. Readout'ы ядра: `GET /v1/telemetry/signal-journal/cursor` (instance-токен: max_seq +
+      per-table fingerprint — guard эпохи) + `GET /v1/instances/{id}/signal-journal` (operator: лента).
 - [ ] 5. Консоль: вкладка «Журнал» (read-only лента событий).
-- [ ] 6. code-review → merge в main → деплой Борса → сверка полноты N дней.
+- [ ] 6. code-review → merge в main → деплой Борса (`SIGNAL_JOURNAL_ENABLED=1`+`SIGNAL_JOURNAL_CORE=BORS`)
+      → сверка полноты N дней.
 
 ## SHA
 - Разведка + финальная схема + КОД под-шаги 1–2 (ядро-приём): 2026-07-23 (эта сессия). Куратор подписал

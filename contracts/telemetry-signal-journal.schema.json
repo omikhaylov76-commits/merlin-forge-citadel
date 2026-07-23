@@ -8,33 +8,150 @@
   "items": {
     "type": "object",
     "additionalProperties": false,
-    "required": ["schema_version", "core", "seq", "ts", "setup_id", "kind", "src"],
+    "required": [
+      "schema_version",
+      "core",
+      "seq",
+      "ts",
+      "setup_id",
+      "kind",
+      "src"
+    ],
     "properties": {
-      "schema_version": {"type": "integer", "minimum": 1, "description": "версия схемы события (с 1-го дня)"},
-      "core": {"type": "string", "maxLength": 40, "description": "метка ядра-характера (BORS/PERCEVAL/...) для N-core разреза (недоверенный ввод)"},
-      "seq": {"type": "integer", "minimum": 0, "description": "per-core монотонный порядок повтора (диспетчер Этапа 2); НЕ ключ дедупа"},
-      "ts": {"type": "string", "format": "date-time", "description": "время события (ts движка; прошлое легально — бэкфилл)"},
-      "setup_id": {"type": "string", "maxLength": 80, "description": "{symbol}:{bar_time} — id сетапа через жизнь сделки"},
+      "schema_version": {
+        "type": "integer",
+        "minimum": 1,
+        "description": "версия схемы события (с 1-го дня)"
+      },
+      "core": {
+        "type": "string",
+        "maxLength": 40,
+        "description": "метка ядра-характера (BORS/PERCEVAL/...) для N-core разреза (недоверенный ввод)"
+      },
+      "seq": {
+        "type": "integer",
+        "minimum": 0,
+        "description": "per-core монотонный порядок повтора (диспетчер Этапа 2); НЕ ключ дедупа"
+      },
+      "ts": {
+        "type": "string",
+        "format": "date-time",
+        "description": "время события (ts движка; прошлое легально — бэкфилл)"
+      },
+      "setup_id": {
+        "type": "string",
+        "maxLength": 80,
+        "description": "{symbol}:{bar_time} — id сетапа через жизнь сделки"
+      },
       "kind": {
-        "enum": ["setup_detected", "setup_placed", "leg_filled", "leg_exit", "setup_ended", "trade_closed", "service"],
+        "enum": [
+          "setup_detected",
+          "setup_placed",
+          "leg_filled",
+          "leg_exit",
+          "setup_ended",
+          "trade_closed",
+          "service"
+        ],
         "description": "тип события; service — catch-all для не-торговых событий движка (raw-имя в data)"
       },
       "src": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["table", "id"],
+        "required": [
+          "table",
+          "id"
+        ],
         "properties": {
-          "table": {"enum": ["signals", "fills", "events", "closed_trades"], "description": "таблица worker-БД движка"},
-          "id": {"type": "integer", "minimum": 1, "description": "id строки движка"}
+          "table": {
+            "enum": [
+              "signals",
+              "fills",
+              "events",
+              "closed_trades",
+              "adapter"
+            ],
+            "description": "таблица worker-БД движка; adapter — синтетика адаптера (journal_epoch_reset, id=unix-ms детекта)"
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "id строки движка"
+          }
         },
         "description": "натуральный ключ+провенанс: строка worker-БД движка (ключ идемпотентности дедупа)"
       },
-      "data": {"type": "object", "description": "поля события по kind (символ/сетка/нога/pnl/...); недоверенный ввод, экранируется на выводе"}
+      "data": {
+        "type": "object",
+        "description": "поля события по kind (символ/сетка/нога/pnl/...); недоверенный ввод, экранируется на выводе"
+      }
     }
   },
   "examples": [
-    [{"schema_version": 1, "core": "BORS", "seq": 1, "ts": "2026-07-23T12:00:00Z", "setup_id": "WLFIUSDT:1784808000", "kind": "setup_placed", "src": {"table": "events", "id": 42}, "data": {"symbol": "WLFIUSDT", "side": "long", "entries": {"0.382": 0.05969, "0.5": 0.05807, "0.618": 0.05644}, "stop": 0.05119}}],
-    [{"schema_version": 1, "core": "BORS", "seq": 2, "ts": "2026-07-23T13:04:00Z", "setup_id": "WLFIUSDT:1784808000", "kind": "leg_filled", "src": {"table": "fills", "id": 17}, "data": {"symbol": "WLFIUSDT", "entry_level": "0.382", "requested_price": 0.05969, "requested_qty": 29586, "provenance": "requested (не exec — опросный путь движка)"}}],
-    [{"schema_version": 1, "core": "BORS", "seq": 3, "ts": "2026-07-23T13:48:00Z", "setup_id": "WLFIUSDT:1784808000", "kind": "leg_exit", "src": {"table": "events", "id": 51}, "data": {"symbol": "WLFIUSDT", "role": "tgt", "lv": 0.382, "qty": 29586}}]
+    [
+      {
+        "schema_version": 1,
+        "core": "BORS",
+        "seq": 1,
+        "ts": "2026-07-23T12:00:00Z",
+        "setup_id": "WLFIUSDT:1784808000",
+        "kind": "setup_placed",
+        "src": {
+          "table": "events",
+          "id": 42
+        },
+        "data": {
+          "symbol": "WLFIUSDT",
+          "side": "long",
+          "entries": {
+            "0.382": 0.05969,
+            "0.5": 0.05807,
+            "0.618": 0.05644
+          },
+          "stop": 0.05119
+        }
+      }
+    ],
+    [
+      {
+        "schema_version": 1,
+        "core": "BORS",
+        "seq": 2,
+        "ts": "2026-07-23T13:04:00Z",
+        "setup_id": "WLFIUSDT:1784808000",
+        "kind": "leg_filled",
+        "src": {
+          "table": "fills",
+          "id": 17
+        },
+        "data": {
+          "symbol": "WLFIUSDT",
+          "entry_level": "0.382",
+          "requested_price": 0.05969,
+          "requested_qty": 29586,
+          "provenance": "requested (не exec — опросный путь движка)"
+        }
+      }
+    ],
+    [
+      {
+        "schema_version": 1,
+        "core": "BORS",
+        "seq": 3,
+        "ts": "2026-07-23T13:48:00Z",
+        "setup_id": "WLFIUSDT:1784808000",
+        "kind": "leg_exit",
+        "src": {
+          "table": "events",
+          "id": 51
+        },
+        "data": {
+          "symbol": "WLFIUSDT",
+          "role": "tgt",
+          "lv": 0.382,
+          "qty": 29586
+        }
+      }
+    ]
   ]
 }

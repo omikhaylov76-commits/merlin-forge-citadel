@@ -58,6 +58,11 @@ class CartridgeConfig:
     # (Оператор: реже Этапа A, ~раз в месяц — стабильнее пороги; не дёргать движок каждый день).
     # Бары монеты sticky в этом окне; held заморожены пока позиция жива. Дефолт ~30д.
     dynamic_bars_refresh_s: float = 2_592_000.0
+    # Сигнальный журнал (порция №3, Этап 1 1-to-N): деривер событий из worker-БД → ядро.
+    # Гейт как SCOUT_ENABLED (строго "1"); Борс первым (Куратор), флот/эталон дефолтом ВЫКЛ.
+    journal_enabled: bool = False
+    journal_core: str = "PIFAGOR"        # метка ядра-характера в событиях (BORS/PERCEVAL/...)
+    journal_interval_s: float = 10.0     # каденция оборота деривера
 
 
 def from_env() -> CartridgeConfig:
@@ -100,4 +105,7 @@ def from_env() -> CartridgeConfig:
         ),
         dynamic_refetch_s=float(os.environ.get("DYNAMIC_REFETCH_S", "300")),
         dynamic_bars_refresh_s=float(os.environ.get("DYNAMIC_BARS_REFRESH_S", "2592000")),
+        journal_enabled=os.environ.get("SIGNAL_JOURNAL_ENABLED") == "1",
+        journal_core=os.environ.get("SIGNAL_JOURNAL_CORE", "PIFAGOR").strip().upper() or "PIFAGOR",
+        journal_interval_s=float(os.environ.get("SIGNAL_JOURNAL_S", "10")),
     )

@@ -44,16 +44,18 @@ def _scout_sig(snaps: list[dict]) -> tuple:
 class PifagorCartridge:
     def __init__(self, client, reader, config: CartridgeConfig,
                  *, sleep: Callable[[float], None] = time.sleep, scout_reader=None,
-                 provider=None) -> None:
+                 provider=None, journal=None) -> None:
         self._client = client
         self._reader = reader
         self._cfg = config
         self._sleep = sleep
         self._scout = scout_reader          # None → scout-канал выключен (scout.db нет; флот)
         self._provider = provider           # None → динамика выкл (dynamic_enabled=0; флот) S8
+        self._journal = journal             # None → сигнальный журнал выкл (порция №3; Борс первым)
         self._start_mono: float | None = None
         self._last_hb_mono: float | None = None
         self._last_scout_mono: float | None = None
+        self._last_journal_mono: float | None = None
         self._last_scan_ms = 0
         self._last_held: frozenset[str] = frozenset()   # для re-push при смене held (F-scout-snap)
         self._last_universe: frozenset[str] | None = None  # re-push при смене стека (in_universe)
@@ -87,7 +89,22 @@ class PifagorCartridge:
             self._provider.tick(mono, held)     # печка→стек→coins.json
         self._push_telemetry(monitor, now)
         self._push_scout(mono, held)
+        self._tick_journal(mono)
         return self._handle_command(now, mono)
+
+    def _tick_journal(self, mono: float) -> None:
+        """Сигнальный журнал (порция №3): оборот деривера своей каденцией. Best-effort —
+        наблюдатель НИКОГДА не роняет торговый цикл (сбой → лог, повтор следующим разом)."""
+        if self._journal is None:
+            return
+        iv = self._cfg.journal_interval_s
+        if self._last_journal_mono is not None and mono - self._last_journal_mono < iv:
+            return
+        self._last_journal_mono = mono
+        try:
+            self._journal.tick()
+        except Exception:  # noqa: BLE001
+            log.exception("журнал: оборот упал — best-effort, продолжаю")
 
     def _universe(self) -> frozenset[str] | None:
         """Рабочий набор движка для правды движка снимков (S8 единая Разведка): символы стека
