@@ -120,6 +120,18 @@ LIVE_TRADING). Читатель `db.query(sql, params)` — общий (курс
 **Ядро:** таблица `signal_journal` (миграция 0016, append-only), идемпотент по `(instance_id, seq)` [core в теле], аддитивная. Маршрут `POST /v1/telemetry/signal-journal` + Pydantic-зеркало (schema-first) + readout. Зеркало scout/engine-state (Закон 3).
 **Витрина:** мини-вкладка «Журнал» (Сигналы) в группе «Журналы» консоли (read-only лента).
 
+## Код — под-шаги (ветка `task/s8-signal-journal`)
+- [x] 1. Контракт-схема `contracts/telemetry-signal-journal.schema.json` (конверт+kind+data, examples).
+- [x] 2. Ядро-приём: модель `SignalJournalEvent` + миграция `0016_signal_journal` (append-only, uq(instance,seq))
+      + Pydantic `SignalJournalIn` + маршрут `POST /v1/telemetry/signal-journal` (dedup, `_check_future_skew`)
+      + sync-гвоздь тест. ruff чист, core **34 passed**.
+- [ ] 3. Адаптер: `app/signal_journal.py` (курсор-read worker-БД signals/fills/events/closed_trades по `id`
+      → деривация типизированных событий + конверт + setup_id/seq) + `client.push_signal_journal` +
+      интеграция в `bot.tick` + config (курсоры/интервал). Тесты vs НАСТОЯЩИЙ вендор.
+- [ ] 4. Readout ядра `GET /v1/instances/{id}/signal-journal` (для консоли).
+- [ ] 5. Консоль: вкладка «Журнал» (read-only лента событий).
+- [ ] 6. code-review → merge в main → деплой Борса → сверка полноты N дней.
+
 ## SHA
-- Разведка + финальная схема: 2026-07-23 (эта сессия). Куратор подписал d1(B+C)/d3/d4 + setup_id/seq.
-  Кода нет. Ждёт ФИНАЛЬНОЙ сверки схемы Куратором → затем код (адаптер курсор-read + ядро 0016 + вкладка).
+- Разведка + финальная схема + КОД под-шаги 1–2 (ядро-приём): 2026-07-23 (эта сессия). Куратор подписал
+  d1(B+C)/d3/d4 + setup_id/seq. Ветка `task/s8-signal-journal`. Дальше — адаптер (курсор-read) + консоль.

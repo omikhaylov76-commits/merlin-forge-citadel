@@ -15,7 +15,14 @@ from app.auth import issue_token
 from app.db import get_sessionmaker
 from app.main import create_app
 from app.models import Instance, User
-from app.routes_telemetry import EquityIn, EventIn, HeartbeatIn, ScoutSnapshotIn, TradeIn
+from app.routes_telemetry import (
+    EquityIn,
+    EventIn,
+    HeartbeatIn,
+    ScoutSnapshotIn,
+    SignalJournalIn,
+    TradeIn,
+)
 from tests.crm_helpers import ensure_parents
 
 _CONTRACTS = Path(__file__).resolve().parents[2] / "contracts"
@@ -197,6 +204,7 @@ def test_unknown_instance_404(sm):
         ("telemetry-trades", TradeIn, True),
         ("telemetry-events", EventIn, True),
         ("telemetry-scout", ScoutSnapshotIn, True),  # #52: зеркало (extra=forbid ловит дрейф)
+        ("telemetry-signal-journal", SignalJournalIn, True),  # порция №3: журнал (extra=forbid)
     ],
 )
 def test_schema_examples_accepted_by_pydantic(schema_name, model, is_array):
