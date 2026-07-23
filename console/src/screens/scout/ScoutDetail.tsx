@@ -14,6 +14,19 @@ const STAGE_RU: Record<string, string> = {
 const fmtP = (n?: number) => (n == null ? '—' : n.toLocaleString('ru-RU', { maximumFractionDigits: 6 }))
 const css = (n: string) => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || '#888'
 
+// Точность оси цены и подписей уровней (LWC) — АДАПТИВНО от масштаба цены. Дефолт LWC=2 знака сливал
+// вх/стоп дешёвых монет в одинаковые 0.05/0.06 (жалоба Оператора); дешёвые живут в 5-8 знаке — показываем.
+function pricePrecision(p: number): number {
+  const a = Math.abs(p)
+  if (!(a > 0) || !Number.isFinite(a)) return 2
+  if (a >= 100) return 2
+  if (a >= 1) return 4
+  if (a >= 0.1) return 5
+  if (a >= 0.01) return 6
+  if (a >= 0.001) return 7
+  return 8
+}
+
 const LEVEL_TITLE: Record<string, string> = {
   A: 'A низ',
   B: 'B верх',
@@ -65,12 +78,16 @@ export function ScoutDetail({
       timeScale: { timeVisible: true, secondsVisible: false, borderColor: css('--color-line'), rightOffset: 13 },
       rightPriceScale: { borderColor: css('--color-line') },
     })
+    // точность от масштаба цены монеты (репрезентативный close) → ось и подписи уровней не сливаются
+    const repPx = snap.klines[snap.klines.length - 1]?.c || snap.klines[0]?.c || 0
+    const prec = pricePrecision(repPx)
     const candles = chart.addCandlestickSeries({
       upColor: css('--color-ok'),
       downColor: danger,
       borderVisible: false,
       wickUpColor: css('--color-ok'),
       wickDownColor: danger,
+      priceFormat: { type: 'price', precision: prec, minMove: Math.pow(10, -prec) },
     })
     // LWC требует СТРОГО возрастающее уникальное time — сортируем+дедупим (защита от несорт. продюсера)
     const rows = [...snap.klines]
