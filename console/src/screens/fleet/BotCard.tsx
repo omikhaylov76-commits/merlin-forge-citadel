@@ -50,13 +50,51 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   })
   // F-warm-button (ADR-0022): мультивыбор сетапов → ОДНА команда warm_apply (движок за один тик
   // разберёт пачку, поставит только годные PENDING; невалидные молча skip). Список — уже в контракте.
-  const [warmSel, setWarmSel] = useState<Set<string>>(new Set())
+  // Пометка + судьба ⏳ ПЕРЕЖИВАЮТ уход/возврат (localStorage, как индикатор скана) — жалоба Оператора:
+  // отмечал монету, уходил в Разведку, возвращался — пометка/часики пропадали (жили в useState).
+  const [warmSel, setWarmSel] = useState<Set<string>>(() => {
+    try {
+      return new Set<string>(JSON.parse(localStorage.getItem(`mfc.warmSel.${inst.id}`) || '[]'))
+    } catch {
+      return new Set()
+    }
+  })
   const [warmBatch, setWarmBatch] = useState<'idle' | 'busy' | 'sent' | 'err'>('idle')
   // symbol → момент отправки warm (мс). Держим, чтобы показать СУДЬБУ после ⏳: поставлено (в
   // ордерах) / не взято + причина (из вердикта движка scout-снимка). Не тихий Set (жалоба Оператора).
-  const [warmSentAt, setWarmSentAt] = useState<Record<string, number>>({})
+  // Стейл (>6ч, судьба протухла) чистим на загрузке, чтобы localStorage не пух.
+  const [warmSentAt, setWarmSentAt] = useState<Record<string, number>>(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(`mfc.warmSentAt.${inst.id}`) || '{}')
+      const now = Date.now()
+      return Object.fromEntries(
+        Object.entries(raw as Record<string, number>).filter(
+          ([, t]) => typeof t === 'number' && now - t < 6 * 3_600_000,
+        ),
+      )
+    } catch {
+      return {}
+    }
+  })
   // scout-снимки этого бота (engine-поле = вердикт движка per-coin) — для причины «не взято».
   const [scoutSnaps, setScoutSnaps] = useState<ScoutSnapshot[]>([])
+
+  // Персист пометки + судьбы warm (переживает уход/возврат — как индикатор скана). Пишем на каждое
+  // изменение; localStorage недоступен/полон → тихо работаем в памяти (не роняем карточку).
+  useEffect(() => {
+    try {
+      localStorage.setItem(`mfc.warmSel.${inst.id}`, JSON.stringify([...warmSel]))
+    } catch {
+      /* noop */
+    }
+  }, [warmSel, inst.id])
+  useEffect(() => {
+    try {
+      localStorage.setItem(`mfc.warmSentAt.${inst.id}`, JSON.stringify(warmSentAt))
+    } catch {
+      /* noop */
+    }
+  }, [warmSentAt, inst.id])
 
   // Кнопка «Сканировать сейчас» прямо на карточке (просьба Оператора): та же команда scan_now,
   // что на Разведке — скаут пересканирует (~1-2 мин), свечи/сетапы/графики обновятся сами.
