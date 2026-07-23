@@ -21,5 +21,13 @@ position, scan_ts, …, config_mismatch{flag,details}, producer}; приёмна
 PENDING|OPEN|null, auto_eligible, reanchored, in_universe, side?, age_bars?, entries?, stop?,
 targets?, est_risk_pct?}; ключа нет = правда не посчитана, «неизвестно» ≠ «не берёт»; снимок
 скаута, не живой тик — лексика причин выводится консолью из фактов).
+**signal-journal** (v1, ADR-0025, порция №3, S8→Ф5) — ШЕСТОЙ канал: append-only ЖУРНАЛ решений
+ядра-характера (НЕ replace): батч событий per (instance), дедуп по НАТУРАЛЬНОМУ ключу движка
+(instance, src_table, src_id), `seq`=порядок повтора (не ключ); kind ∈ {setup_detected, setup_placed,
+leg_filled, leg_exit, setup_ended, trade_closed, service}; `src{table,id}` + `data` (недоверенный JSON
+по kind). Курсорный 0-vendor read worker-БД (owner=False), guard эпохи fail-closed, гейт
+`SIGNAL_JOURNAL_ENABLED` деф.OFF, батч ≤500 (413). Ручка `POST /v1/telemetry/signal-journal` + таблица
+`signal_journal` (миграция 0016) + readout'ы (cursor instance / лента operator). Зерно диспетчера
+повтора Этапа 2 (перекат 1-to-N); ведение-детали → вариант C (ADR-0024).
 Команды (S4←): **command** {cmd: none|pause|resume|stop_close, cmd_id}. Приём —
 [core-api](core-api.md) §Контракт Бота, поток — [flows](flows.md).
