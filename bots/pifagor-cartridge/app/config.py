@@ -54,6 +54,10 @@ class CartridgeConfig:
     # re-fetch пишет JSON-файл, провайдер читает его ЖИВЬЁМ. Пусто → провайдер на ген-дефолтах.
     dynamic_criteria_path: str = ""    # путь dynamic_criteria.json (re-fetch↔провайдер)
     dynamic_refetch_s: float = 300.0   # интервал re-fetch критериев из ядра (D1: живое применение)
+    # S8 per-coin бары: ритм ПЕРЕ-захвата volnorm-mb стек-монет из scout_list, decouple от Этапа A
+    # (Оператор: реже Этапа A, ~раз в месяц — стабильнее пороги; не дёргать движок каждый день).
+    # Бары монеты sticky в этом окне; held заморожены пока позиция жива. Дефолт ~30д.
+    dynamic_bars_refresh_s: float = 2_592_000.0
 
 
 def from_env() -> CartridgeConfig:
@@ -95,4 +99,5 @@ def from_env() -> CartridgeConfig:
             if os.environ.get("PIFAGOR_HOME") else "",
         ),
         dynamic_refetch_s=float(os.environ.get("DYNAMIC_REFETCH_S", "300")),
+        dynamic_bars_refresh_s=float(os.environ.get("DYNAMIC_BARS_REFRESH_S", "2592000")),
     )

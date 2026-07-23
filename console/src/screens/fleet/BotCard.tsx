@@ -656,7 +656,10 @@ function StackPanel({
         </div>
       ) : (
         <div className="overflow-x-auto">
-          <DataTable cols={['Монета', 'Стадия', 'Скор', 'ТФ', onToggleWarm ? 'В пачку' : '']} numFrom={2}>
+          <DataTable
+            cols={['Монета', 'Стадия', 'Скор', 'ТФ', 'Бары', onToggleWarm ? 'В пачку' : '']}
+            numFrom={2}
+          >
             {stack.items.map((it, i) => (
               <tr
                 key={i}
@@ -677,6 +680,19 @@ function StackPanel({
                   {it.score ?? '—'}
                 </Td>
                 <Td num>{it.tf ?? '—'}</Td>
+                <Td num>
+                  {it.mb1 != null && it.mb2 != null ? (
+                    <span
+                      className="tnum"
+                      title={it.bar_source ? `источник баров: ${it.bar_source}` : undefined}
+                    >
+                      {it.mb1} / {it.mb2}
+                      {it.bar_source === 'config' && <span className="ml-1 text-ash">◦</span>}
+                    </span>
+                  ) : (
+                    '—'
+                  )}
+                </Td>
                 <Td num>
                   {onToggleWarm && (
                     <WarmCell

@@ -23,6 +23,27 @@ log = logging.getLogger("mfc.pifagor-cartridge")
 # Дефолтный per-coin блок scout-монет (ADR-0019 F6): parity-приближение, НЕ боевая настройка;
 # пересмотр перед Вехой 2. Проходит config.validate (mb1/mb2>0, lev 1..5, weight>0).
 _DEFAULT_COIN = {"enabled": True, "mb1": 2.0, "mb2": 3.5, "leverage": 5, "weight": 1.0}
+
+
+def coin_block(mb1=None, mb2=None) -> dict:
+    """S8 per-coin бары: блок coins.json/COINS_CONFIG монеты из volnorm-mb (scout_list) — каркас
+    _DEFAULT_COIN (enabled/leverage/weight) + per-coin mb1/mb2. mb неполны (None/мусор/пусто) →
+    ФОЛБЭК на дефолт-бары (валидны для config.validate): held-пин без scan_list-mb либо холодный
+    старт (уточнение #2 Куратора: фолбэк ТОЛЬКО если mb вообще неоткуда взять). Бары per-coin, но
+    leverage/weight — дефолт динамики (подпись Куратора про mb, не про плечо)."""
+    block = dict(_DEFAULT_COIN)
+    try:
+        # volnorm/config всегда >0; мусор/≤0/NaN → дефолт-бары (иначе config.validate отвергнет ВЕСЬ
+        # coins.json → движок на _DEFAULT_COINS_CONFIG, динамик-вселенная потеряна).
+        if mb1 is not None and mb2 is not None:
+            m1, m2 = float(mb1), float(mb2)
+            if m1 > 0 and m2 > 0:
+                block["mb1"], block["mb2"] = m1, m2
+    except (TypeError, ValueError):
+        pass  # мусорная mb → дефолт-бары, не роняем классификацию/запись
+    return block
+
+
 # Решение Оператора (живая сверка Вехи 2): БЕЗ "forming" — сетап ещё зарождается, не факт что
 # родится (не кандидат в торговую вселенную); committed — производная UI, не стадия печки.
 _ACTIVE_STAGES = ("tracking", "ready")
@@ -62,12 +83,18 @@ class DynamicUniverse:
         self._enter = max(1, int(cfg.dynamic_enter_scans))   # гистерезис (геном, не канал)
         self._exit = max(1, int(cfg.dynamic_exit_scans))     # гистерезис (геном, не канал)
         self._min_write_s = float(cfg.dynamic_min_write_s)
-        self._stack: dict[str, dict] = {}       # {symbol: {stage,score,tf,missed}}
+        # S8 per-coin бары: ритм ПЕРЕ-захвата volnorm-mb стек-монет (decouple от Этапа A; уточнение
+        # Куратора — mb sticky в окне, held заморожены). getattr: старый cfg = дефолт.
+        self._bars_refresh_s = float(getattr(cfg, "dynamic_bars_refresh_s", 2_592_000.0))
+        self._stack: dict[str, dict] = {}   # {symbol:{stage,score,tf,missed,mb1,mb2,bar_source}}
         self._held: frozenset[str] = frozenset()   # символы с живой позицией/ордером (пин, Веха 2)
         self._pending: dict[str, int] = {}      # кандидат → сканов подряд виден (гистерезис входа)
         self._last_scan_ms = 0
-        self._written: frozenset[str] = frozenset()
+        # Сигнатура ЗАПИСАННОГО набора по СОДЕРЖИМОМУ (symbol+mb), не только символам (уточнение #1
+        # Куратора: смена mb при том же составе иначе не запишется → тихая гниль старых баров).
+        self._written_sig: frozenset = frozenset()
         self._last_write_mono = float("-inf")
+        self._last_bars_refresh_mono = float("-inf")   # таймер пере-захвата баров (per-coin, S8)
 
     def _load_criteria(self) -> None:
         """ADR-0020 D1: критерии из файла (re-fetch пишет), fallback = ген-дефолты cfg. Читаются на
@@ -105,7 +132,7 @@ class DynamicUniverse:
             return
         self._last_scan_ms = scan_ms
         if self._source == "engine":
-            self._recompute_engine(cand)        # F-lookahead v3: отбор по warm.classify (placeable)
+            self._recompute_engine(cand, now_mono)   # F-lookahead v3: placeable по warm.classify
         else:
             self._recompute(cand)               # прежний путь: по скаут-стадии/скору
         self._maybe_write(now_mono)
@@ -161,21 +188,39 @@ class DynamicUniverse:
                               "tf": f.get("tf") or "4h"}
         self._apply_fresh(fresh, lambda s: _score_key(fresh[s]))
 
-    def _recompute_engine(self, placeable: dict) -> None:
+    def _recompute_engine(self, placeable: dict, now_mono: float) -> None:
         """F-lookahead v3: кандидаты = движко-PLACEABLE (`warm.classify` PENDING) из пула качества
         scout_list — НЕ скаут-стадия/скор. auto_eligible ПЕРВЫМИ (самоход поставит сам), reanchored
         после (кнопка «Поставить»). Сито качества УЖЕ применено при сборе scout_list (Этап A) — не
         дублируем; `min_score` канала → доп-порог к скору КАЧЕСТВА монеты (семантика в README).
         fresh_bars в engine-режиме НЕ применяем — движок сам режет окном TIMEOUT_BARS=72 (placeable
-        уже в нём). Предохранители — общий `_apply_fresh`."""
+        уже в нём). Предохранители — общий `_apply_fresh`.
+
+        S8 per-coin бары: `fresh` несёт mb монеты (движку в coins.json per-coin вместо плоского
+        2.0/3.5). STICKY (уточнения Куратора): held-монета держит бары, с которыми ВОШЛА (не менять
+        пороги под живой позицией) — заморожена, пока позиция жива; не-held стек-монета тоже держит
+        бары (не дёргать движок каждый скан), а пере-захватывает свежую mb пула лишь по ритму
+        `_bars_refresh_s` (Оператор: ~раз в месяц). Новый вход — захват текущей mb. Фолбэк на
+        дефолт-бары — в `coin_block` при записи (если mb неоткуда взять)."""
         self._load_criteria()                   # ADR-0020 D1: живой кап/мин-скор качества
+        refresh_due = (now_mono - self._last_bars_refresh_mono) >= self._bars_refresh_s
         fresh = {}
         for sym, p in placeable.items():
             score = p.get("score")
             if self._min_score > 0 and (score is None or score < self._min_score):
                 continue                        # доп-порог качества поверх сита scout_list (0=выкл)
+            cur = self._stack.get(sym)
+            # STICKY: монета уже в стеке с барами И (held ИЛИ окно refresh не истекло) → держим её
+            # бары. Иначе (новый вход, либо не-held и refresh настал) → свежая mb пула.
+            if cur and cur.get("mb1") is not None and not (refresh_due and sym not in self._held):
+                mb1, mb2, bsrc = cur.get("mb1"), cur.get("mb2"), cur.get("bar_source")
+            else:
+                mb1, mb2, bsrc = p.get("mb1"), p.get("mb2"), p.get("bar_source")
             fresh[sym] = {"stage": "ready" if p.get("auto_eligible") else "tracking",
-                          "score": score, "tf": _SIGNAL_TF, "auto": bool(p.get("auto_eligible"))}
+                          "score": score, "tf": _SIGNAL_TF, "auto": bool(p.get("auto_eligible")),
+                          "mb1": mb1, "mb2": mb2, "bar_source": bsrc}
+        if refresh_due:
+            self._last_bars_refresh_mono = now_mono   # окно пере-захвата открыто → сдвигаем таймер
         # вход: auto-годные ПЕРВЫМИ (самоход возьмёт без кнопки), затем по скору качества
         self._apply_fresh(
             fresh,
@@ -185,15 +230,25 @@ class DynamicUniverse:
         symbols = frozenset(self._stack) | self._held   # ПИН: held ВСЕГДА в наборе (даже вне стека)
         if not symbols:
             return                              # ПОЛ НА ПУСТОТУ: стек и held пусты → не пишем
-        if symbols == self._written:
-            return                              # набор не менялся
+        # S8 per-coin бары: блок монеты = её volnorm-mb из стека; mb нет (held-пин без scan_list-mb;
+        # scout-путь — стек БЕЗ баров вовсе) → coin_block фолбэкнет на дефолт _DEFAULT_COIN
+        # байт-в-байт (регресс-гвоздь scout сохранён).
+        coins = {}
+        for s in symbols:
+            item = self._stack.get(s) or {}
+            coins[s] = coin_block(item.get("mb1"), item.get("mb2"))
+        # Сигнатура по СОДЕРЖИМОМУ (symbol+mb), не только символам (уточнение #1 Куратора): смена mb
+        # при неизменном составе иначе не записалась бы → движок тихо остался бы на старых барах.
+        sig = frozenset((s, c["mb1"], c["mb2"]) for s, c in coins.items())
+        if sig == self._written_sig:
+            return                              # ни состав, ни бары не менялись
         if now_mono - self._last_write_mono < self._min_write_s:
             return                              # min-интервал записи (анти-thrash)
         if not self._coins_path:
             log.warning("dynamic: COINS_CONFIG_PATH не задан — вселенную не пишу")
             return
-        self._write_atomic({s: dict(_DEFAULT_COIN) for s in symbols})
-        self._written = symbols
+        self._write_atomic(coins)
+        self._written_sig = sig
         self._last_write_mono = now_mono
 
     def _write_atomic(self, coins: dict) -> None:
@@ -234,10 +289,13 @@ class DynamicUniverse:
             log.exception("dynamic: не смог записать флаг позиций %s", path)
 
     def view(self) -> dict:
-        """Снимок стека для engine_state.stack (карточка Борса): cap/count/items (+pinned)."""
+        """Снимок стека для engine_state.stack (карточка Борса): cap/count/items (+pinned +бары).
+        S8 per-coin бары: несём mb1/mb2/bar_source монеты → карточка кажет РЕАЛЬНЫЕ бары движка
+        (не плоские 2.0/3.5) для живой сверки. Аддитивно (engine_state — свободный payload ядра)."""
         items = sorted(
             ({"symbol": s, "stage": v.get("stage"), "score": v.get("score"), "tf": v.get("tf"),
-              "pinned": s in self._held}         # пришпилена под живую позицию/ордер (ADR-0019 «б»)
+              "pinned": s in self._held,         # пришпилена под живую позицию/ордер (ADR-0019 «б»)
+              "mb1": v.get("mb1"), "mb2": v.get("mb2"), "bar_source": v.get("bar_source")}
              for s, v in self._stack.items()),
             key=lambda i: (i["score"] is not None, i["score"] or 0), reverse=True,
         )

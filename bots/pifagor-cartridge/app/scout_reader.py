@@ -84,15 +84,20 @@ class ScoutReader:
     def scan_list_rows(self) -> list[dict]:
         """Курированный ПУЛ КАЧЕСТВА (vendor `scout_list_all`): монеты с ПУСТЫМИ hard_rejects
         (оборот/возраст≥90д/спред/история/не-стейбл — фильтры Оператора, Этап A `universe.py`) И
-        скором качества ≥ порога. [{symbol, score}] по убыванию скора. Fail-soft [] (пул не
-        прочитался → провайдер держит прежний набор). УСЛОВИЕ ПОДПИСИ: берём ТОЛЬКО отфильтрованный
-        scout_list, НЕ сырой scout_universe_all — сито качества = защита от мусора."""
+        скором качества ≥ порога. [{symbol,score,mb1,mb2,bar_source}] по убыванию скора. Fail-soft
+        [] (пул не прочитался → провайдер держит прежний набор). УСЛОВИЕ ПОДПИСИ: берём ТОЛЬКО
+        отфильтрованный scout_list, НЕ сырой scout_universe_all — сито качества = защита от мусора.
+
+        S8 per-coin бары: несём `mb1/mb2/bar_source` (вендор их считает volnorm/config в Этапе A,
+        кладёт в scout_list — раньше дропали). Провайдер в engine-режиме пишет их движку per-coin
+        (вместо плоского 2.0/3.5). mb=None (строка без баров) → провайдер фолбэкнет на дефолт."""
         try:
             out = []
             for r in self.scout_db.scout_list_all() or []:
                 sym = str(r.get("symbol") or "").strip().upper()
                 if sym:
-                    out.append({"symbol": sym, "score": r.get("score")})
+                    out.append({"symbol": sym, "score": r.get("score"), "mb1": r.get("mb1"),
+                                "mb2": r.get("mb2"), "bar_source": r.get("bar_source")})
             return out
         except Exception:  # noqa: BLE001 — пул не прочитался → пусто (провайдер держит набор)
             log.exception("scan_list: чтение курированного пула упало — пул пуст")
@@ -108,23 +113,27 @@ class ScoutReader:
         scan_ms = self._scan_cursor()
         if scan_ms == 0:
             return 0, {}                      # скаут ещё не сканил — пула нет
-        from app.dynamic_universe import _DEFAULT_COIN
+        from app.dynamic_universe import coin_block
         pool = self.scan_list_rows()
         t0 = time.monotonic()
         out: dict = {}
         for row in pool:
             sym = row["symbol"]
-            # АДВЕРС-РЕВЬЮ: движок при dynamic берёт coins.json ЦЕЛИКОМ (REPLACE, strategy.py:125)
-            # с _DEFAULT_COIN. Форсим ТЕ ЖЕ пороги (не унаследованные mb статик-вендора вроде
-            # AAVE 2.5/4.0 — иначе вердикт адаптера разойдётся с постановкой движка).
-            self._vendor_cfg.strategy.COINS_CONFIG[sym] = dict(_DEFAULT_COIN)
+            # S8 per-coin бары: классифицируем ТЕМИ ЖЕ mb, что запишем движку в coins.json (per-coin
+            # volnorm из scout_list, фолбэк дефолт). Заменяет прежний форс _DEFAULT_COIN: инвариант
+            # «вердикт адаптера == реальная постановка движка (coins.json REPLACE, strategy.py:125)»
+            # СОХРАНЁН — но теперь по НАСТОЯЩИМ барам монеты, не плоским 2.0/3.5. Перебивает и
+            # унаследованный статик-mb мажоров (AAVE 2.5/4.0), т.к. пишем per-coin явно.
+            self._vendor_cfg.strategy.COINS_CONFIG[sym] = coin_block(row.get("mb1"), row.get("mb2"))
             ok, desc = self._classify(sym)
             if not ok or desc is None:
                 continue
             if str(desc.get("kind")) != "PENDING":   # OPEN (в рынке) / None — не свежая постановка
                 continue
             out[sym] = {"kind": "PENDING", "auto_eligible": bool(desc.get("auto_eligible")),
-                        "reanchored": bool(desc.get("reanchored")), "score": row.get("score")}
+                        "reanchored": bool(desc.get("reanchored")), "score": row.get("score"),
+                        "mb1": row.get("mb1"), "mb2": row.get("mb2"),
+                        "bar_source": row.get("bar_source")}
         log.info("scout: placeable-скан пула %d → годных %d за %.2fс",
                  len(pool), len(out), time.monotonic() - t0)
         return scan_ms, out

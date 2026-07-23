@@ -213,7 +213,17 @@ export type EngineOrder = {
 export type EngineTrade = { symbol: string; side: string; qty: number; pnl: number; ts: string }
 export type EngineEvent = { kind: string; ts: string; detail: string }
 // S8/ADR-0020: стек рабочих монет динамической вселенной (символ+стадия+скор из провайдера)
-export type EngineStackItem = { symbol: string; stage: string | null; score: number | null; tf: string | null }
+// S8 per-coin бары: mb1/mb2 = толчковые бары монеты у движка (volnorm/config), bar_source — их
+// происхождение. Опциональны (старые снимки/scout-режим их не несут → «—»).
+export type EngineStackItem = {
+  symbol: string
+  stage: string | null
+  score: number | null
+  tf: string | null
+  mb1?: number | null
+  mb2?: number | null
+  bar_source?: string | null
+}
 export type EngineStack = { cap: number; count: number; items: EngineStackItem[] }
 export type EngineState = {
   status: { state: string; kill_switch: boolean; alarm: boolean; stale: boolean; banner: string }
