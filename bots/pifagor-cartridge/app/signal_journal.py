@@ -35,13 +35,19 @@ import os
 import time
 from datetime import UTC, datetime
 
+from app.client import CoreError, TransientError
+
 log = logging.getLogger("mfc.pifagor-cartridge")
 
 SCHEMA_VERSION = 1
 _TABLES = ("signals", "fills", "events", "closed_trades")
 # Порядок таблиц при равном ts (причинность: детект → событие/постановка → залив → финал).
 _RANK = {"signals": 0, "events": 1, "fills": 2, "closed_trades": 3}
-_BATCH_PER_TABLE = 200          # строк с таблицы за тик (пуш-батч ≤500 держит ядро, 413 → дробим)
+# Батч Контракта = schema maxItems = ядро _MAX_BATCH (telemetry-signal-journal.schema.json).
+_CONTRACT_MAX_BATCH = 500
+# Строк с одной таблицы за тик. Суммарно ≤ len(_TABLES)*_BATCH_PER_TABLE = _CONTRACT_MAX_BATCH:
+# 413 из _collect НЕДОСТИЖИМ; бэклог дренится порциями за неск. тиков (курсор двигается лосслесс).
+_BATCH_PER_TABLE = _CONTRACT_MAX_BATCH // len(_TABLES)   # 500 // 4 = 125
 _UNKNOWN = "unknown"            # суффикс setup_id: якорь-сигнал вне наблюдения (курсор старше)
 
 
@@ -75,6 +81,17 @@ def _detail_str(raw) -> str | None:
     return None if raw is None else str(raw)[:500]
 
 
+def _setup_id(sym: str, bt) -> str:
+    """setup_id = {symbol}:{bar_time}. Нечисловой/пустой bar_time → :unknown (деривацию НЕ роняем —
+    иначе одна кривая строка заклинила бы весь журнал)."""
+    if not bt:
+        return f"{sym}:{_UNKNOWN}"
+    try:
+        return f"{sym}:{int(bt)}"
+    except (TypeError, ValueError):
+        return f"{sym}:{_UNKNOWN}"
+
+
 class SignalJournalDeriver:
     """Держит курсоры/active-сетапы в памяти; корректность несёт натуральный ключ (не состояние)."""
 
@@ -92,7 +109,8 @@ class SignalJournalDeriver:
     # ── boot: резюм из ядра + fingerprint-guard эпохи ─────────────────────────
 
     def boot(self) -> bool:
-        """Резюм курсоров/seq из ядра + сверка эпохи БД. False → parked/ретрай следующим тиком."""
+        """Резюм курсоров/seq из ядра + сверка эпохи БД. False → parked/ретрай следующим тиком.
+        Различаем: строки НЕТ/ts разошёлся → эпоха (park, fail-closed); СБОЙ чтения → ретрай."""
         try:
             cur = self._client.get_signal_journal_cursor()
         except Exception as exc:  # noqa: BLE001 — ядро недоступно: попробуем на след. тике
@@ -103,7 +121,12 @@ class SignalJournalDeriver:
             if tbl not in _TABLES:
                 continue                      # adapter-синтетика курсором не является
             src_id = int(fp.get("src_id") or 0)
-            row = self._row_by_id(tbl, src_id)
+            try:
+                row = self._row_by_id(tbl, src_id)
+            except Exception as exc:  # noqa: BLE001 — транзиент чтения ≠ эпоха: ретрай, БЕЗ park
+                log.warning("журнал: probe %s id=%d упал (%s) — boot отложен (без park)",
+                            tbl, src_id, exc)
+                return False
             if row is None or not self._ts_match(tbl, row, fp.get("ts")):
                 self._park(tbl, src_id)
                 return False
@@ -114,16 +137,14 @@ class SignalJournalDeriver:
         return True
 
     def _row_by_id(self, table: str, row_id: int) -> dict | None:
+        """Строка id=row_id, или None если её НЕТ (эпоха сменилась). Сбой запроса НЕ глушим —
+        пусть всплывёт в boot: транзиент чтения ≠ смена эпохи (иначе ложный бессрочный park)."""
         if row_id <= 0:
             return {}                        # пустой курсор — эпоху сверять не с чем, легально
-        try:
-            rows = self._db.query(
-                f"SELECT * FROM {table} WHERE id=%s", (row_id,)  # noqa: S608 — имя из _TABLES
-            )
-            return rows[0] if rows else None
-        except Exception:  # noqa: BLE001
-            log.exception("журнал: probe %s id=%d упал", table, row_id)
-            return None
+        rows = self._db.query(
+            f"SELECT * FROM {table} WHERE id=%s", (row_id,)  # noqa: S608 — имя из _TABLES
+        )
+        return rows[0] if rows else None
 
     def _ts_match(self, table: str, row: dict, stored_iso) -> bool:
         if not row:
@@ -169,8 +190,7 @@ class SignalJournalDeriver:
                 payload = json.loads(r.get("payload") or "{}")
             except (TypeError, ValueError):
                 payload = {}
-            bt = payload.get("bar_time")
-            self._active[sym] = f"{sym}:{int(bt)}" if bt else f"{sym}:{_UNKNOWN}"
+            self._active[sym] = _setup_id(sym, payload.get("bar_time"))
 
     # ── tick: новые строки → события → push ───────────────────────────────────
 
@@ -185,8 +205,14 @@ class SignalJournalDeriver:
             return
         try:
             self._client.push_signal_journal(batch)
-        except Exception as exc:  # noqa: BLE001 — транзиент: курсор не двигаем, повтор след. тиком
-            log.warning("журнал: пуш %d событий не прошёл (%s) — повтор позже", len(batch), exc)
+        except TransientError as exc:  # сеть/5xx/429 — повтор следующим тиком, курсор стоит
+            log.warning("журнал: пуш %d событий транзиент (%s) — повтор позже", len(batch), exc)
+            return
+        except CoreError as exc:
+            # перманент/413: НЕ само-лечится. Громкий алярм; курсор НЕ двигаем (advance-and-drop
+            # = потеря, журнал того не терпит) → журнал ждёт повтора и разбора человеком.
+            log.error("журнал: пуш %d событий ОТКАЗ ядра (%s) — журнал ждёт (без потери)",
+                      len(batch), exc)
             return
         self._cursors.update(advances)
         self._seq += len(batch)
@@ -241,7 +267,7 @@ class SignalJournalDeriver:
     def _derive(self, table: str, row: dict, sym: str) -> tuple[str, str, dict]:
         if table == "signals":
             bt = row.get("bar_time")
-            setup_id = f"{sym}:{int(bt)}" if bt else f"{sym}:{_UNKNOWN}"
+            setup_id = _setup_id(sym, bt)
             self._detected[sym] = setup_id
             data = {
                 "symbol": sym, "side": row.get("side"),

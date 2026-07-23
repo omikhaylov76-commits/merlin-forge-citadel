@@ -285,9 +285,10 @@ class Event(Base):
 class SignalJournalEvent(Base):
     """Событие Сигнального журнала (Этап 1 переката 1-to-N, порция №3). Товарная запись решения
     ядра-характера для повтора на клиентском счёте (диспетчер Этапа 2 читает и повторяет; сам
-    журнал торговлю НЕ меняет — наблюдатель). Append-only, dedup по (instance, seq) — per-core
-    монотонный курсор адаптера, повтор идемпотентен. core/setup_id/kind — конверт; data — поля
-    по kind (недоверенный JSON). Ведение-детали (reanchor/…) — вариант C (ADR-0024)."""
+    журнал торговлю НЕ меняет — наблюдатель). Append-only; dedup по натуральному ключу движка
+    (instance, src_table, src_id) — см. UniqueConstraint ниже; seq — порядок повтора, НЕ ключ.
+    core/setup_id/kind — конверт; data — поля по kind (недоверенный JSON). Ведение-детали
+    (reanchor/…) — вариант C (ADR-0024)."""
 
     __tablename__ = "signal_journal"
     __table_args__ = (

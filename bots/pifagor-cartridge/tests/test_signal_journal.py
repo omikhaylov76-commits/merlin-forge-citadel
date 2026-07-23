@@ -35,6 +35,21 @@ class _Reader:
         self.db = db
 
 
+class _FlakyDB:
+    """Обёртка реальной DB: первые fail_times probe-запросов (WHERE id=) бросают — транзиент
+    чтения worker-БД (F2: сбой чтения ≠ смена эпохи). Прочие запросы делегируются как есть."""
+
+    def __init__(self, db, fail_times=1):
+        self._db = db
+        self._fails = fail_times
+
+    def query(self, sql, params=()):
+        if "WHERE id=" in sql and self._fails > 0:
+            self._fails -= 1
+            raise RuntimeError("worker-БД занята (транзиент чтения)")
+        return self._db.query(sql, params)
+
+
 def _db(tmp_path) -> DB:
     return DB(db_path=str(tmp_path / "worker.db"), owner=True, database_url="")
 
@@ -228,3 +243,50 @@ def test_close_all_broadcast_is_service(tmp_path):
     d, c = _deriver(db)
     d.tick()
     assert c.flat[0]["kind"] == "service" and c.flat[0]["data"]["raw"] == "close_all"
+
+
+def test_epoch_probe_transient_error_no_park(tmp_path):
+    """F2: транзиентный СБОЙ чтения probe на бооте (≠ отсутствие строки) → boot отложен БЕЗ
+    park и без ложного journal_epoch_reset; БД ожила → журнал резюмится штатно (не встал)."""
+    db = _db(tmp_path)
+    rid = db.events_put(symbol="ALL", event="worker_boot", detail=None,
+                        ts="2026-07-23T09:00:00+00:00")
+    d0, c0 = _deriver(db)
+    d0.tick()                                       # канонический ts для fingerprint
+    cur = {"max_seq": 1, "tables": {"events": {"src_id": rid, "ts": c0.flat[0]["ts"]}}}
+    d, c = _deriver(_FlakyDB(db, fail_times=1), _Client(cursor=cur))
+    db.events_put(symbol="ALL", event="idle_gap", detail=None)
+    d.tick()                                        # probe падает → boot отложен, БЕЗ park
+    assert c.flat == []                             # не эпоха → НЕТ journal_epoch_reset
+    d.tick()                                        # БД ожила → boot ok → новая строка идёт
+    assert [e["data"]["raw"] for e in c.flat] == ["idle_gap"]
+
+
+def test_backlog_drains_within_contract_batch_limit(tmp_path):
+    """🔴-регресс: бэклог во ВСЕХ 4 таблицах (>500 суммарно) дренится порциями ≤500 за неск.
+    тиков — БЕЗ 413-клина (клиент-страж бросает при батче >500). Все события доходят, без
+    дублей/потерь. На старом коде (_BATCH_PER_TABLE=200 → 4×150=600) страж бы упал."""
+    db = _db(tmp_path)
+    per = 150  # > _BATCH_PER_TABLE (125) в каждой из 4 таблиц
+    for i in range(per):
+        ts = f"2026-07-23T{i // 60:02d}:{i % 60:02d}:00+00:00"
+        db.signals_put(symbol="AAAUSDT", side="long", bar_time=1784808000 + i,
+                       a=0.05, b=0.06, entry_0382=0.059, entry_05=0.058, entry_0618=0.056,
+                       stop=0.051, tgt_0382=0.061, tgt_05=0.068, tgt_0618=0.059, ts=ts)
+        db.fills_put(symbol="AAAUSDT", side="long", entry_level="0.382", exec_type="entry",
+                     requested_price=0.059, requested_qty=100, ts=ts)
+        db.events_put(symbol="AAAUSDT", event="leg_exit", role="tgt", lv=0.382, qty=100, ts=ts)
+        db.closed_trade_put(created_ms=1784850000000 + i, symbol="AAAUSDT", side="long", qty=100,
+                            avg_entry=0.059, avg_exit=0.061, closed_pnl=1.0, order_id=f"O{i}")
+
+    class _Guard(_Client):
+        def push_signal_journal(self, events):
+            assert len(events) <= 500, f"батч {len(events)} > 500 → 413-клин"
+            super().push_signal_journal(events)
+
+    d, c = _deriver(db, _Guard())
+    for _ in range(12):
+        d.tick()
+    assert len(c.flat) == per * 4                    # все 600 событий дошли
+    keys = {(e["src"]["table"], e["src"]["id"]) for e in c.flat}
+    assert len(keys) == per * 4                      # уникальные натур. ключи: без дублей/потерь
