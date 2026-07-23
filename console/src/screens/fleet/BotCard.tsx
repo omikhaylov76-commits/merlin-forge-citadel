@@ -9,7 +9,7 @@ import {
   type FleetInstance,
   type ScoutSnapshot,
 } from '@/lib/api'
-import { skipReason } from '@/lib/scout'
+import { skipReason, TRADING_TF, verdictColumn } from '@/lib/scout'
 import { ScoutDetail } from '../scout/ScoutDetail'
 
 const WARM_TICK_MS = 16 * 60_000 // окно до исполнения warm на ближайшем 15m-тике
@@ -181,10 +181,16 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   }, [inst.id])
 
   // Судьба warm-монеты по её вердикту движка (из scout-снимка): человеческая причина «не взято».
-  const warmReason = (symbol: string): string | undefined => {
-    const snap = scoutSnaps.find((s) => s.symbol === symbol)
-    if (!snap) return undefined // снимка нет → причину не знаем (движок мог пропустить по тайму/капу)
-    return skipReason(snap)?.label // «уже не годен» / «вход по рынку» / «мимо списка» / …
+  // Судьба пометки после ⏳: «греется» (движок возьмёт сам/по кнопке ИЛИ сетап ещё зреет) vs
+  // «не взято + причина» (реальный отказ). Снимок — ТОРГОВЫЙ 4h (правда движка только там; раньше
+  // find по имени цеплял 1h без вердикта → ложное «нет вердикта», рассинхрон с Разведкой).
+  const warmFate = (symbol: string): { warming: boolean; reason?: string } => {
+    const snap = scoutSnaps.find((s) => s.symbol === symbol && s.tf === TRADING_TF)
+    if (!snap) return { warming: false } // 4h-снимка нет → просто «не взято» (пропустил по тайму/капу)
+    const v = verdictColumn(snap)
+    if (v === 'auto' || v === 'button') return { warming: true } // движок возьмёт (самоход/кнопка) — греется
+    if (skipReason(snap)?.label === 'созревает') return { warming: true } // forming — греется (ещё зреет)
+    return { warming: false, reason: skipReason(snap)?.label } // мимо списка / вход ушёл / отработан
   }
 
   // Клик по монете стека → снимок сетапа (symbol,tf) из ЕГО печки → тот же деталь-график, что в Разведке
@@ -309,7 +315,7 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
                   warmBatch={warmBatch}
                   onWarmBatch={doWarmBatch}
                   warmSentAt={warmSentAt}
-                  warmReason={warmReason}
+                  warmFate={warmFate}
                   onWarmClear={(sym) =>
                     setWarmSentAt((m) => {
                       const n = { ...m }
@@ -612,7 +618,7 @@ function StackPanel({
   warmBatch = 'idle',
   onWarmBatch,
   warmSentAt,
-  warmReason,
+  warmFate,
   onWarmClear,
   inOrders,
 }: {
@@ -626,7 +632,7 @@ function StackPanel({
   warmBatch?: 'idle' | 'busy' | 'sent' | 'err'
   onWarmBatch?: () => void
   warmSentAt?: Record<string, number>
-  warmReason?: (symbol: string) => string | undefined
+  warmFate?: (symbol: string) => { warming: boolean; reason?: string }
   onWarmClear?: (symbol: string) => void
   inOrders?: Set<string>
 }) {
@@ -736,7 +742,7 @@ function StackPanel({
                     <WarmCell
                       inOrders={inOrders?.has(it.symbol) ?? false}
                       sentAt={warmSentAt?.[it.symbol]}
-                      reason={warmReason?.(it.symbol)}
+                      fate={warmFate?.(it.symbol)}
                       selected={warmSel?.has(it.symbol) ?? false}
                       onToggle={() => onToggleWarm(it.symbol)}
                       onClear={() => onWarmClear?.(it.symbol)}
@@ -755,20 +761,20 @@ function StackPanel({
   )
 }
 
-// Судьба отмеченного сетапа (жалоба Оператора «после ⏳ ничего не пишется»): в работе (поставлен) /
-// ⏳ ждёт тик / ✗ не взято + причина (вердикт движка) / чек-бокс. Причина — из scout-снимка; нет
-// снимка → просто «не взято» (движок пропустил по тайму/капу). Клик по «не взято» → отметить снова.
+// Судьба отмеченного сетапа: в работе (поставлен) / ⏳ ждёт 15m-тик / ГРЕЕТСЯ (движок возьмёт сам или
+// сетап зреет — на подходе) / ✗ не взято + причина (реальный отказ) / чек-бокс. Вердикт — с ТОРГОВОГО
+// 4h-снимка (сквозняк с Разведкой; правда движка только там). Клик по «не взято» → отметить снова.
 function WarmCell({
   inOrders,
   sentAt,
-  reason,
+  fate,
   selected,
   onToggle,
   onClear,
 }: {
   inOrders: boolean
   sentAt?: number
-  reason?: string
+  fate?: { warming: boolean; reason?: string }
   selected: boolean
   onToggle: () => void
   onClear: () => void
@@ -792,7 +798,18 @@ function WarmCell({
           ⏳
         </span>
       )
-    // тик прошёл, в ордера не попал → движок НЕ взял. Показываем причину (не молчим).
+    // тик прошёл. ГРЕЕТСЯ: движок возьмёт сам (самоход/кнопка) ИЛИ сетап ещё зреет (forming) —
+    // позитивно, на подходе; кнопка не нужна. Сквозняк с Разведкой (тот же 4h-вердикт).
+    if (fate?.warming)
+      return (
+        <span
+          className="inline-flex items-center gap-1 rounded-pill border border-copper/40 px-1.5 text-[10px] text-copper"
+          title="движок возьмёт сам (самоход/кнопка) или сетап ещё зреет — на подходе, кнопка не нужна"
+        >
+          греется
+        </span>
+      )
+    // реальный отказ (мимо списка / вход ушёл / отработан) → «не взято + причина». Клик — отметить снова.
     return (
       <span
         role="button"
@@ -808,10 +825,10 @@ function WarmCell({
             onClear()
           }
         }}
-        title={`движок не взял на тике${reason ? ` — ${reason}` : ' (пропустил)'} · клик — отметить снова`}
+        title={`движок не взял на тике${fate?.reason ? ` — ${fate.reason}` : ' (пропустил)'} · клик — отметить снова`}
         className="inline-flex cursor-pointer items-center gap-1 rounded-pill border border-steel/40 px-1.5 text-[10px] text-steel hover:border-fog/40"
       >
-        ✗ не взято{reason ? `: ${reason}` : ''}
+        ✗ не взято{fate?.reason ? `: ${fate.reason}` : ''}
       </span>
     )
   }
