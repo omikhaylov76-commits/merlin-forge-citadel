@@ -184,13 +184,16 @@ export function BotCard({ inst, onClose }: { inst: FleetInstance; onClose: () =>
   // Судьба пометки после ⏳: «греется» (движок возьмёт сам/по кнопке ИЛИ сетап ещё зреет) vs
   // «не взято + причина» (реальный отказ). Снимок — ТОРГОВЫЙ 4h (правда движка только там; раньше
   // find по имени цеплял 1h без вердикта → ложное «нет вердикта», рассинхрон с Разведкой).
-  const warmFate = (symbol: string): { warming: boolean; reason?: string } => {
+  const warmFate = (symbol: string): { warming: boolean; takesItself: boolean; reason?: string } => {
     const snap = scoutSnaps.find((s) => s.symbol === symbol && s.tf === TRADING_TF)
-    if (!snap) return { warming: false } // 4h-снимка нет → просто «не взято» (пропустил по тайму/капу)
+    if (!snap) return { warming: false, takesItself: false } // 4h-снимка нет → «не взято» (тайм/кап)
     const v = verdictColumn(snap)
-    if (v === 'auto' || v === 'button') return { warming: true } // движок возьмёт (самоход/кнопка) — греется
-    if (skipReason(snap)?.label === 'созревает') return { warming: true } // forming — греется (ещё зреет)
-    return { warming: false, reason: skipReason(snap)?.label } // мимо списка / вход ушёл / отработан
+    // takesItself: движок возьмёт САМ (самоход/зреет) → «греется» и БЕЗ пометки, кнопка не нужна.
+    // button: нужна кнопка Оператора → чек-бокс остаётся (её-то и жмут); «греется» лишь после клика.
+    if (v === 'auto') return { warming: true, takesItself: true }
+    if (v === 'button') return { warming: true, takesItself: false }
+    if (skipReason(snap)?.label === 'созревает') return { warming: true, takesItself: true }
+    return { warming: false, takesItself: false, reason: skipReason(snap)?.label }
   }
 
   // Клик по монете стека → снимок сетапа (symbol,tf) из ЕГО печки → тот же деталь-график, что в Разведке
@@ -632,7 +635,7 @@ function StackPanel({
   warmBatch?: 'idle' | 'busy' | 'sent' | 'err'
   onWarmBatch?: () => void
   warmSentAt?: Record<string, number>
-  warmFate?: (symbol: string) => { warming: boolean; reason?: string }
+  warmFate?: (symbol: string) => { warming: boolean; takesItself: boolean; reason?: string }
   onWarmClear?: (symbol: string) => void
   inOrders?: Set<string>
 }) {
@@ -774,11 +777,19 @@ function WarmCell({
 }: {
   inOrders: boolean
   sentAt?: number
-  fate?: { warming: boolean; reason?: string }
+  fate?: { warming: boolean; takesItself: boolean; reason?: string }
   selected: boolean
   onToggle: () => void
   onClear: () => void
 }) {
+  const warmingPill = (
+    <span
+      className="inline-flex items-center gap-1 rounded-pill border border-copper/40 px-1.5 text-[10px] text-copper"
+      title="движок возьмёт сам (самоход) или сетап ещё зреет — на подходе, кнопка не нужна"
+    >
+      греется
+    </span>
+  )
   if (inOrders)
     return (
       <span
@@ -788,6 +799,9 @@ function WarmCell({
         <span className="h-1.5 w-1.5 rounded-full bg-ok" />в работе
       </span>
     )
+  // takesItself: движок возьмёт САМ (самоход/зреет) → «греется» и БЕЗ пометки — нажимать нечего
+  // (просьба Оператора). Где нужна кнопка (button) — takesItself=false, чек-бокс ниже остаётся.
+  if (fate?.takesItself) return warmingPill
   if (sentAt != null) {
     if (Date.now() - sentAt < WARM_TICK_MS)
       return (
@@ -798,17 +812,8 @@ function WarmCell({
           ⏳
         </span>
       )
-    // тик прошёл. ГРЕЕТСЯ: движок возьмёт сам (самоход/кнопка) ИЛИ сетап ещё зреет (forming) —
-    // позитивно, на подходе; кнопка не нужна. Сквозняк с Разведкой (тот же 4h-вердикт).
-    if (fate?.warming)
-      return (
-        <span
-          className="inline-flex items-center gap-1 rounded-pill border border-copper/40 px-1.5 text-[10px] text-copper"
-          title="движок возьмёт сам (самоход/кнопка) или сетап ещё зреет — на подходе, кнопка не нужна"
-        >
-          греется
-        </span>
-      )
+    // тик прошёл. Помеченная button-монета на подходе (движок ставит по твоей кнопке) → «греется».
+    if (fate?.warming) return warmingPill
     // реальный отказ (мимо списка / вход ушёл / отработан) → «не взято + причина». Клик — отметить снова.
     return (
       <span
