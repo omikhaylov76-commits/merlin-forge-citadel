@@ -31,6 +31,25 @@ import { DozorPanel } from './scout/DozorPanel'
 // функции, что ставит ордера), не по стадии скаута. «Представителя» больше нет. Торговый ТФ
 // НАСЛЕДУЕТСЯ от бота (readout, не тумблер). Всё — СНИМОК скаута, не живой тик (дисклеймер).
 const SELECTED_KEY = 'mfc.scout.selected' // последний выбранный бот переживает перезагрузку
+const WARM_TICK_MS = 16 * 60_000 // окно ⏳ до исполнения warm на 15m-тике (== карточка Борса)
+const WARM_TTL_MS = 6 * 3_600_000 // судьба протухла — чистим стейл, чтобы localStorage не пух
+const withinTick = (t?: number) => t != null && Date.now() - t < WARM_TICK_MS
+// Пометка warm ОБЩАЯ с карточкой Борса (ключ mfc.warmSentAt.<бот>): отметил там — видно тут, и
+// наоборот; переживает уход/возврат (жалоба Оператора — часики пропадали). Стейл >6ч отсекаем.
+function loadWarmSentAt(botId: string | null): Record<string, number> {
+  if (!botId) return {}
+  try {
+    const raw = JSON.parse(localStorage.getItem(`mfc.warmSentAt.${botId}`) || '{}')
+    const now = Date.now()
+    return Object.fromEntries(
+      Object.entries(raw as Record<string, number>).filter(
+        ([, t]) => typeof t === 'number' && now - t < WARM_TTL_MS,
+      ),
+    )
+  } catch {
+    return {}
+  }
+}
 
 export function Scout() {
   const board = useAsync(loadScoutBoard, [])
@@ -42,7 +61,10 @@ export function Scout() {
   const [panelOpen, setPanelOpen] = useState(false) // рояль настроек дозора
   // «Поставить» на карточке (колонка «нужна кнопка», ADR-0022): per-монета idle→busy→sent(⏳);
   // sent держим до ~16 мин (ближайший 15m-тик исполнит; движок сам валидирует).
-  const [warmSent, setWarmSent] = useState<Record<string, 'busy' | 'sent'>>({})
+  // Пометка «Поставить» (⏳): таймстампы, ОБЩИЕ с карточкой Борса + localStorage (переживает навигацию).
+  // warmBusy — транзиентный in-flight запрос (не персистим). idle→busy→⏳(16мин)→судьба из данных.
+  const [warmSentAt, setWarmSentAt] = useState<Record<string, number>>(() => loadWarmSentAt(selected))
+  const [warmBusy, setWarmBusy] = useState<Set<string>>(new Set())
   const dozor = useAsync(
     () => (selected ? getDozorSettings(selected) : Promise.resolve(null)),
     [selected],
@@ -76,27 +98,28 @@ export function Scout() {
   }
 
   const doWarm = async (s: ScoutSnapshot) => {
-    if (!selected || warmSent[s.symbol]) return
-    setWarmSent((m) => ({ ...m, [s.symbol]: 'busy' }))
+    if (!selected || warmBusy.has(s.symbol) || withinTick(warmSentAt[s.symbol])) return
+    setWarmBusy((b) => new Set(b).add(s.symbol))
     try {
       // НАКОПИТЕЛЬНЫЙ список: вендор single-shot читает ПОСЛЕДНИЙ интент — одиночная монета
       // затёрла бы прежние клики до тика (Icebox №1). Шлём все ⏳-монеты разом; уже
       // поставленные движок не задвоит (has_active→skip).
-      const coins = [...Object.keys(warmSent).filter((c) => warmSent[c] === 'sent'), s.symbol]
+      const coins = [...Object.keys(warmSentAt).filter((c) => withinTick(warmSentAt[c])), s.symbol]
       await warmApply(selected, coins)
-      setWarmSent((m) => ({ ...m, [s.symbol]: 'sent' }))
-      window.setTimeout(() => {
-        setWarmSent((m) => {
-          const rest = { ...m }
-          delete rest[s.symbol]
-          return rest
-        })
-      }, 16 * 60_000) // тик прошёл: годный уже «в работе», негодный движок пропустил
-    } catch {
-      setWarmSent((m) => {
-        const rest = { ...m }
-        delete rest[s.symbol]
-        return rest
+      setWarmSentAt((m) => {
+        const next = { ...m, [s.symbol]: Date.now() }
+        try {
+          localStorage.setItem(`mfc.warmSentAt.${selected}`, JSON.stringify(next)) // общий с карточкой
+        } catch {
+          /* localStorage недоступен/полон — работаем в памяти */
+        }
+        return next
+      })
+    } finally {
+      setWarmBusy((b) => {
+        const n = new Set(b)
+        n.delete(s.symbol)
+        return n
       })
     }
   }
@@ -111,6 +134,10 @@ export function Scout() {
   }, [board.data, selected])
   useEffect(() => {
     if (selected) localStorage.setItem(SELECTED_KEY, selected)
+  }, [selected])
+  // Смена выбранного бота → перезагрузить ЕГО пометки из общего стора (per-bot, переживает навигацию).
+  useEffect(() => {
+    setWarmSentAt(loadWarmSentAt(selected))
   }, [selected])
 
   // Авто-обновление доски (~25с): снимки приходят в ядро асинхронно (пуш на смену содержимого),
@@ -274,7 +301,13 @@ export function Scout() {
                       starred={inBasket.has(basketKey(s.symbol, s.tf))}
                       starBusy={starBusy === basketKey(s.symbol, s.tf)}
                       onStar={() => toggleStar(s)}
-                      warmState={warmSent[s.symbol] ?? 'idle'}
+                      warmState={
+                        warmBusy.has(s.symbol)
+                          ? 'busy'
+                          : withinTick(warmSentAt[s.symbol])
+                            ? 'sent'
+                            : 'idle'
+                      }
                       onWarm={() => doWarm(s)}
                     />
                   ))}
