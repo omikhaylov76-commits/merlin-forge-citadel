@@ -27,6 +27,7 @@ export const NAV: NavGroup[] = [
   {
     title: 'Журналы',
     items: [
+      { path: '/signals', label: 'Сигналы', icon: '⟐' },
       { path: '/reports', label: 'Отчёты', icon: '▦' },
       { path: '/alerts', label: 'Тревоги', icon: '◈', badge: 3, hot: true },
     ],

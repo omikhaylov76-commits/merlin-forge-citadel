@@ -250,6 +250,29 @@ export type EngineStateResp = {
 export const getEngineState = (instanceId: string) =>
   api<EngineStateResp>(`/v1/instances/${instanceId}/engine-state`)
 
+// ── Сигнальный журнал (порция №3, Этап 1 1-to-N) — лента решений ядра-характера ────────────────
+// Read-only readout; событие = зеркало contracts/telemetry-signal-journal.schema.json.
+// data/setup_id — недоверенный ввод бота: рендерим ТОЛЬКО текстом (React экранирует), не HTML.
+export type SignalJournalEvent = {
+  seq: number
+  core: string
+  ts: string
+  setup_id: string
+  kind:
+    | 'setup_detected'
+    | 'setup_placed'
+    | 'leg_filled'
+    | 'leg_exit'
+    | 'setup_ended'
+    | 'trade_closed'
+    | 'service'
+  src: { table: string; id: number }
+  data: Record<string, unknown> | null
+  received_at: string | null
+}
+export const getSignalJournal = (instanceId: string, limit = 200) =>
+  api<SignalJournalEvent[]>(`/v1/instances/${instanceId}/signal-journal?limit=${limit}`)
+
 // ── Набор Оператора (НАБОР-1, витрина+хранение) — отмеченные звёздочкой сетапы ───────────────────
 // Глобальная корзина Оператора; ядро аддитивно, НИЧЕГО не торгует. context — снимок контекста сетапа
 // (недоверен, показываем как есть). Ключ дедупа — (symbol, tf): повторная звёздочка upsert'ит контекст.

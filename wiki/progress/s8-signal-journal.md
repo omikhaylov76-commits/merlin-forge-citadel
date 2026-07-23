@@ -135,9 +135,11 @@ LIVE_TRADING). Читатель `db.query(sql, params)` — общий (курс
       close_all[ALL]→service). Картридж **252 passed**, ruff чист.
 - [x] 4. Readout'ы ядра: `GET /v1/telemetry/signal-journal/cursor` (instance-токен: max_seq +
       per-table fingerprint — guard эпохи) + `GET /v1/instances/{id}/signal-journal` (operator: лента).
-- [ ] 5. Консоль: вкладка «Журнал» (read-only лента событий).
-- [ ] 6. code-review → merge в main → деплой Борса (`SIGNAL_JOURNAL_ENABLED=1`+`SIGNAL_JOURNAL_CORE=BORS`)
-      → сверка полноты N дней.
+- [x] 5. Консоль: экран «Сигналы» (группа Журналы) — лента событий (`getSignalJournal`, селектор бота,
+      авто-обновление 10с, русская лексика типов из фактов, пусто/грузится/ошибка, недоверенный ввод
+      ТОЛЬКО текстом). tsc чист; рендер проверен вживую (пустое состояние + навигация, 0 ошибок консоли).
+- [ ] 6. code-review → ⛔ merge в main → деплой Борса (`SIGNAL_JOURNAL_ENABLED=1`+`SIGNAL_JOURNAL_CORE=BORS`)
+      → сверка полноты N дней. **Весь КОД (1–5) готов, тесты зелёные, ветка запушена.**
 
 ## SHA
 - Разведка + финальная схема + КОД под-шаги 1–2 (ядро-приём): 2026-07-23 (эта сессия). Куратор подписал
