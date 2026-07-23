@@ -17,6 +17,11 @@
       "sha256": "9d004b7ce9d177210a13c056535782e0d141bce67f75035876252ab0180e5517",
       "adr": "ADR-0021",
       "delta": "разъём warm-ритма (самоход + горн)"
+    },
+    "config/knobs.py": {
+      "sha256": "6e3a9a729ff6ac5cc78a9f4ab0c09e1fb4eb57ea5017ea4cf9f98f9a82b0550d",
+      "adr": "ADR-0023",
+      "delta": "потолок конкуренции 24 (динамик-характер)"
     }
   },
   "frozen": {
@@ -28,7 +33,6 @@
     "config/_env.py": "42cbcf8776d410ccebf60707bb22beddc72ee2eb33a2c00936031fc631d3d65c",
     "config/capital.py": "0656593e9adb68de8b2e150ba1a9ebc1694821f2bd04ae959ac95c297152c932",
     "config/execution.py": "c0929e5ea43c675873e55ea6def5c96b2bc906dccd8822c0ac948c1453ae6ca7",
-    "config/knobs.py": "4f911d7baed17083b7186a162b86259530b8d9f9a9ba4a62d3a268dd6d9cd891",
     "config/ops.py": "35d4fb138b3e4c2982abf0b5a518049911568caabd080ed269661b769ad20f02",
     "config/risk.py": "af9871de0b0247ad7a49f037fcd72a2ae6d029486d7021ba3ae36193b0544e9f",
     "dashboard/__init__.py": "385b61f141c27cc971d629fdca0f6cdaa1361c7516f7ac1a862805c107460295",
